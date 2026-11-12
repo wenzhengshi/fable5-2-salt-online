@@ -514,6 +514,7 @@
     const label = ui.confirm.querySelector('span');
     const previous = label.textContent;
     label.textContent = t('starting');
+    let failureText = '';
     try {
       const res = await fetch('/api/focus/start', {
         method: 'POST',
@@ -521,12 +522,15 @@
         body: JSON.stringify({ clientId: identity.clientId, fingerprint: identity.fingerprint })
       });
       const data = await res.json().catch(function () { return {}; });
-      if (!res.ok || !data.ok || !data.focus) throw new Error(data.message || 'focus start failed');
+      if (!res.ok || !data.ok || !data.focus) {
+        failureText = typeof data.message === 'string' ? data.message : '';
+        throw new Error('focus start failed');
+      }
       activate(data.focus);
       closeDialog();
-      toast(t('started'));
+      toast(data.persisted === false ? t('startedUnpersisted') : t('started'));
     } catch (err) {
-      toast(t('startFailed'));
+      toast(failureText || t('startFailed'));
     } finally {
       ui.confirm.disabled = false;
       ui.confirm.removeAttribute('aria-busy');

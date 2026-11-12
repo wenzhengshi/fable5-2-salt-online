@@ -378,6 +378,7 @@
     "invalidRequest": "A valid device ID is required",
     "invalidFingerprint": "The browser fingerprint is invalid. Refresh and try again.",
     "started": "Manual focus mode is active. Spectating only for 30 minutes.",
+    "startedUnpersisted": "Focus mode is active. The audit record cannot be saved right now and will be written automatically in the background.",
     "activeKicker": "MANUAL FOCUS / 30 MIN",
     "spectating": "Live spectate",
     "locked": "Server-enforced read-only",

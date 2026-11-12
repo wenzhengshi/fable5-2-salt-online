@@ -170,6 +170,7 @@
     "invalidRequest": "缺少有效的本机标识",
     "invalidFingerprint": "浏览器指纹无效，请刷新页面后重试",
     "started": "手动专注模式已开启，30 分钟内只能观战",
+    "startedUnpersisted": "专注模式已开启；审计记录暂时无法写入，将在后台自动补写",
     "activeKicker": "MANUAL FOCUS / 30 MIN",
     "spectating": "实时观战",
     "locked": "服务端只读锁定",

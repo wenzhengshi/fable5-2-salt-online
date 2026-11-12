@@ -72,6 +72,7 @@
   - `focusMode.autoSpectate`：是否自动切换观战视角
   - `focusMode.storage`：持久化文件 `focus-records.json`
   - `focusMode.records`：登记字段 `clientId`、`fingerprint`、`ip`
+  - `focusMode.persistence`：专注记录存储诊断，包含 `persisted`、`pending`、`writable`、`dataDir`、`dataSource`、`lastWriteAt`、`lastError`
   - `comms.voice`：`server-pcm-relay`
   - `comms.sampleRate`：`16000`
   - `comms.frameMs`：`20`
@@ -133,9 +134,10 @@
 - 路径：`/api/focus/start`
 - Body：`{"clientId":"c_...","fingerprint":"fp1-..."}`
 - 说明：固定锁定 30 分钟，不接受客户端指定更短时长；已存在有效记录时复用原到期时间，不会因重复提交延长。服务端会同步锁定该 `clientId` / `fingerprint` 对应的在线 WebSocket 会话，并记录请求 IP。
-- 返回字段：`focus.active`、`focus.record`、`reused`、`sessions`（本次同步锁定的在线会话数）
+- 返回字段：`focus.active`、`focus.record`、`reused`、`persisted`（审计记录是否已落盘）、`sessions`（本次同步锁定的在线会话数）
 - 状态码：首次创建 `201`；已有有效记录 `200`
-- 返回示例：`{"ok":true,"now":1794500000000,"reused":false,"sessions":1,"focus":{"active":true,"durationMs":1800000,"record":{"id":"focus_m7x2_a1b2c3d4","clientId":"c_...","fingerprint":"fp1-ab…9f2c","ip":"203.0.*.*","startedAt":1794500000000,"expiresAt":1794501800000,"remainingMs":1800000,"active":true}},"message":"手动专注模式已开启，30 分钟内只能观战"}`
+- 容错说明：托管数据目录或文件锁暂时不可写时，服务端仍会立即建立内存锁定并返回成功，`persisted` 为 `false`；记录会每 4 秒自动重试原子写入，进程收到 `SIGTERM` / `SIGINT` 时也会再次补写。单次 WebSocket 会话同步异常同样不会改变成功状态码。
+- 返回示例：`{"ok":true,"now":1794500000000,"reused":false,"persisted":true,"sessions":1,"focus":{"active":true,"durationMs":1800000,"record":{"id":"focus_m7x2_a1b2c3d4","clientId":"c_...","fingerprint":"fp1-ab…9f2c","ip":"203.0.*.*","startedAt":1794500000000,"expiresAt":1794501800000,"remainingMs":1800000,"active":true}},"message":"手动专注模式已开启，30 分钟内只能观战"}`
 
 ### 切换语言
 

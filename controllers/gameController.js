@@ -6,6 +6,7 @@ const {
 } = require('../realtime/multiplayer');
 const contentFilter = require('../services/contentFilter');
 const chatHistoryStore = require('../services/chatHistory');
+const focusMode = require('../services/focusMode');
 
 module.exports = {
   health(req, res) {
@@ -48,6 +49,7 @@ module.exports = {
         autoSpectate: true,
         storage: 'focus-records.json',
         records: ['clientId', 'fingerprint', 'ip'],
+        persistence: focusMode.persistence(),
         statusEndpoint: '/api/focus/status',
         startEndpoint: '/api/focus/start'
       },

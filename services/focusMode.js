@@ -7,6 +7,15 @@ const FILE = 'focus-records.json';
 const DURATION_MS = 30 * 60 * 1000;
 const MAX_RECORDS = 1000;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{6,80}$/;
+const RETRY_MS = 4000;
+const RETRY_LOG_MS = 30000;
+
+const pendingRecords = new Map();
+let retryTimer = null;
+let persistCooldownUntil = 0;
+let lastPersistError = null;
+let lastPersistLogAt = 0;
+let lastPersistAt = 0;
 
 function normalizeClientId(value) {
   const text = String(value || '').trim();
@@ -26,13 +35,82 @@ function normalizeIp(value) {
 }
 
 function readRecords() {
+  let rows = [];
   try {
-    const rows = storage.readJson(FILE);
-    return Array.isArray(rows) ? rows : [];
+    const diskRows = storage.readJson(FILE);
+    rows = Array.isArray(diskRows) ? diskRows : [];
   } catch (err) {
     console.error('[focus] records read failed', err && err.message);
-    return [];
   }
+  if (!pendingRecords.size) return rows;
+
+  const seen = new Set();
+  const merged = [];
+  for (const record of pendingRecords.values()) {
+    if (!record || seen.has(record.id)) continue;
+    seen.add(record.id);
+    merged.push(record);
+  }
+  for (const record of rows) {
+    if (!record || typeof record !== 'object' || seen.has(record.id)) continue;
+    seen.add(record.id);
+    merged.push(record);
+  }
+  return merged;
+}
+
+function errorText(err) {
+  return err ? String(err.message || err) : 'storage unavailable';
+}
+
+function persistError(err) {
+  lastPersistError = err || new Error('storage unavailable');
+  persistCooldownUntil = Date.now() + RETRY_MS;
+  const now = Date.now();
+  if (now - lastPersistLogAt >= RETRY_LOG_MS) {
+    lastPersistLogAt = now;
+    console.error('[focus] record write failed, keeping lock in memory: ' + errorText(lastPersistError));
+  }
+  scheduleRetry();
+}
+
+function persistPending(force) {
+  if (!pendingRecords.size) return true;
+  if (!force && Date.now() < persistCooldownUntil) return false;
+
+  try {
+    storage.updateJson(FILE, (rows) => {
+      const byId = new Map();
+      for (const record of pendingRecords.values()) {
+        if (record && record.id) byId.set(record.id, record);
+      }
+      for (const record of Array.isArray(rows) ? rows : []) {
+        if (!record || typeof record !== 'object') continue;
+        if (record.id && byId.has(record.id)) continue;
+        const key = record.id || ('legacy_' + String(record.startedAt || '') + '_' + String(record.clientId || ''));
+        byId.set(key, record);
+      }
+      return [...byId.values()]
+        .sort((a, b) => (Number(b.startedAt) || 0) - (Number(a.startedAt) || 0))
+        .slice(0, MAX_RECORDS);
+    });
+    pendingRecords.clear();
+    lastPersistError = null;
+    lastPersistAt = Date.now();
+    return true;
+  } catch (err) {
+    persistError(err);
+    return false;
+  }
+}
+
+function scheduleRetry() {
+  if (retryTimer || !pendingRecords.size) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    persistPending(true);
+  }, RETRY_MS);
+  if (typeof retryTimer.unref === 'function') retryTimer.unref();
 }
 
 function recordMatches(record, clientId, fingerprint) {
@@ -116,36 +194,87 @@ function start({ clientId, fingerprint, ip, userAgent, lang } = {}) {
   }
 
   const now = Date.now();
-  let record = null;
-  let reused = false;
-  storage.updateJson(FILE, (rows) => {
-    const list = Array.isArray(rows) ? rows : [];
-    const active = findActiveIn(list, cleanId, cleanFingerprint, now);
-    if (active) {
-      record = active;
-      reused = true;
-      return list;
-    }
-    record = {
-      id: 'focus_' + now.toString(36) + '_' + crypto.randomBytes(4).toString('hex'),
-      clientId: cleanId,
-      fingerprint: cleanFingerprint,
-      ip: normalizeIp(ip),
-      userAgent: String(userAgent || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 240),
-      lang: lang === 'en-US' ? 'en-US' : 'zh-CN',
-      startedAt: now,
-      expiresAt: now + DURATION_MS,
-      durationMs: DURATION_MS,
-      updatedAt: now
+  const existing = findActiveIn(readRecords(), cleanId, cleanFingerprint, now);
+  if (existing) {
+    return {
+      record: existing,
+      created: false,
+      persisted: !pendingRecords.has(existing.id),
+      publicRecord: publicRecord(existing, now)
     };
-    return [record, ...list].slice(0, MAX_RECORDS);
-  });
+  }
+
+  const candidate = {
+    id: 'focus_' + now.toString(36) + '_' + crypto.randomBytes(4).toString('hex'),
+    clientId: cleanId,
+    fingerprint: cleanFingerprint,
+    ip: normalizeIp(ip),
+    userAgent: String(userAgent || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 240),
+    lang: lang === 'en-US' ? 'en-US' : 'zh-CN',
+    startedAt: now,
+    expiresAt: now + DURATION_MS,
+    durationMs: DURATION_MS,
+    updatedAt: now
+  };
+
+  let record = candidate;
+  let reused = false;
+  let persisted = false;
+  if (Date.now() >= persistCooldownUntil) {
+    try {
+      storage.updateJson(FILE, (rows) => {
+        const list = Array.isArray(rows) ? rows : [];
+        const active = findActiveIn(list, cleanId, cleanFingerprint, now);
+        if (active) {
+          record = active;
+          reused = true;
+          return list;
+        }
+        return [candidate, ...list].slice(0, MAX_RECORDS);
+      });
+      lastPersistError = null;
+      lastPersistAt = Date.now();
+      persisted = true;
+    } catch (err) {
+      pendingRecords.set(candidate.id, candidate);
+      persistError(err);
+    }
+  }
+
+  if (!reused && !persisted) {
+    // 即使托管数据目录暂时不可写，也先让服务端内存锁生效，并异步补写记录。
+    pendingRecords.set(candidate.id, candidate);
+    scheduleRetry();
+  }
 
   return {
     record,
     created: !reused,
+    persisted: persisted || !pendingRecords.has(record.id),
     publicRecord: publicRecord(record, now)
   };
+}
+
+function persistence() {
+  const info = storage.info();
+  return {
+    storage: 'focus-records.json',
+    persisted: pendingRecords.size === 0 && info.writable,
+    pending: pendingRecords.size,
+    writable: info.writable,
+    dataDir: info.dir,
+    dataSource: info.source,
+    lastWriteAt: lastPersistAt,
+    lastError: lastPersistError ? errorText(lastPersistError) : info.error
+  };
+}
+
+function flush() {
+  const saved = persistPending(true);
+  if (!saved && pendingRecords.size) {
+    console.error('[focus] shutdown flush failed: ' + errorText(lastPersistError));
+  }
+  return saved;
 }
 
 module.exports = {
@@ -157,5 +286,7 @@ module.exports = {
   findActive,
   status,
   start,
+  persistence,
+  flush,
   publicRecord
 };

@@ -5,12 +5,13 @@ const express = require('express');
 const compression = require('compression');
 const apiRouter = require('./routes/api');
 const chatHistory = require('./services/chatHistory');
+const focusMode = require('./services/focusMode');
 const { attachMultiplayer, shutdownMultiplayer } = require('./realtime/multiplayer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const ASSET_VERSION = '20261113-fast-boot-v19';
+const ASSET_VERSION = '20261113-focus-api-v20';
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -145,6 +146,12 @@ server.listen(PORT, HOST, () => {
     ' · records=' + chatStorage.records +
     ' · pending=' + chatStorage.pending +
     ' · writable=' + chatStorage.writable);
+  const focusStorage = focusMode.persistence();
+  console.log('[focus] records file data/' + focusMode.FILE +
+    ' · dataDir=' + focusStorage.dataDir +
+    ' (' + focusStorage.dataSource + ')' +
+    ' · pending=' + focusStorage.pending +
+    ' · writable=' + focusStorage.writable);
 });
 
 let shuttingDown = false;
@@ -158,6 +165,7 @@ function shutdown(signal) {
     console.error('[server] shutdown persist failed', err && err.message);
   }
   chatHistory.flush();
+  focusMode.flush();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref();
 }

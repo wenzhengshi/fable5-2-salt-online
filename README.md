@@ -16,6 +16,16 @@
 
 [立即进入盐线行动在线版 →](https://web-jjuuxm.tulingai.com/)
 
+## 微信交流群
+
+扫码加入 **Saltline-多人联机交流群**，交流玩法、联机部署和代码问题：
+
+<p align="center">
+  <img src="docs/media/wechat-group-saltline.jpg" width="360" alt="Saltline-多人联机交流群微信二维码">
+</p>
+
+> 当前群二维码在 2026 年 11 月 19 日前有效；二维码更新后请同步替换本图片。
+
 ## Android 客户端
 
 [下载盐线行动 Android v1.0 APK](https://github.com/wenzhengshi/fable5-2-salt-online/releases/download/android-v1.0/saltline-android-v1.0.apk)

@@ -21,14 +21,14 @@
 - 方法：`GET`
 - 路径：`/`
 - 参数：可选 `?lang=zh-CN` 或 `?lang=en-US`，会同步写入 `lang` cookie
-- 说明：多人 3D 港口枪战首页。士兵外观不再在首页强制选择，玩家可直接部署，并通过“设置 → 士兵性别”随时更换；移动端选择层在手势结束后打开，不会因同一次触摸的后续点击而闪现或误触关闭。包含在线人数、战场名单、5 秒复活、全服开麦语音、单独静音与全服大字。大字记录持久保存在服务端，频道内按最新在上排列，滚动到底部会自动加载更早记录。角色选择会写入浏览器本地存储，并通过 WebSocket 同步给所有玩家；服务端只接受 `male` / `female` 两种值。自定义士兵模型、持枪行走与冲刺姿态通过 `hunter-avatar.js` 驱动，远端玩家会同步移动与冲刺状态；蹲伏动作已从输入、角色姿态和同步协议中移除。若浏览器无法创建 WebGL 上下文，页面会自动降级到 Canvas 2D 战术兼容模式；`GET /?gfx=2d` 可手动进入该模式，兼容层复用同一 WebSocket 房间、语音、代号、角色选择与复活协议。游戏内标题页、暂停菜单与战场名单面板均提供 GitHub 仓库链接 `https://github.com/wenzhengshi/fable5-2-salt-online`。
+- 说明：多人 3D 港口枪战首页。玩家可直接部署，并通过“设置 → 操控单位”在男士兵、女士兵、机器狗和无人机之间切换；移动端选择层在手势结束后打开，不会因同一次触摸的后续点击而闪现或误触关闭。包含在线人数、战场名单、5 秒复活、全服开麦语音、单独静音与全服大字。大字记录持久保存在服务端，频道内按最新在上排列，滚动到底部会自动加载更早记录。单位选择会写入浏览器本地存储，并通过 WebSocket 同步给所有玩家；服务端接受 `male` / `female` / `hound` / `drone`。机器狗复用港口猎犬模型，无人机复用港口海鸥无人机模型，四类单位均拥有开火、受击、语音、通讯、昵称与复活权限。无人机按 `Space` 上升、`Shift` 下降。自定义士兵模型、持枪行走与冲刺姿态通过 `hunter-avatar.js` 驱动，机器狗和无人机模型由 `unit-models.js` 从现有敌人模型池克隆；蹲伏动作已从输入、角色姿态和同步协议中移除。若浏览器无法创建 WebGL 上下文，页面会自动降级到 Canvas 2D 战术兼容模式；`GET /?gfx=2d` 可手动进入该模式，兼容层复用同一 WebSocket 房间、语音、代号、单位选择与复活协议。游戏内标题页、暂停菜单与战场名单面板均提供 GitHub 仓库链接 `https://github.com/wenzhengshi/fable5-2-salt-online`。
 - 缓存：`Cache-Control: no-store`
 
 ### 静态资源
 
 - 方法：`GET`
 - 路径：`/css/*`、`/js/*`、`/models/*`
-- 说明：游戏样式、Three.js 游戏 bundle、多人对战、全服开麦语音与大字客户端脚本，以及 `male` / `female` 两名士兵的 GLB 模型和 PAC-9 步枪模型。女士兵模型来自本轮用户附件中的真实内嵌 GLB，不依赖外部资源。
+- 说明：游戏样式、Three.js 游戏 bundle、多人对战、全服开麦语音与大字客户端脚本、男女士兵 GLB 模型、PAC-9 步枪模型，以及机器狗/无人机单位模型脚本。机器狗和无人机直接复用游戏 bundle 内的 `hound` / `gull` 敌人建模与材质，不新增重复模型资源。
 
 ## 内容安全与敏感词拦截
 
@@ -56,7 +56,7 @@
 - 返回字段：
   - `mode`：`free-for-all`
   - `respawnSeconds`：复活等待秒数，当前为 `5`
-  - `characters`：可选士兵列表，`id` 为 `male` / `female`，`name` 与 `role` 随语言返回
+  - `characters`：可选操控单位列表，`id` 为 `male` / `female` / `hound` / `drone`，`name` 与 `role` 随语言返回
   - `online`：当前 WebSocket 在线连接数
   - `websocket`：`/ws`
   - `engine`：`WebGL2 / Three.js (bundled) + Canvas 2D fallback`
@@ -82,7 +82,7 @@
   - `comms.chatHistory.pageSize` / `maxPageSize`：默认每页 `20` 条，最大 `50` 条
   - `comms.chatHistory.persisted`：`true` 表示当前目录可写且没有待重试记录
   - `controls`：本地化操作列表；仅保留移动、观察、射击、瞄准、换弹、交互、跳跃、冲刺、近战、语音、大字、名单与暂停
-- 返回示例：`{"ok":true,"version":"1.20.0","mode":"free-for-all","respawnSeconds":5,"characters":[{"id":"male","name":"男士兵","role":"重装突击手"},{"id":"female","name":"女士兵","role":"先锋侦察兵"}],"websocket":"/ws","moderation":{"enabled":true,"names":true,"chat":true,"evasionResistant":true},"comms":{"voice":"server-pcm-relay","sampleRate":16000,"frameMs":20,"globalAudience":true,"listenerMicRequired":false,"chatHistory":{"endpoint":"/api/game/chat/history","persisted":true,"storage":"data/chat-history.jsonl","dataDir":"/srv/runtime-data/data","dataSource":"JICREATE_DATA_DIR","records":42,"pending":0}},"controls":[{"keys":"WASD","label":"移动"}]}`
+- 返回示例：`{"ok":true,"version":"1.21.0","mode":"free-for-all","respawnSeconds":5,"characters":[{"id":"male","name":"男士兵","role":"重装突击手"},{"id":"female","name":"女士兵","role":"先锋侦察兵"},{"id":"hound","name":"机器狗","role":"四足突击平台"},{"id":"drone","name":"无人机","role":"空中侦察平台"}],"websocket":"/ws","moderation":{"enabled":true,"names":true,"chat":true,"evasionResistant":true},"comms":{"voice":"server-pcm-relay","sampleRate":16000,"frameMs":20,"globalAudience":true,"listenerMicRequired":false,"chatHistory":{"endpoint":"/api/game/chat/history","persisted":true,"storage":"data/chat-history.jsonl","dataDir":"/srv/runtime-data/data","dataSource":"JICREATE_DATA_DIR","records":42,"pending":0}},"controls":[{"keys":"WASD","label":"移动"}]}`
 
 ### 排行榜与在线列表
 
@@ -130,8 +130,8 @@
 
 | `type` | 字段 | 说明 |
 | --- | --- | --- |
-| `join` | `name`, `soldier`, `spawns[]` | 设置代号、士兵类型（`male` / `female`）与可用出生点；非法士兵值回退为 `male`。代号命中敏感词时自动分配安全代号，并在 `joined` 中返回 `filtered: true` |
-| `soldier` | `soldier` | 游戏过程中切换士兵类型；服务端校验后广播 `soldierState`，非法值回退为 `male` |
+| `join` | `name`, `soldier`, `spawns[]` | 设置代号、操控单位（`male` / `female` / `hound` / `drone`）与可用出生点；非法单位值回退为 `male`。代号命中敏感词时自动分配安全代号，并在 `joined` 中返回 `filtered: true` |
+| `soldier` | `soldier` | 游戏过程中切换操控单位；服务端校验后广播 `soldierState`，非法值回退为 `male` |
 | `spawns` | `spawns[]` | 更新出生点列表，最多 32 个 |
 | `chat` | `text` | 全服大字，最长 80 字，冷却 1200 ms；命中敏感词返回 `chatDenied` 且不广播。通过校验的消息会立即广播并尽力同步写入 `data/chat-history.jsonl`；写盘失败时仍广播，同时进入自动重试队列，并向发送者发送 `chatWarning` |
 | `voiceState` | `enabled`, `muted`, `speaking` | 同步麦克风开关、静音、说话状态 |
@@ -153,10 +153,10 @@
 
 | `type` | 字段 | 说明 |
 | --- | --- | --- |
-| `welcome` | `id`, `name`, `color`, `soldier`, `respawnMs`, `online`, `voiceRelay` | 连接即发送；`soldier` 为当前士兵类型；`voiceRelay` 描述全局语音参数 |
-| `joined` | `id`, `name`, `color`, `soldier`, `renamed`, `filtered` | 代号、士兵类型生效或改名成功；`renamed` 表示主动改名，`filtered` 表示原代号被拦截并分配了安全代号 |
-| `soldierAck` | `soldier` | 士兵类型已生效 |
-| `soldierState` | `id`, `soldier` | 某位在线玩家的士兵类型发生变化；客户端据此实时替换远端角色模型 |
+| `welcome` | `id`, `name`, `color`, `soldier`, `respawnMs`, `online`, `voiceRelay` | 连接即发送；`soldier` 为当前操控单位；`voiceRelay` 描述全局语音参数 |
+| `joined` | `id`, `name`, `color`, `soldier`, `renamed`, `filtered` | 代号、操控单位生效或改名成功；`renamed` 表示主动改名，`filtered` 表示原代号被拦截并分配了安全代号 |
+| `soldierAck` | `soldier` | 操控单位已生效 |
+| `soldierState` | `id`, `soldier` | 某位在线玩家的操控单位发生变化；客户端据此实时替换远端模型 |
 | `nameDenied` | `reason` | `filtered`（敏感词）或 `invalid`（空代号）；改代号失败时原代号不变 |
 | `snapshot` | `t`, `online`, `players[]`, `roster[]`, `voice[]`, `you` | 10 Hz 状态帧；`players[]` 每项含 `x,y,z,yaw,pitch,hp,moving,sprint,shield,soldier`，`roster[]` 同样包含 `soldier`，`voice[]` 只包含已开麦玩家 |
 | `voiceState` | `player{id,name,color,enabled,muted,speaking}` | 开麦、静音、说话状态变化 |

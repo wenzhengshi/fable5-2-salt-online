@@ -119,6 +119,42 @@ body.is-playing .mp-chip:hover,
 .mp-roster-btn:active { transform: scale(0.96); }
 .mp-roster-btn:focus-visible { outline: 2px solid var(--signal-hot); outline-offset: 2px; }
 
+/* --------------------------------------------------------------- unit mode */
+.mp-unit {
+  position: absolute;
+  top: calc(93px + var(--sat));
+  left: var(--gr);
+  z-index: 64;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  background: rgba(8, 11, 13, 0.78);
+  color: rgba(232, 228, 218, 0.68);
+  font: 500 9px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.mp-unit[hidden] { display: none; }
+.mp-unit b {
+  color: var(--signal);
+  font: 700 12px/1 var(--f-label, "Barlow Condensed", sans-serif);
+  letter-spacing: 0.12em;
+}
+.mp-unit em {
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+  color: #7ef0e2;
+  font-style: normal;
+}
+.mp-unit[data-kind="hound"] b { color: #8affc1; }
+.mp-unit[data-kind="drone"] b { color: #5fd0ff; }
+
 /* --------------------------------------------------------------- kill feed */
 .mp-feed {
   position: absolute;

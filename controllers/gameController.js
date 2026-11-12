@@ -24,7 +24,7 @@ module.exports = {
       lang: req.lang,
       title: req.t('game.title'),
       tagline: req.t('game.tagline'),
-      version: '1.20.0',
+      version: '1.21.8',
       engine: 'WebGL2 / Three.js (bundled) + Canvas 2D fallback',
       rendering: {
         primary: 'webgl2',
@@ -35,7 +35,9 @@ module.exports = {
       respawnSeconds: Math.round(RESPAWN_MS / 1000),
       characters: [
         { id: 'male', name: req.t('soldierSelect.maleName'), role: req.t('soldierSelect.maleRole') },
-        { id: 'female', name: req.t('soldierSelect.femaleName'), role: req.t('soldierSelect.femaleRole') }
+        { id: 'female', name: req.t('soldierSelect.femaleName'), role: req.t('soldierSelect.femaleRole') },
+        { id: 'hound', name: req.t('soldierSelect.houndName'), role: req.t('soldierSelect.houndRole') },
+        { id: 'drone', name: req.t('soldierSelect.droneName'), role: req.t('soldierSelect.droneRole') }
       ],
       online: getOnlinePlayers().length,
       websocket: '/ws',

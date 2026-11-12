@@ -10,7 +10,7 @@ const { attachMultiplayer, shutdownMultiplayer } = require('./realtime/multiplay
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const ASSET_VERSION = '20261112-chat-storage-v3';
+const ASSET_VERSION = '20261112-operator-units-v11';
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -22,10 +22,10 @@ app.set('trust proxy', 1);
 app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self';script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval';style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;img-src 'self' data: blob:;connect-src 'self' ws: wss:;font-src 'self' data: https://fonts.gstatic.com;media-src 'self' data: blob:;worker-src 'self' blob:;frame-ancestors 'self';base-uri 'self';form-action 'self';object-src 'none';script-src-attr 'none';upgrade-insecure-requests"
-  );
+  const csp = "default-src 'self';script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval';style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;img-src 'self' data: blob:;connect-src 'self' ws: wss:;font-src 'self' data: https://fonts.gstatic.com;media-src 'self' data: blob:;worker-src 'self' blob:;frame-ancestors 'self';base-uri 'self';form-action 'self';object-src 'none';script-src-attr 'none'";
+  // On plain-HTTP LAN deployments this directive upgrades CSS/JS to HTTPS,
+  // which makes every local resource fail. Only enable it for real HTTPS.
+  res.setHeader('Content-Security-Policy', req.secure ? csp + ';upgrade-insecure-requests' : csp);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();

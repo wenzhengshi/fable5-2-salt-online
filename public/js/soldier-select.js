@@ -4,6 +4,7 @@
   const i18n = window.__SALT_I18N__ || {};
   const COPY = (i18n.messages && i18n.messages.soldierSelect) || {};
   const STORAGE_KEY = 'saltline.multiplayer.soldier';
+  const UNIT_KINDS = ['male', 'female', 'hound', 'drone'];
   const app = document.getElementById('app');
   if (!app) return;
 
@@ -16,7 +17,11 @@
   }
 
   function normalizeSoldier(value) {
-    return value === 'female' ? 'female' : 'male';
+    return UNIT_KINDS.includes(value) ? value : 'male';
+  }
+
+  function isMachine(value) {
+    return value === 'hound' || value === 'drone';
   }
 
   function loadSoldier() {
@@ -46,15 +51,38 @@
   };
 
   function cardCopy(kind) {
-    const female = kind === 'female';
+    const unit = normalizeSoldier(kind);
+    const index = String(UNIT_KINDS.indexOf(unit) + 1).padStart(2, '0');
     return {
-      name: t(female ? 'femaleName' : 'maleName'),
-      role: t(female ? 'femaleRole' : 'maleRole'),
-      desc: t(female ? 'femaleDesc' : 'maleDesc'),
-      tagA: t(female ? 'femaleTagA' : 'maleTagA'),
-      tagB: t(female ? 'femaleTagB' : 'maleTagB'),
-      index: female ? '02' : '01'
+      name: t(`${unit}Name`),
+      role: t(`${unit}Role`),
+      desc: t(`${unit}Desc`),
+      tagA: t(`${unit}TagA`),
+      tagB: t(`${unit}TagB`),
+      code: t(`${unit}Code`),
+      index
     };
+  }
+
+  function cardMarkup(kind) {
+    const copy = cardCopy(kind);
+    return `
+      <button class="ss-card" type="button" role="radio" data-kind="${kind}" aria-checked="false">
+        <span class="ss-card-media" aria-hidden="true">
+          <span class="ss-card-grid"></span>
+          <img class="ss-thumb" alt="" hidden />
+          <span class="ss-card-code">${copy.code}</span>
+          <span class="ss-card-scan"></span>
+        </span>
+        <span class="ss-card-copy">
+          <span class="ss-card-line"><i>${copy.index}</i><b>${copy.name}</b></span>
+          <em>${copy.role}</em>
+          <small>${copy.desc}</small>
+          <span class="ss-tags"><u>${copy.tagA}</u><u>${copy.tagB}</u></span>
+        </span>
+        <span class="ss-card-check" aria-hidden="true"><i></i></span>
+      </button>
+    `;
   }
 
   const overlay = document.createElement('section');
@@ -80,37 +108,7 @@
         <p class="ss-intro">${t('intro')}</p>
 
         <div class="ss-options" role="radiogroup" aria-label="${t('aria')}">
-          <button class="ss-card" type="button" role="radio" data-kind="male" aria-checked="false">
-            <span class="ss-card-media" aria-hidden="true">
-              <span class="ss-card-grid"></span>
-              <img class="ss-thumb" alt="" hidden />
-              <span class="ss-card-code">${t('maleCode')}</span>
-              <span class="ss-card-scan"></span>
-            </span>
-            <span class="ss-card-copy">
-              <span class="ss-card-line"><i>${cardCopy('male').index}</i><b>${cardCopy('male').name}</b></span>
-              <em>${cardCopy('male').role}</em>
-              <small>${cardCopy('male').desc}</small>
-              <span class="ss-tags"><u>${cardCopy('male').tagA}</u><u>${cardCopy('male').tagB}</u></span>
-            </span>
-            <span class="ss-card-check" aria-hidden="true"><i></i></span>
-          </button>
-
-          <button class="ss-card" type="button" role="radio" data-kind="female" aria-checked="false">
-            <span class="ss-card-media" aria-hidden="true">
-              <span class="ss-card-grid"></span>
-              <img class="ss-thumb" alt="" hidden />
-              <span class="ss-card-code">${t('femaleCode')}</span>
-              <span class="ss-card-scan"></span>
-            </span>
-            <span class="ss-card-copy">
-              <span class="ss-card-line"><i>${cardCopy('female').index}</i><b>${cardCopy('female').name}</b></span>
-              <em>${cardCopy('female').role}</em>
-              <small>${cardCopy('female').desc}</small>
-              <span class="ss-tags"><u>${cardCopy('female').tagA}</u><u>${cardCopy('female').tagB}</u></span>
-            </span>
-            <span class="ss-card-check" aria-hidden="true"><i></i></span>
-          </button>
+          ${UNIT_KINDS.map(cardMarkup).join('')}
         </div>
       </section>
 
@@ -290,22 +288,30 @@
   function clearPreviewModel() {
     if (!state.pivot || !state.current) return;
     state.pivot.remove(state.current.model);
+    if (typeof state.current.dispose === 'function') state.current.dispose();
     state.current = null;
+  }
+
+  function modelApiFor(kind) {
+    return isMachine(kind)
+      ? window.SaltUnitModels
+      : (window.SoldierModels || window.HunterAvatar);
   }
 
   function mountPreviewModel(kind) {
     if (!state.open || !ensurePreview()) return;
-    const api = window.SoldierModels || window.HunterAvatar;
+    const unit = normalizeSoldier(kind);
+    const api = modelApiFor(unit);
     if (!api || typeof api.create !== 'function') return;
     clearPreviewModel();
-    const made = api.create(normalizeSoldier(kind));
+    const made = api.create(unit, { preview: true });
     if (!made || !made.model) {
       setModelState(t('fallback'), true);
       return;
     }
     state.current = made;
     state.pivot.add(made.model);
-    overlay.dataset.previewKind = made.kind || normalizeSoldier(kind);
+    overlay.dataset.previewKind = made.kind || unit;
     el.stageLoading.hidden = true;
     setModelState(t('ready'));
     try {
@@ -345,21 +351,27 @@
     state.raf = 0;
   }
 
-  function startThumbnails() {
+  async function startThumbnails() {
     if (state.thumbsStarted) return;
     state.thumbsStarted = true;
-    const api = window.SoldierModels || window.HunterAvatar;
-    if (!api || typeof api.create !== 'function' || !ensurePreview()) return;
+    if (!ensurePreview()) return;
     try {
       clearPreviewModel();
       state.pivot.rotation.y = -Math.PI / 2 - 0.16;
-      for (const kind of ['male', 'female']) {
-        const made = api.create(kind);
+      for (const kind of UNIT_KINDS) {
+        const api = modelApiFor(kind);
+        if (!api || typeof api.create !== 'function') continue;
+        const made = api.create(kind, { preview: true });
         if (!made || !made.model) continue;
         state.pivot.add(made.model);
+        made.model.updateMatrixWorld(true);
+        if (kind === 'hound' || kind === 'drone') made.model.scale.multiplyScalar(1.12);
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
         state.renderer.render(state.scene, state.camera);
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
         const url = state.renderer.domElement.toDataURL('image/png');
         state.pivot.remove(made.model);
+        if (typeof made.dispose === 'function') made.dispose();
         const card = overlay.querySelector(`.ss-card[data-kind="${kind}"]`);
         const img = card && card.querySelector('.ss-thumb');
         if (img && url) {
@@ -374,19 +386,20 @@
   }
 
   function waitForModels() {
-    const api = window.SoldierModels || window.HunterAvatar;
-    if (!api || typeof api.whenReady !== 'function') {
+    const humanApi = window.SoldierModels || window.HunterAvatar;
+    const machineApi = window.SaltUnitModels;
+    if (!humanApi || !machineApi || typeof humanApi.whenReady !== 'function' || typeof machineApi.whenReady !== 'function') {
       window.setTimeout(waitForModels, 150);
       return;
     }
     setModelState(t('loading'));
-    Promise.all([api.whenReady('male'), api.whenReady('female')]).then(([maleReady, femaleReady]) => {
-      if (maleReady || femaleReady) {
-        startThumbnails();
+    Promise.all(UNIT_KINDS.map((kind) => modelApiFor(kind).whenReady(kind))).then(async (ready) => {
+      if (ready.some(Boolean)) {
+        await startThumbnails();
         mountPreviewModel(state.selected);
       }
-      if (!maleReady && !femaleReady) setModelState(t('fallback'), true);
-      else if (state.selected === 'female' && !femaleReady) setModelState(t('fallback'), true);
+      const selectedIndex = UNIT_KINDS.indexOf(state.selected);
+      if (!ready.some(Boolean) || !ready[selectedIndex]) setModelState(t('fallback'), true);
     }).catch(() => setModelState(t('fallback'), true));
   }
 
@@ -468,7 +481,9 @@
     card.addEventListener('keydown', (event) => {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       event.preventDefault();
-      updateSelection(state.selected === 'male' ? 'female' : 'male', true);
+      const direction = event.key === 'ArrowRight' ? 1 : -1;
+      const index = UNIT_KINDS.indexOf(state.selected);
+      updateSelection(UNIT_KINDS[(index + direction + UNIT_KINDS.length) % UNIT_KINDS.length], true);
     });
   }
   el.confirm.addEventListener('click', confirm);

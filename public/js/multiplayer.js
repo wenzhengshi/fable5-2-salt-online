@@ -9,6 +9,7 @@
 
   const STORAGE_NAME = 'saltline.multiplayer.name';
   const STORAGE_SOLDIER = 'saltline.multiplayer.soldier';
+  const UNIT_KINDS = ['male', 'female', 'hound', 'drone'];
   const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS'];
   const REPO_URL = 'https://github.com/wenzhengshi/fable5-2-salt-online';
   const REPO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>';
@@ -93,7 +94,11 @@
   }
 
   function normalizeSoldier(value) {
-    return value === 'female' ? 'female' : 'male';
+    return UNIT_KINDS.includes(value) ? value : 'male';
+  }
+
+  function isMachine(value) {
+    return value === 'hound' || value === 'drone';
   }
 
   function loadSoldier() {
@@ -106,6 +111,15 @@
 
   let myName = loadName();
   let mySoldier = loadSoldier();
+  let localUnit = null;
+  let localUnitRequest = 0;
+  let localUnitKind = null;
+  let unitFlightY = 0;
+  let lastUnitBadgeAt = 0;
+  const virtualUnitInput = {
+    ascend: false,
+    descend: false
+  };
   let G = null;
   let THREE = null;
   let scene = null;
@@ -157,6 +171,11 @@
       <span class="mp-ping" id="mp-ping">—</span>
       <button class="mp-roster-btn" id="mp-roster-btn" type="button"></button>
     </div>
+    <div class="mp-unit" id="mp-unit" hidden>
+      <span data-mp-label="unitLabel"></span>
+      <b id="mp-unit-name"></b>
+      <em id="mp-unit-alt"></em>
+    </div>
     <div class="mp-feed" id="mp-feed" aria-live="polite"></div>
     <div class="mp-respawn" id="mp-respawn" hidden>
       <div class="mp-respawn-card" role="status" aria-live="assertive">
@@ -195,9 +214,14 @@
     <div class="mp-toast" id="mp-toast" hidden></div>
   `;
   uiRoot.appendChild(ui);
+  const touchControlObserver = new MutationObserver(() => installUnitTouchControls());
+  touchControlObserver.observe(uiRoot, { childList: true, subtree: true });
 
   const el = {
     chip: ui.querySelector('#mp-chip'),
+    unit: ui.querySelector('#mp-unit'),
+    unitName: ui.querySelector('#mp-unit-name'),
+    unitAlt: ui.querySelector('#mp-unit-alt'),
     dot: ui.querySelector('#mp-dot'),
     online: ui.querySelector('#mp-online'),
     kills: ui.querySelector('#mp-kills'),
@@ -228,7 +252,8 @@
     callsign: t('callsign'),
     nameNote: t('nameNote'),
     board: t('board'),
-    rosterHint: t('rosterHint')
+    rosterHint: t('rosterHint'),
+    unitLabel: t('unitLabel')
   };
   ui.querySelectorAll('[data-mp-label]').forEach((node) => {
     node.textContent = labelText[node.getAttribute('data-mp-label')] || '';
@@ -607,6 +632,7 @@
       });
       G.player.enabled = true;
       G.player.invulnerable = true;
+      unitFlightY = 0;
       G.game.state = 'playing';
       G.hud.show(true);
       G.game.menus.show('none');
@@ -738,6 +764,7 @@
     avatar.legs = [];
     avatar.arms = [];
     avatar.soldierKind = null;
+    avatar.machine = false;
   }
 
   function buildFallbackAvatar(avatar, kind) {
@@ -804,6 +831,92 @@
     }
     avatar.legs = [legL, legR];
     avatar.arms = [armL, armR];
+    avatar.machine = false;
+  }
+
+  function buildMachineFallbackAvatar(avatar, kind) {
+    if (!avatar || avatar.disposed || avatar.fallbackBuilt) return;
+    avatar.fallbackBuilt = true;
+    avatar.soldierKind = normalizeSoldier(kind);
+    avatar.machine = true;
+    const color = avatarColor(avatar.data && avatar.data.color);
+    const shell = new THREE.MeshStandardMaterial({ color: 0x20292d, roughness: 0.56, metalness: 0.58 });
+    const trim = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color.clone().multiplyScalar(0.6),
+      emissiveIntensity: 1.1,
+      roughness: 0.38,
+      metalness: 0.36
+    });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x0a0f12, roughness: 0.5, metalness: 0.72 });
+    const parts = [];
+
+    if (kind === 'hound') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.24, 0.9), shell);
+      body.position.y = 0.64;
+      const spine = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.62), trim);
+      spine.position.set(0, 0.79, 0.03);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 0.3), shell);
+      head.position.set(0, 0.7, -0.48);
+      const gun = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.5, 8), dark);
+      gun.rotation.x = Math.PI / 2;
+      gun.position.set(0, 0.82, -0.57);
+      parts.push(body, spine, head, gun);
+      for (const x of [-0.22, 0.22]) {
+        for (const z of [-0.31, 0.31]) {
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.58, 7), dark);
+          leg.position.set(x, 0.32, z);
+          leg.rotation.z = x < 0 ? -0.2 : 0.2;
+          parts.push(leg);
+        }
+      }
+    } else {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.2, 0.54), shell);
+      body.position.y = 1.15;
+      const sensor = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), trim);
+      sensor.position.set(0, 1.08, -0.25);
+      parts.push(body, sensor);
+      for (const x of [-0.32, 0.32]) {
+        for (const z of [-0.28, 0.28]) {
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.035, 0.035), dark);
+          arm.position.set(x * 0.55, 1.18, z);
+          const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.018, 18), trim);
+          rotor.position.set(x, 1.22, z);
+          parts.push(arm, rotor);
+        }
+      }
+    }
+
+    for (const mesh of parts) {
+      mesh.castShadow = true;
+      mesh.userData.mpHunterFallback = true;
+      avatar.body.add(mesh);
+    }
+  }
+
+  function mountMachineAvatar(avatar, kind) {
+    if (!avatar || avatar.disposed || avatar.hunter) return;
+    const api = window.SaltUnitModels;
+    if (!api || typeof api.create !== 'function') {
+      buildMachineFallbackAvatar(avatar, kind);
+      return;
+    }
+    try {
+      const made = api.create(kind);
+      if (!made || !made.model) throw new Error('machine unit clone unavailable');
+      made.model.name = `mp-${kind}-model`;
+      avatar.body.add(made.model);
+      avatar.hunter = made.model;
+      avatar.rig = made.rig;
+      avatar.weapon = null;
+      avatar.soldierKind = made.kind || normalizeSoldier(kind);
+      avatar.machine = true;
+      avatar.legs = [];
+      avatar.arms = [];
+    } catch (err) {
+      console.error('[mp] machine avatar mount failed', err);
+      buildMachineFallbackAvatar(avatar, kind);
+    }
   }
 
   function mountHunterAvatar(avatar, kind) {
@@ -822,6 +935,7 @@
       avatar.rig = hunter.rig;
       avatar.weapon = hunter.weapon || null;
       avatar.soldierKind = hunter.kind || normalizeSoldier(kind);
+      avatar.machine = false;
       avatar.legs = [];
       avatar.arms = [];
     } catch (err) {
@@ -833,6 +947,23 @@
   function requestHunterAvatar(avatar, kind) {
     const soldier = normalizeSoldier(kind);
     const requestId = (avatar.soldierRequest = (avatar.soldierRequest || 0) + 1);
+    if (isMachine(soldier)) {
+      const api = window.SaltUnitModels;
+      const attachMachine = (ok) => {
+        if (!avatar || avatar.disposed || avatar.soldierRequest !== requestId) return;
+        if (!ok || !api || !api.isReady(soldier)) buildMachineFallbackAvatar(avatar, soldier);
+        else mountMachineAvatar(avatar, soldier);
+      };
+      if (api && typeof api.whenReady === 'function') {
+        api.whenReady(soldier).then(attachMachine).catch(() => attachMachine(false));
+      } else {
+        window.setTimeout(() => {
+          const loaded = window.SaltUnitModels && window.SaltUnitModels.isReady(soldier);
+          attachMachine(!!loaded);
+        }, 150);
+      }
+      return;
+    }
     const attach = (ok) => {
       if (!avatar || avatar.disposed || avatar.soldierRequest !== requestId) return;
       if (!ok || !window.HunterAvatar || !window.HunterAvatar.isReady(soldier)) {
@@ -923,6 +1054,7 @@
       hunter: null,
       rig: null,
       weapon: null,
+      machine: false,
       soldierKind: null,
       soldierRequest: 0,
       fallbackBuilt: false,
@@ -1023,7 +1155,8 @@
         if (avatar.legs[1]) avatar.legs[1].rotation.x *= 0.9;
       }
       const pose = Math.min(1, dt * 10);
-      const targetLabelY = 2.28;
+      const kind = avatar.soldierKind || normalizeSoldier(avatar.data && avatar.data.soldier);
+      const targetLabelY = isMachine(kind) ? (kind === 'drone' ? 1.35 : 1.05) : 2.28;
       if (avatar.body) {
         avatar.body.rotation.y += (0 - avatar.body.rotation.y) * pose;
         avatar.body.rotation.x += (0 - avatar.body.rotation.x) * pose;
@@ -1038,6 +1171,13 @@
 
   function avatarHitBox(avatar) {
     const pos = avatar.group.position;
+    const kind = avatar.soldierKind || normalizeSoldier(avatar.data && avatar.data.soldier);
+    if (kind === 'drone') {
+      return { x: pos.x, y: pos.y + 0.28, z: pos.z, hx: 0.55, hy: 0.62, hz: 0.55 };
+    }
+    if (kind === 'hound') {
+      return { x: pos.x, y: pos.y + 0.18, z: pos.z, hx: 0.58, hy: 0.58, hz: 0.58 };
+    }
     return { x: pos.x, y: pos.y + 0.95, z: pos.z, hx: 0.46, hy: 0.96, hz: 0.46 };
   }
 
@@ -1195,6 +1335,210 @@
     });
   }
 
+  function unitName(kind) {
+    const unit = normalizeSoldier(kind);
+    return t(`unit${unit.charAt(0).toUpperCase()}${unit.slice(1)}`);
+  }
+
+  function removeLocalUnit() {
+    if (localUnit && localUnit.model && localUnit.model.parent) {
+      localUnit.model.parent.remove(localUnit.model);
+    }
+    localUnit = null;
+    localUnitKind = null;
+  }
+
+  function updateUnitBadge() {
+    const kind = normalizeSoldier(mySoldier);
+    const machine = isMachine(kind);
+    el.unit.hidden = !machine;
+    if (!machine) return;
+    el.unitName.textContent = unitName(kind);
+    const altitude = G && G.player ? Math.max(0, G.player.pos.y) : 0;
+    el.unitAlt.textContent = kind === 'drone'
+      ? t('unitAltitude', { n: altitude.toFixed(1) })
+      : t('unitGround');
+    el.unit.dataset.kind = kind;
+  }
+
+  function setMachineWeaponVisual(hidden) {
+    if (!G || !G.weapon || !G.weapon.root) return;
+    const root = G.weapon.root;
+    // The game uses root.visible as the fire-enable flag. Keeping it true while
+    // hiding direct visual children preserves shooting, ammo and recoil logic.
+    root.visible = true;
+    if (!Array.isArray(G.weapon.__unitChildVisibility)) {
+      G.weapon.__unitChildVisibility = root.children.map((child) => ({
+        node: child,
+        visible: child.visible
+      }));
+    }
+    for (const item of G.weapon.__unitChildVisibility) {
+      if (item && item.node) item.node.visible = hidden ? false : item.visible;
+    }
+  }
+
+  function installUnitTouchControls() {
+    const touch = document.querySelector('#ui .touch');
+    if (!touch) return;
+    const kind = normalizeSoldier(mySoldier);
+    const machine = isMachine(kind);
+    touch.dataset.unit = machine ? kind : 'infantry';
+    const jump = touch.querySelector('.t-jump span');
+    const fire = touch.querySelector('.t-fire span');
+    if (jump) {
+      jump.dataset.defaultText ||= jump.textContent;
+      const nextJump = kind === 'drone' ? t('unitAscend') : machine ? t('unitJump') : jump.dataset.defaultText;
+      if (jump.textContent !== nextJump) jump.textContent = nextJump;
+    }
+    if (fire) {
+      fire.dataset.defaultText ||= fire.textContent;
+      const nextFire = machine ? t('unitFire') : fire.dataset.defaultText;
+      if (fire.textContent !== nextFire) fire.textContent = nextFire;
+    }
+
+    let descend = touch.querySelector('.t-descend');
+    if (!descend) {
+      descend = document.createElement('button');
+      descend.type = 'button';
+      descend.className = 't-btn t-descend';
+      descend.dataset.a = 'unit-descend';
+      descend.setAttribute('aria-label', t('unitDescend'));
+      descend.innerHTML = `<span>${t('unitDescend')}</span>`;
+      const releaseDescend = (event) => {
+        if (event) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        virtualUnitInput.descend = false;
+        descend.classList.remove('active');
+      };
+      descend.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        virtualUnitInput.descend = true;
+        descend.classList.add('active');
+        try { descend.setPointerCapture(event.pointerId); } catch (err) { /* ignore */ }
+      }, { passive: false });
+      descend.addEventListener('pointerup', releaseDescend, { passive: false });
+      descend.addEventListener('pointercancel', releaseDescend, { passive: false });
+      descend.addEventListener('lostpointercapture', releaseDescend, { passive: false });
+      touch.appendChild(descend);
+    }
+    const shouldHide = kind !== 'drone';
+    if (descend.hidden !== shouldHide) descend.hidden = shouldHide;
+    if (kind !== 'drone') virtualUnitInput.descend = false;
+  }
+
+  function installLocalUnit() {
+    if (!G || !G.player || !scene || !THREE) return;
+    const kind = normalizeSoldier(mySoldier);
+    updateUnitBadge();
+    try { setMachineWeaponVisual(isMachine(kind)); } catch (err) { /* ignore */ }
+    installUnitTouchControls();
+    if (!isMachine(kind)) {
+      removeLocalUnit();
+      return;
+    }
+    if (localUnit && localUnitKind === kind) return;
+    removeLocalUnit();
+    const requestId = ++localUnitRequest;
+    const api = window.SaltUnitModels;
+    if (!api || typeof api.whenReady !== 'function') return;
+    api.whenReady(kind).then((ready) => {
+      if (!ready || requestId !== localUnitRequest || normalizeSoldier(mySoldier) !== kind) return;
+      const made = api.create(kind);
+      if (!made || !made.model) return;
+      localUnit = made;
+      localUnitKind = kind;
+      made.model.name = `local-${kind}-unit`;
+      made.model.position.copy(G.player.pos);
+      // First-person camera occupies the same space as the controlled chassis.
+      // Keep the local clone for shared animation state, but never render it into our own view.
+      made.model.visible = false;
+      scene.add(made.model);
+    }).catch(() => {});
+  }
+
+  function applyLocalUnitFrame(dt) {
+    if (!G || !G.player || !G.camera) return;
+    const player = G.player;
+    const input = G.input;
+    const kind = normalizeSoldier(mySoldier);
+    if (!isMachine(kind)) return;
+
+    if (kind === 'drone') {
+      let ground = 0;
+      try {
+        ground = Number(G.physics.groundHeight(player.pos.x, player.pos.z, player.pos.y + 3)) || 0;
+      } catch (err) {
+        ground = 0;
+      }
+      const minY = ground + 1.05;
+      const ascend = virtualUnitInput.ascend || !!(input && input.down && input.down('jump'));
+      const descend = virtualUnitInput.descend || !!(input && input.down && input.down('sprint'));
+      if (!unitFlightY || unitFlightY < minY) unitFlightY = minY;
+      if (ascend) unitFlightY += 4.6 * dt;
+      if (descend) unitFlightY -= 4.6 * dt;
+      unitFlightY = Math.max(minY, Math.min(22, unitFlightY));
+      player.pos.y = unitFlightY;
+      player.vel.y = 0;
+      player.onGround = false;
+      player.eye.set(player.pos.x, player.pos.y + 0.9, player.pos.z);
+    } else {
+      unitFlightY = 0;
+      try {
+        const ground = Number(G.physics.groundHeight(player.pos.x, player.pos.z, player.pos.y + 2));
+        if (Number.isFinite(ground)) player.pos.y = ground;
+      } catch (err) { /* ignore */ }
+      player.eye.set(player.pos.x, player.pos.y + 0.68, player.pos.z);
+    }
+
+    G.camera.position.copy(player.eye);
+    if (localUnit && localUnit.model) {
+      localUnit.model.position.copy(player.pos);
+      localUnit.model.rotation.set(
+        kind === 'drone' ? player.pitch * 0.22 : 0,
+        player.yaw,
+        kind === 'drone' && input && input.move ? -input.move.x * 0.1 : 0
+      );
+      localUnit.rig.update(dt, {
+        moving: !!(player.vel && Math.hypot(player.vel.x, player.vel.z) > 0.6),
+        sprint: !!player.sprinting
+      });
+    }
+  }
+
+  function patchPlayerForUnits() {
+    if (!G || !G.player || typeof G.player.update !== 'function') return;
+    if (G.player.update.__saltlineUnitPatch) return;
+    const original = G.player.update;
+    const wrapped = function wrappedUnitPlayerUpdate(dt) {
+      const result = original.call(this, dt);
+      try { applyLocalUnitFrame(dt); } catch (err) { /* ignore */ }
+      return result;
+    };
+    wrapped.__saltlineUnitPatch = true;
+    G.player.update = wrapped;
+    if (G.weapon && typeof G.weapon.update === 'function' && !G.weapon.update.__saltlineUnitPatch) {
+      const originalWeaponUpdate = G.weapon.update;
+      const weaponWrap = function wrappedUnitWeaponUpdate(dt) {
+        const result = originalWeaponUpdate.call(this, dt);
+        if (isMachine(mySoldier)) setMachineWeaponVisual(true);
+        return result;
+      };
+      weaponWrap.__saltlineUnitPatch = true;
+      G.weapon.update = weaponWrap;
+    }
+  }
+
+  function applyUnitSelection() {
+    updateUnitBadge();
+    installLocalUnit();
+    patchPlayerForUnits();
+    sendState(true);
+  }
+
   function connect() {
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
     window.clearTimeout(reconnectTimer);
@@ -1274,6 +1618,7 @@
         myName = cleanName(myName) || msg.name;
         myColor = msg.color || myColor;
         mySoldier = normalizeSoldier(msg.soldier || mySoldier);
+        applyUnitSelection();
         break;
       }
       case 'joined': {
@@ -1291,6 +1636,7 @@
         el.nameInput.value = myName;
         saveName(myName);
         everJoined = true;
+        applyUnitSelection();
         if (filtered) toast(t('nameFiltered'));
         else if (acceptedRename) toast(t('nameSaved'));
         break;
@@ -1298,11 +1644,15 @@
       case 'soldierAck': {
         mySoldier = normalizeSoldier(msg.soldier || mySoldier);
         saveSoldier(mySoldier);
+        applyUnitSelection();
         break;
       }
       case 'soldierState': {
         const soldier = normalizeSoldier(msg.soldier);
-        if (msg.id === myId) mySoldier = soldier;
+        if (msg.id === myId) {
+          mySoldier = soldier;
+          applyUnitSelection();
+        }
         const avatar = avatars.get(String(msg.id));
         if (avatar && avatar.data) {
           avatar.data.soldier = soldier;
@@ -1484,6 +1834,9 @@
     }
 
     patchCombat();
+    patchPlayerForUnits();
+    installLocalUnit();
+    updateUnitBadge();
 
     window.clearInterval(stateTimer);
     stateTimer = window.setInterval(() => sendState(false), 100);
@@ -1515,6 +1868,10 @@
       const dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0.016;
       lastFrame = now;
       try { updateAvatars(dt); } catch (err) { /* ignore */ }
+      if (isMachine(mySoldier) && now - lastUnitBadgeAt > 180) {
+        lastUnitBadgeAt = now;
+        try { updateUnitBadge(); } catch (err) { /* ignore */ }
+      }
       window.requestAnimationFrame(frame);
     };
     window.requestAnimationFrame(frame);
@@ -1605,6 +1962,7 @@
       mySoldier = normalizeSoldier(value);
       saveSoldier(mySoldier);
       if (ws && ws.readyState === 1) send({ type: 'soldier', soldier: mySoldier });
+      applyUnitSelection();
       return mySoldier;
     }
   };

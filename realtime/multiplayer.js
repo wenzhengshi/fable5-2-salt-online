@@ -20,7 +20,7 @@ const MAX_AUDIO_CHUNK = 8192;
 const MAX_AUDIO_BYTES_PER_SEC = 96 * 1024;
 const VOICE_MAGIC = 0x56;
 const COLORS = ['#ffb347', '#5fd0ff', '#8affc1', '#ff7a90', '#c39bff', '#ffe066', '#7ef0e2', '#ff9f5a'];
-const SOLDIERS = ['male', 'female'];
+const SOLDIERS = ['male', 'female', 'hound', 'drone'];
 
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
 

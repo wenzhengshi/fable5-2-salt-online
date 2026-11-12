@@ -14,12 +14,24 @@
     ));
   }
 
+  function reasonKey() {
+    if (reason === 'forced') return 'reasonForced';
+    if (reason === 'timeout') return 'reasonTimeout';
+    if (reason === 'mobile') return 'reasonMobile';
+    return 'reasonWebgl';
+  }
+
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
   }
 
   function lerp(a, b, amount) {
     return a + (b - a) * amount;
+  }
+
+  const UNIT_KINDS = ['male', 'female', 'hound', 'drone'];
+  function normalizeUnit(value) {
+    return UNIT_KINDS.includes(value) ? value : 'male';
   }
 
   const query = new URLSearchParams(location.search);
@@ -76,6 +88,7 @@
   };
   const me = {
     x: 0,
+    y: 0,
     z: 4,
     yaw: 0,
     hp: 100,
@@ -89,6 +102,8 @@
     kills: 0,
     deaths: 0,
     inHeli: false,
+    kind: 'male',
+    phase: 0,
     deadUntil: 0,
     invulnerableUntil: 0
   };
@@ -127,7 +142,7 @@
     note.setAttribute('aria-live', 'polite');
     const kicker = createNode('div', 'compat-note-k', t('kicker'));
     const title = createNode('b', '', t('title'));
-    const reasonText = createNode('p', '', t(reason === 'forced' ? 'reasonForced' : reason === 'timeout' ? 'reasonTimeout' : 'reasonWebgl'));
+    const reasonText = createNode('p', '', t(reasonKey()));
     const row = createNode('div', 'compat-note-row');
     const status = createNode('span', 'compat-note-status', t('webglOff'));
     const retry = createNode('button', 'compat-retry', t('retry'));
@@ -181,6 +196,8 @@
       ['ct-left', '←', 'KeyA', 'hold'],
       ['ct-right', '→', 'KeyD', 'hold'],
       ['ct-fire', t('fire'), 'fire', 'hold'],
+      ['ct-rise', t('ascend'), 'Space', 'hold'],
+      ['ct-descend', t('descend'), 'ShiftLeft', 'hold'],
       ['ct-use', 'E', 'KeyE', 'tap']
     ];
     for (const [cls, label, code, mode] of touchButtons) {
@@ -208,6 +225,8 @@
     ui.deadLine = deadLine;
     ui.deadBtn = deadBtn;
     ui.touch = touch;
+    ui.touchRise = touch.querySelector('.ct-rise');
+    ui.touchDescend = touch.querySelector('.ct-descend');
 
     retry.addEventListener('click', () => {
       const next = new URL(location.href);
@@ -500,6 +519,7 @@
       me.x = 0;
       me.z = 4;
     }
+    me.y = me.kind === 'drone' ? 1.2 : 0;
     ui.dead.hidden = true;
     shake = 0;
     toast(t('respawned'));
@@ -652,11 +672,31 @@
       if (Math.hypot(dx, dy) > 12) me.yaw = Math.atan2(dx, -dy);
     }
 
+    const api = mp();
+    me.kind = normalizeUnit(api && api.soldier ? api.soldier : me.kind);
+    if (ui.touchRise) ui.touchRise.style.display = me.kind === 'drone' ? 'grid' : 'none';
+    if (ui.touchDescend) ui.touchDescend.style.display = me.kind === 'drone' ? 'grid' : 'none';
     const forward = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
     const strafe = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
-    const speed = me.inHeli ? 19 : (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 10.4 : 7;
-    me.sprinting = !me.inHeli && speed > 9 && (forward !== 0 || strafe !== 0);
+    const sprinting = (keys.has('ShiftLeft') || keys.has('ShiftRight')) && me.kind !== 'drone';
+    const speed = me.inHeli
+      ? 19
+      : me.kind === 'drone'
+        ? 11
+        : me.kind === 'hound'
+          ? (sprinting ? 10.5 : 8.2)
+          : (sprinting ? 10.4 : 7);
+    me.sprinting = !me.inHeli && me.kind !== 'drone' && speed > 9 && (forward !== 0 || strafe !== 0);
     me.moving = forward !== 0 || strafe !== 0;
+    me.phase += dt * (me.moving ? (me.sprinting ? 13 : 9) : 2);
+
+    if (me.kind === 'drone' && !me.inHeli) {
+      if (keys.has('Space')) me.y += 4.6 * dt;
+      if (keys.has('ShiftLeft') || keys.has('ShiftRight')) me.y -= 4.6 * dt;
+      me.y = clamp(me.y || 1.2, 1.2, 22);
+    } else {
+      me.y = me.inHeli ? 3.2 : 0;
+    }
 
     if (me.moving) {
       const norm = Math.hypot(forward, strafe) || 1;
@@ -761,7 +801,7 @@
       lastStateAt = now;
       send({
         type: 'state',
-        pos: { x: me.x, y: me.inHeli ? 3.2 : 0, z: me.z },
+        pos: { x: me.x, y: me.y, z: me.z },
         yaw: me.yaw,
         pitch: 0,
         active: me.alive,
@@ -1082,12 +1122,69 @@
     ctx.globalAlpha = 1;
   }
 
+  function drawMachineTopDown(kind, radius, color, phase) {
+    ctx.lineCap = 'round';
+    if (kind === 'hound') {
+      ctx.fillStyle = '#12191d';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, radius * 0.62, radius * 1.05, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(232,228,218,0.55)';
+      ctx.lineWidth = 1.3;
+      const swing = Math.sin(phase) * radius * 0.2;
+      for (const x of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(x * radius * 0.42, -radius * 0.55);
+        ctx.lineTo(x * radius * 0.95, -radius * 0.8 + swing);
+        ctx.moveTo(x * radius * 0.42, radius * 0.55);
+        ctx.lineTo(x * radius * 0.95, radius * 0.8 - swing);
+        ctx.stroke();
+      }
+      ctx.fillStyle = color;
+      ctx.fillRect(-radius * 0.16, -radius * 0.88, radius * 0.32, radius * 0.42);
+      return;
+    }
+
+    ctx.strokeStyle = 'rgba(232,228,218,0.62)';
+    ctx.lineWidth = 1.25;
+    for (const x of [-1, 1]) {
+      for (const z of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(x * radius * 1.05, z * radius * 1.05);
+        ctx.stroke();
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.55 + (Math.sin(phase + x + z) * 0.5 + 0.5) * 0.4;
+        ctx.beginPath();
+        ctx.arc(x * radius * 1.05, z * radius * 1.05, radius * 0.32, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = 'rgba(232,228,218,0.62)';
+      }
+    }
+    ctx.fillStyle = '#11181d';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 0.5, radius * 0.72, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, -radius * 0.28, Math.max(1.4, radius * 0.14), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   function drawAvatar(item, cam) {
     const p = worldToScreen(item.x, item.z, cam);
     if (p.x < -60 || p.x > width + 60 || p.y < -60 || p.y > height + 60) return;
     const data = item.data || {};
     const color = data.color || '#5fd0ff';
-    const radius = 0.46 * scale;
+    const kind = normalizeUnit(data.soldier);
+    const radius = (kind === 'hound' || kind === 'drone' ? 0.56 : 0.46) * scale;
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(item.yaw);
@@ -1095,16 +1192,20 @@
     ctx.beginPath();
     ctx.ellipse(3, 4, radius * 1.3, radius * 0.75, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#151b20';
-    ctx.beginPath();
-    ctx.ellipse(0, 0, radius, radius * 0.9, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, radius, radius * 0.9, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    drawTopDownRifle(radius, color);
+    if (kind === 'hound' || kind === 'drone') {
+      drawMachineTopDown(kind, radius, color, performance.now() / 80 + item.id.length);
+    } else {
+      ctx.fillStyle = '#151b20';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, radius, radius * 0.9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, radius, radius * 0.9, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      drawTopDownRifle(radius, color);
+    }
     ctx.restore();
 
     const hp = Number(data.hp);
@@ -1132,7 +1233,8 @@
 
   function drawPlayer(cam, now) {
     const p = worldToScreen(me.x, me.z, cam);
-    const radius = (me.inHeli ? 0.32 : 0.48) * scale;
+    const machine = me.kind === 'hound' || me.kind === 'drone';
+    const radius = (me.inHeli ? 0.32 : machine ? 0.58 : 0.48) * scale;
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(me.yaw);
@@ -1140,21 +1242,25 @@
     ctx.beginPath();
     ctx.arc(0, 0, radius * 2.2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#0b0d0f';
-    ctx.strokeStyle = '#ffb347';
-    ctx.lineWidth = 2.2;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, radius, radius * 0.9, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#ffb347';
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * 0.3, 0, Math.PI * 2);
-    ctx.fill();
-    drawTopDownRifle(radius, '#ffb347');
+    if (machine) {
+      drawMachineTopDown(me.kind, radius, '#ffb347', me.phase);
+    } else {
+      ctx.fillStyle = '#0b0d0f';
+      ctx.strokeStyle = '#ffb347';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, radius, radius * 0.9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#ffb347';
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      drawTopDownRifle(radius, '#ffb347');
+    }
     ctx.restore();
 
-    if (me.inHeli) return;
+    if (me.inHeli || machine) return;
 
     const walk = me.moving ? Math.sin(now / 90) * radius * 0.22 : 0;
     ctx.strokeStyle = 'rgba(232,228,218,0.5)';
@@ -1412,7 +1518,7 @@
       const hint = document.querySelector('.boot-hint');
       const fill = document.getElementById('boot-fill');
       if (sub) sub.textContent = t('title');
-      if (hint) hint.textContent = t(reason === 'forced' ? 'reasonForced' : reason === 'timeout' ? 'reasonTimeout' : 'reasonWebgl');
+      if (hint) hint.textContent = t(reasonKey());
       if (fill) fill.style.width = '100%';
       boot.classList.add('done');
       boot.style.display = 'none';

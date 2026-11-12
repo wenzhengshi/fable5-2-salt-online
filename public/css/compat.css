@@ -325,6 +325,8 @@ body.is-compat { --compat-orange: #ffb347; --compat-orange-hot: #ffc977; }
   .compat-touch .ct-left { left: 14px; bottom: 101px; width: 46px; height: 46px; }
   .compat-touch .ct-right { left: 114px; bottom: 101px; width: 46px; height: 46px; }
   .compat-touch .ct-fire { right: 18px; bottom: 72px; width: 68px; height: 68px; border-color: rgba(255, 90, 64, 0.46); color: #ff8b73; }
+  .compat-touch .ct-rise { right: 95px; bottom: 118px; width: 44px; height: 44px; border-color: rgba(95, 208, 255, 0.52); color: #bdefff; }
+  .compat-touch .ct-descend { right: 152px; bottom: 72px; width: 44px; height: 44px; border-color: rgba(95, 208, 255, 0.52); color: #bdefff; }
   .compat-touch .ct-use { right: 95px; bottom: 57px; width: 44px; height: 44px; color: var(--compat-orange); }
   .compat-note { width: calc(100vw - 28px); }
   .compat-vitals { bottom: calc(16px + var(--sab)); width: 210px; grid-template-columns: minmax(118px, 1fr) auto; }

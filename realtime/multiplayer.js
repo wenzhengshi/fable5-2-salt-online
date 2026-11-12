@@ -3,6 +3,7 @@
 const { WebSocketServer } = require('ws');
 const storage = require('../config/storage');
 const contentFilter = require('../services/contentFilter');
+const chatHistory = require('../services/chatHistory');
 
 const TICK_MS = 100;
 const RESPAWN_MS = 5000;
@@ -19,6 +20,7 @@ const MAX_AUDIO_CHUNK = 8192;
 const MAX_AUDIO_BYTES_PER_SEC = 96 * 1024;
 const VOICE_MAGIC = 0x56;
 const COLORS = ['#ffb347', '#5fd0ff', '#8affc1', '#ff7a90', '#c39bff', '#ffe066', '#7ef0e2', '#ff9f5a'];
+const SOLDIERS = ['male', 'female'];
 
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
 
@@ -72,6 +74,10 @@ function colorFor(id) {
   const text = String(id || '');
   for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
   return COLORS[hash % COLORS.length];
+}
+
+function normalizeSoldier(value) {
+  return SOLDIERS.includes(value) ? value : 'male';
 }
 
 function sanitizeChat(raw) {
@@ -262,6 +268,7 @@ function getOnlinePlayers() {
     id: player.id,
     name: player.name,
     color: player.color,
+    soldier: player.soldier,
     kills: player.kills,
     deaths: player.deaths,
     streak: player.streak,
@@ -279,6 +286,7 @@ function rosterPayload() {
       id: player.id,
       name: player.name,
       color: player.color,
+      soldier: player.soldier,
       kills: player.kills,
       deaths: player.deaths,
       streak: player.streak,
@@ -353,15 +361,27 @@ function handleMessage(player, raw) {
       const filtered = !!requested && contentFilter.isBlocked(requested);
       player.name = uniqueName(filtered ? '' : requested, player);
       player.spawns = sanitizeSpawns(msg.spawns);
+      player.soldier = normalizeSoldier(msg.soldier);
       player.joined = true;
       send(player.ws, {
         type: 'joined',
         id: player.id,
         name: player.name,
         color: player.color,
+        soldier: player.soldier,
         filtered
       });
       broadcast({ type: 'notice', kind: 'join', name: player.name, id: player.id });
+      break;
+    }
+    case 'soldier': {
+      const soldier = normalizeSoldier(msg.soldier);
+      if (player.soldier === soldier) {
+        send(player.ws, { type: 'soldierAck', soldier });
+        break;
+      }
+      player.soldier = soldier;
+      broadcast({ type: 'soldierState', id: player.id, soldier });
       break;
     }
     case 'spawns': {
@@ -393,14 +413,34 @@ function handleMessage(player, raw) {
         break;
       }
       player.lastChatAt = now;
-      broadcast({
-        type: 'chat',
-        id: player.id,
+      const saved = chatHistory.append({
+        playerId: player.id,
         name: player.name,
         color: player.color,
         text,
         at: now
       });
+      if (!saved) {
+        send(player.ws, { type: 'chatDenied', reason: 'empty' });
+        break;
+      }
+      broadcast({
+        type: 'chat',
+        id: player.id,
+        mid: saved.id,
+        name: saved.name,
+        color: saved.color,
+        text: saved.text,
+        at: saved.at,
+        persisted: saved.persisted !== false
+      });
+      if (saved.persisted === false) {
+        send(player.ws, {
+          type: 'chatWarning',
+          reason: 'storage',
+          mid: saved.id
+        });
+      }
       break;
     }
     case 'voiceState': {
@@ -439,6 +479,7 @@ function handleMessage(player, raw) {
         id: player.id,
         name: player.name,
         color: player.color,
+        soldier: player.soldier,
         renamed: true
       });
       if (next !== previous) {
@@ -459,7 +500,7 @@ function handleMessage(player, raw) {
       if (typeof msg.active === 'boolean') player.active = msg.active;
       player.moving = !!msg.moving;
       player.sprint = !!msg.sprint;
-      player.crouch = !!msg.crouch;
+      player.prone = false;
       player.lastSeen = now;
       break;
     }
@@ -576,10 +617,12 @@ function addPlayer(ws) {
     numId,
     name: randomName(),
     color: colorFor(id),
+    soldier: 'male',
     ws,
     pos: { x: 0, y: 0, z: 4 },
     yaw: 0,
     pitch: 0,
+    prone: false,
     hp: MAX_HP,
     alive: true,
     active: false,
@@ -606,6 +649,7 @@ function addPlayer(ws) {
     id,
     name: player.name,
     color: player.color,
+    soldier: player.soldier,
     respawnMs: RESPAWN_MS,
     online: players.size,
     voiceRelay: {
@@ -650,6 +694,7 @@ function tick() {
       id: player.id,
       name: player.name,
       color: player.color,
+      soldier: player.soldier,
       x: round(player.pos.x),
       y: round(player.pos.y),
       z: round(player.pos.z),
@@ -658,7 +703,6 @@ function tick() {
       hp: Math.round(player.hp),
       moving: !!player.moving,
       sprint: !!player.sprint,
-      crouch: !!player.crouch,
       shield: now < player.protectedUntil
     });
   }
@@ -777,6 +821,7 @@ module.exports = {
   getOnlinePlayers,
   shutdownMultiplayer() {
     flushBoard();
+    chatHistory.flush();
   },
   RESPAWN_MS
 };

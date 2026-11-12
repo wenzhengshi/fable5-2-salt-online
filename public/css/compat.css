@@ -1,0 +1,356 @@
+/* compat.css — Canvas 2D tactical fallback used when WebGL2 cannot start. */
+
+body.is-compat #view { display: none; }
+body.is-compat #fatal { display: none !important; }
+body.is-compat { --compat-orange: #ffb347; --compat-orange-hot: #ffc977; }
+
+#compat-view {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+  background: #0c0d0f;
+}
+
+#compat-ui {
+  position: absolute;
+  inset: 0;
+  z-index: 36;
+  pointer-events: none;
+  color: var(--bone);
+  font-family: var(--f-label);
+}
+
+#compat-ui [hidden] { display: none !important; }
+
+.compat-note {
+  position: absolute;
+  top: calc(14px + var(--sat));
+  left: var(--gl);
+  width: min(430px, calc(100vw - 310px));
+  padding: 10px 12px 11px;
+  border: 1px solid rgba(232, 228, 218, 0.17);
+  border-left: 2px solid var(--compat-orange);
+  border-radius: 3px;
+  background: linear-gradient(100deg, rgba(12, 13, 15, 0.9), rgba(12, 13, 15, 0.68));
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  pointer-events: auto;
+}
+
+.compat-note-k {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+  color: var(--compat-orange);
+  font: 600 9px/1 var(--f-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.compat-note-k::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 9px currentColor;
+}
+
+.compat-note b {
+  display: block;
+  color: var(--bone);
+  font: 700 18px/1 var(--f-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.compat-note p {
+  margin: 5px 0 0;
+  color: rgba(232, 228, 218, 0.58);
+  font: 400 10px/1.5 var(--f-mono);
+  letter-spacing: 0.02em;
+}
+
+.compat-note-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.compat-note-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(138, 255, 193, 0.74);
+  font: 500 9px/1.3 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compat-retry {
+  min-height: 28px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 179, 71, 0.42);
+  border-radius: 2px;
+  background: rgba(255, 179, 71, 0.1);
+  color: var(--compat-orange-hot);
+  font: 600 9px/1 var(--f-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, transform 0.12s ease;
+}
+
+.compat-retry:hover { background: var(--compat-orange); color: #0c0d0f; }
+.compat-retry:active { transform: scale(0.97); }
+.compat-retry:focus-visible { outline: 2px solid var(--compat-orange-hot); outline-offset: 2px; }
+
+.compat-vitals {
+  position: absolute;
+  left: var(--gl);
+  bottom: calc(22px + var(--sab));
+  display: grid;
+  grid-template-columns: minmax(142px, 1fr) auto;
+  gap: 8px;
+  width: min(330px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.compat-vital {
+  position: relative;
+  min-height: 54px;
+  padding: 8px 10px 9px;
+  border: 1px solid rgba(232, 228, 218, 0.16);
+  border-radius: 3px;
+  background: rgba(10, 12, 14, 0.82);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.compat-vital-k {
+  display: block;
+  color: rgba(232, 228, 218, 0.44);
+  font: 500 8px/1 var(--f-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.compat-vital-n {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 3px;
+  color: var(--bone);
+  font: 700 21px/1 var(--f-display);
+  letter-spacing: 0.03em;
+}
+
+.compat-vital-n small {
+  color: rgba(232, 228, 218, 0.42);
+  font: 500 9px/1 var(--f-mono);
+  letter-spacing: 0.06em;
+}
+
+.compat-health-track {
+  position: relative;
+  height: 3px;
+  margin-top: 7px;
+  overflow: hidden;
+  background: rgba(232, 228, 218, 0.12);
+}
+
+.compat-health-track i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #ff7a55, var(--compat-orange) 44%, #8affc1);
+  transform-origin: left center;
+  transition: transform 0.15s ease;
+}
+
+.compat-vital.is-low .compat-health-track i { background: #ff5a40; }
+.compat-vital.is-low .compat-vital-n { color: #ff8b73; }
+
+.compat-vital.is-ammo { min-width: 88px; text-align: right; }
+.compat-vital.is-ammo .compat-vital-n { justify-content: flex-end; }
+.compat-vital.is-ammo.is-reloading .compat-vital-n { color: var(--compat-orange); }
+.compat-vital.is-ammo.is-empty .compat-vital-n { color: #ff5a40; }
+
+.compat-controls {
+  position: absolute;
+  left: 50%;
+  bottom: calc(82px + var(--sab));
+  max-width: min(680px, calc(100vw - 36px));
+  padding: 5px 10px;
+  border: 1px solid rgba(232, 228, 218, 0.11);
+  border-radius: 2px;
+  background: rgba(8, 10, 12, 0.58);
+  color: rgba(232, 228, 218, 0.42);
+  font: 400 9px/1.4 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.compat-heli-prompt {
+  position: absolute;
+  left: 50%;
+  top: 61%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px 7px 8px;
+  border: 1px solid rgba(255, 179, 71, 0.44);
+  border-radius: 2px;
+  background: rgba(8, 10, 12, 0.82);
+  color: var(--bone);
+  font: 600 11px/1 var(--f-label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transform: translateX(-50%);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.42);
+}
+
+.compat-heli-prompt kbd {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border: 1px solid rgba(255, 179, 71, 0.58);
+  border-radius: 2px;
+  color: var(--compat-orange);
+  font: 700 13px/1 var(--f-display);
+}
+
+.compat-dead {
+  position: absolute;
+  inset: 0;
+  z-index: 58;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: radial-gradient(circle at center, rgba(41, 7, 4, 0.5), rgba(12, 13, 15, 0.88) 62%);
+  pointer-events: auto;
+}
+
+.compat-dead-card {
+  width: min(330px, 88vw);
+  padding: 24px 26px 22px;
+  border: 1px solid rgba(255, 90, 64, 0.32);
+  border-top: 2px solid #ff5a40;
+  border-radius: 3px;
+  background: rgba(12, 13, 15, 0.93);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+  text-align: center;
+}
+
+.compat-dead-k {
+  color: #ff8b73;
+  font: 600 9px/1 var(--f-mono);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.compat-dead-n {
+  margin: 8px 0 2px;
+  color: var(--bone);
+  font: 800 56px/1 var(--f-display);
+  letter-spacing: 0.04em;
+}
+
+.compat-dead-line {
+  color: rgba(232, 228, 218, 0.58);
+  font: 400 10px/1.5 var(--f-mono);
+  letter-spacing: 0.08em;
+}
+
+.compat-dead-btn {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 16px;
+  border: 1px solid rgba(255, 179, 71, 0.45);
+  border-radius: 2px;
+  background: var(--compat-orange);
+  color: #0c0d0f;
+  font: 700 11px/1 var(--f-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.compat-dead-btn:disabled { cursor: not-allowed; opacity: 0.34; }
+.compat-dead-btn:not(:disabled):hover { background: var(--compat-orange-hot); }
+
+.compat-touch { display: none; }
+
+@media (pointer: coarse) {
+  .compat-controls { display: none; }
+  .compat-touch {
+    position: absolute;
+    inset: 0;
+    display: block;
+    pointer-events: none;
+  }
+  .compat-touch button {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(232, 228, 218, 0.24);
+    border-radius: 50%;
+    background: rgba(10, 12, 14, 0.7);
+    color: rgba(232, 228, 218, 0.8);
+    font: 700 14px/1 var(--f-display);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+    pointer-events: auto;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .compat-touch button.on { border-color: var(--compat-orange); background: rgba(255, 179, 71, 0.22); color: var(--compat-orange-hot); }
+  .compat-touch .ct-up { left: 64px; bottom: 148px; width: 46px; height: 46px; }
+  .compat-touch .ct-down { left: 64px; bottom: 54px; width: 46px; height: 46px; }
+  .compat-touch .ct-left { left: 14px; bottom: 101px; width: 46px; height: 46px; }
+  .compat-touch .ct-right { left: 114px; bottom: 101px; width: 46px; height: 46px; }
+  .compat-touch .ct-fire { right: 18px; bottom: 72px; width: 68px; height: 68px; border-color: rgba(255, 90, 64, 0.46); color: #ff8b73; }
+  .compat-touch .ct-use { right: 95px; bottom: 57px; width: 44px; height: 44px; color: var(--compat-orange); }
+  .compat-note { width: calc(100vw - 28px); }
+  .compat-vitals { bottom: calc(16px + var(--sab)); width: 210px; grid-template-columns: minmax(118px, 1fr) auto; }
+  .compat-vital { min-height: 46px; padding: 7px 8px 8px; }
+  .compat-vital-n { font-size: 18px; }
+  .compat-vital.is-ammo { min-width: 72px; }
+  .compat-heli-prompt { top: 66%; }
+}
+
+@media (max-width: 760px) {
+  .compat-note { top: calc(56px + var(--sat)); padding: 9px 10px 10px; }
+  .compat-note b { font-size: 15px; }
+  .compat-note p { font-size: 9px; }
+  .compat-note-status { display: none; }
+  .compat-note-row { margin-top: 7px; justify-content: flex-end; }
+  .mp-chip { top: calc(168px + var(--sat)); }
+  .mp-feed { top: calc(212px + var(--sat)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compat-note, .compat-vital, .compat-dead-card { animation: none !important; }
+}
+
+/* Only expose the virtual pad after a real touch device/pointer is detected.
+   Headless and desktop browsers can report (hover: none) without being touch devices. */
+body:not(.is-touch-ui) .compat-touch { display: none !important; }
+body.is-touch-ui .compat-touch { display: block; }
+body.is-touch-ui .compat-controls { display: none; }
+body.is-touch-ui .compat-vitals { bottom: calc(212px + var(--sab)); width: 198px; }

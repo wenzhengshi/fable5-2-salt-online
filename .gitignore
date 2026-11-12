@@ -3,6 +3,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+.jicreate-pi-agent/
 
 data/*
 !data/.gitkeep

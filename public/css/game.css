@@ -175,6 +175,7 @@ body { background: var(--ink); color: var(--bone); overflow: hidden; font-family
   font: 600 12px/1 var(--f-label); letter-spacing: .14em; padding: 0; margin: 0; -webkit-appearance: none; appearance: none; }
 .t-btn span { pointer-events: none; margin-right: -.14em; }
 .t-btn.active { background: rgba(255, 179, 71, .32); border-color: var(--signal); color: var(--signal); }
+.t-btn.t-prone { display: none !important; }
 .t-fire { width: 86px; height: 86px; right: calc(20px + var(--sar)); bottom: calc(62px + var(--sab)); font-size: 14px; }
 .t-ads { width: 60px; height: 60px; right: calc(120px + var(--sar)); bottom: calc(34px + var(--sab)); }
 .t-jump { width: 60px; height: 60px; right: calc(20px + var(--sar)); bottom: calc(164px + var(--sab)); }

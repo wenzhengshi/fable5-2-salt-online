@@ -1,12 +1,12 @@
 {
   "name": "fable5-2-salt-online",
-  "version": "1.11.0",
+  "version": "1.20.0",
   "description": "浏览器中的多人在线 3D 港口枪战游戏",
   "main": "index.js",
   "private": true,
   "scripts": {
     "start": "node index.js",
-    "check": "node --check index.js && node --check routes/api.js && node --check controllers/gameController.js && node --check controllers/userController.js && node --check services/contentFilter.js && node --check realtime/multiplayer.js && node --check public/js/multiplayer.js && node --check public/js/comms.js && node --check public/js/i18n.js"
+    "check": "node --check index.js && node --check routes/api.js && node --check controllers/gameController.js && node --check controllers/userController.js && node --check services/contentFilter.js && node --check services/chatHistory.js && node --check config/storage.js && node --check realtime/multiplayer.js && node --check public/js/multiplayer.js && node --check public/js/comms.js && node --check public/js/i18n.js && node --check public/js/compat-game.js && node --check public/js/controls.js && node --check public/js/hunter-avatar.js && node --check public/js/soldier-select.js && node --check public/js/webgl-guard.js"
   },
   "engines": {
     "node": ">=18"

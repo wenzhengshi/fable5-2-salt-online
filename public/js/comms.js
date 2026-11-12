@@ -101,8 +101,15 @@
         <button class="vc-send" id="vc-send" type="submit"><span data-vc-label="send"></span><kbd>↵</kbd></button>
       </form>
       <div class="vc-history-wrap">
-        <div class="vc-section-label" data-vc-label="recent"></div>
-        <ol class="vc-history" id="vc-history"></ol>
+        <div class="vc-history-head">
+          <span class="vc-section-label" data-vc-label="recent"></span>
+          <span class="vc-history-total" id="vc-history-total"></span>
+        </div>
+        <p class="vc-history-hint" id="vc-history-hint"></p>
+        <div class="vc-history-scroll" id="vc-history-scroll">
+          <ol class="vc-history" id="vc-history"></ol>
+          <button class="vc-history-more" id="vc-history-more" type="button" hidden></button>
+        </div>
         <p class="vc-empty" id="vc-empty"></p>
       </div>
     </section>
@@ -137,6 +144,10 @@
     send: ui.querySelector('#vc-send'),
     count: ui.querySelector('#vc-count'),
     history: ui.querySelector('#vc-history'),
+    historyScroll: ui.querySelector('#vc-history-scroll'),
+    historyMore: ui.querySelector('#vc-history-more'),
+    historyTotal: ui.querySelector('#vc-history-total'),
+    historyHint: ui.querySelector('#vc-history-hint'),
     empty: ui.querySelector('#vc-empty'),
     audio: ui.querySelector('#vc-audio')
   };
@@ -164,6 +175,7 @@
   el.voiceOff.textContent = t('closeMic');
   el.voiceMute.textContent = t('micMute');
   el.empty.textContent = t('noRecent');
+  el.historyHint.textContent = t('historyHint');
   el.mic.setAttribute('aria-label', t('openMic'));
   el.mic.title = t('voiceHint');
   el.listen.setAttribute('aria-label', t('listenMute'));
@@ -222,8 +234,15 @@
   const chatQueue = [];
   let bannerTimer = 0;
   let bannerActive = false;
-  const recent = [];
   let panelOpen = false;
+  const historyItems = [];
+  const historyIds = new Set();
+  let historyCursor = null;
+  let historyTotal = 0;
+  let historyHasMore = true;
+  let historyLoaded = false;
+  let historyLoading = false;
+  let historyFailed = false;
 
   function send(payload) {
     return typeof mp.send === 'function' ? mp.send(payload) : false;
@@ -671,11 +690,13 @@
   function openPanel(focus) {
     panelOpen = true;
     el.panel.hidden = false;
+    el.historyScroll.scrollTop = 0;
     el.chatToggle.setAttribute('aria-expanded', 'true');
     el.rail.dataset.open = '1';
     document.body.classList.add('vc-panel-open');
     try { if (document.pointerLockElement) document.exitPointerLock(); } catch (err) { /* ignore */ }
     updateCounter();
+    ensureHistory();
     if (focus) {
       window.requestAnimationFrame(() => {
         try { el.input.focus({ preventScroll: true }); } catch (err) { el.input.focus(); }
@@ -692,27 +713,177 @@
     try { el.input.blur(); } catch (err) { /* ignore */ }
   }
 
+  function localeTag() {
+    return config.lang === 'en-US' ? 'en-US' : 'zh-CN';
+  }
+
+  function formatMessageTime(at) {
+    if (!at) return '';
+    const date = new Date(at);
+    if (!Number.isFinite(date.getTime())) return '';
+    const now = new Date();
+    const sameDay = date.getFullYear() === now.getFullYear()
+      && date.getMonth() === now.getMonth()
+      && date.getDate() === now.getDate();
+    const options = sameDay
+      ? { hour: '2-digit', minute: '2-digit' }
+      : { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' };
+    try {
+      return new Intl.DateTimeFormat(localeTag(), options).format(date);
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function normalizeHistoryItem(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const text = cleanText(raw.text);
+    if (!text) return null;
+    const at = Number(raw.at) || Date.now();
+    const playerId = String(raw.playerId || raw.id || '');
+    const id = String(raw.id || ('live:' + playerId + ':' + at + ':' + text));
+    return {
+      id,
+      playerId,
+      name: cleanText(raw.name) || '—',
+      color: /^#[0-9a-f]{3,8}$/i.test(String(raw.color || '')) ? raw.color : '#ffb347',
+      text,
+      at
+    };
+  }
+
+  function historyKey(item) {
+    return item ? String(item.id || ('live:' + item.playerId + ':' + item.at + ':' + item.text)) : '';
+  }
+
+  function isMyMessage(item) {
+    return !!(item && myId && item.playerId === myId);
+  }
+
+  function appendHistoryItems(rows) {
+    for (const raw of rows) {
+      const item = normalizeHistoryItem(raw);
+      if (!item) continue;
+      const key = historyKey(item);
+      if (historyIds.has(key)) continue;
+      historyIds.add(key);
+      historyItems.push(item);
+    }
+  }
+
+  function updateHistoryStatus() {
+    if (!el.historyMore) return;
+    if (historyLoading) {
+      el.historyMore.hidden = false;
+      el.historyMore.disabled = true;
+      el.historyMore.dataset.state = 'loading';
+      el.historyMore.textContent = t('historyLoading');
+      return;
+    }
+    if (historyFailed) {
+      el.historyMore.hidden = false;
+      el.historyMore.disabled = false;
+      el.historyMore.dataset.state = 'error';
+      el.historyMore.textContent = t('historyFailed');
+      return;
+    }
+    if (historyHasMore) {
+      el.historyMore.hidden = false;
+      el.historyMore.disabled = false;
+      el.historyMore.dataset.state = 'more';
+      el.historyMore.textContent = t('historyLoadMore');
+      return;
+    }
+    el.historyMore.dataset.state = 'done';
+    el.historyMore.disabled = true;
+    el.historyMore.hidden = historyItems.length === 0;
+    el.historyMore.textContent = t('historyAll', { n: historyTotal || historyItems.length });
+  }
+
   function renderHistory() {
-    el.history.innerHTML = '';
-    el.empty.hidden = recent.length > 0;
-    for (const item of recent) {
+    const fragment = document.createDocumentFragment();
+    for (const item of historyItems) {
       const row = document.createElement('li');
-      row.className = item.id === myId ? 'self' : '';
-      row.style.setProperty('--speaker-color', item.color || '#ffb347');
-      const who = document.createElement('b');
-      who.textContent = item.id === myId ? t('you') : item.name;
+      row.className = isMyMessage(item) ? 'self' : '';
+      row.dataset.mid = item.id;
+      row.style.setProperty('--speaker-color', item.color);
+      const who = document.createElement('span');
+      who.className = 'vc-history-who';
+      const name = document.createElement('b');
+      name.textContent = isMyMessage(item) ? t('you') : item.name;
+      const time = document.createElement('time');
+      time.textContent = formatMessageTime(item.at);
+      if (item.at) {
+        try { time.dateTime = new Date(item.at).toISOString(); } catch (err) { /* ignore */ }
+        try { time.title = new Date(item.at).toLocaleString(localeTag()); } catch (err) { /* ignore */ }
+      }
+      who.append(name, time);
       const text = document.createElement('span');
+      text.className = 'vc-history-text';
       text.textContent = item.text;
       row.append(who, text);
-      el.history.appendChild(row);
+      fragment.appendChild(row);
     }
+    el.history.replaceChildren(fragment);
+    el.historyTotal.textContent = historyTotal > 0 ? t('historyCount', { n: historyTotal }) : '';
+    el.empty.hidden = !(historyLoaded && !historyLoading && historyItems.length === 0);
+    updateHistoryStatus();
+  }
+
+  async function fetchHistory() {
+    if (historyLoading) return;
+    if (historyLoaded && !historyHasMore) return;
+    historyLoading = true;
+    historyFailed = false;
+    renderHistory();
+    try {
+      const params = new URLSearchParams({ limit: '20' });
+      if (historyCursor) params.set('before', historyCursor);
+      const response = await fetch('/api/game/chat/history?' + params.toString(), {
+        headers: { accept: 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if (!data || data.ok !== true) throw new Error('invalid payload');
+      const rows = Array.isArray(data.messages) ? data.messages : [];
+      appendHistoryItems(rows);
+      historyTotal = Math.max(Number(data.total) || 0, historyItems.length);
+      historyHasMore = data.hasMore === true;
+      if (data.nextCursor) historyCursor = String(data.nextCursor);
+      historyLoaded = true;
+    } catch (err) {
+      historyFailed = true;
+    } finally {
+      historyLoading = false;
+      renderHistory();
+    }
+  }
+
+  function ensureHistory(force) {
+    if (historyLoading) return;
+    if (!force && (historyLoaded || historyFailed)) return;
+    if (historyLoaded && !historyHasMore) return;
+    fetchHistory();
+  }
+
+  function loadMoreHistory() {
+    if (historyLoading || (historyLoaded && !historyHasMore)) return;
+    fetchHistory();
+  }
+
+  function onHistoryScroll() {
+    if (!panelOpen || historyLoading || historyFailed || !historyHasMore) return;
+    const remaining = el.historyScroll.scrollHeight - el.historyScroll.scrollTop - el.historyScroll.clientHeight;
+    if (remaining < 72) loadMoreHistory();
   }
 
   function showNextBanner() {
     if (bannerActive || !chatQueue.length) return;
     const item = chatQueue.shift();
     bannerActive = true;
-    el.bannerName.textContent = item.id === myId ? t('you') : item.name;
+    el.bannerName.textContent = isMyMessage(item) ? t('you') : item.name;
     el.bannerName.style.color = item.color || 'var(--signal)';
     el.bannerText.textContent = item.text;
     el.banner.dataset.size = item.text.length > 54 ? 'long' : item.text.length > 30 ? 'medium' : 'short';
@@ -734,18 +905,28 @@
   }
 
   function receiveChat(msg) {
-    const item = {
-      id: String(msg.id || ''),
-      name: cleanText(msg.name) || '—',
-      color: msg.color || '#ffb347',
-      text: cleanText(msg.text),
-      at: Number(msg.at) || Date.now()
-    };
-    if (!item.text) return;
-    if (item.id === myId) lastChatAttempt = '';
-    recent.unshift(item);
-    while (recent.length > 5) recent.pop();
+    const item = normalizeHistoryItem({
+      id: msg.mid || ('live:' + String(msg.id || '') + ':' + Number(msg.at || Date.now())),
+      playerId: String(msg.id || ''),
+      name: msg.name,
+      color: msg.color,
+      text: msg.text,
+      at: msg.at
+    });
+    if (!item) return;
+    if (isMyMessage(item)) lastChatAttempt = '';
+    const key = historyKey(item);
+    if (!historyIds.has(key)) {
+      historyIds.add(key);
+      historyItems.unshift(item);
+      if (historyLoaded) historyTotal += 1;
+    }
+    const nearTop = el.historyScroll.scrollTop < 40;
+    const previousHeight = el.historyScroll.scrollHeight;
     renderHistory();
+    if (panelOpen && !nearTop && el.historyScroll.scrollHeight > previousHeight) {
+      el.historyScroll.scrollTop += el.historyScroll.scrollHeight - previousHeight;
+    }
     chatQueue.push(item);
     showNextBanner();
   }
@@ -779,6 +960,17 @@
   el.close.addEventListener('click', (event) => {
     event.preventDefault();
     closePanel();
+  });
+  el.historyScroll.addEventListener('scroll', onHistoryScroll, { passive: true });
+  el.historyMore.addEventListener('click', (event) => {
+    event.preventDefault();
+    if (historyFailed) {
+      historyFailed = false;
+      renderHistory();
+      ensureHistory(true);
+      return;
+    }
+    loadMoreHistory();
   });
   el.voiceOff.addEventListener('click', (event) => {
     event.preventDefault();
@@ -898,6 +1090,9 @@
       case 'chat':
         receiveChat(msg);
         break;
+      case 'chatWarning':
+        if (msg.reason === 'storage') toast(t('storageQueued'));
+        break;
       case 'chatDenied':
         if (msg.reason === 'filtered') {
           if (lastChatAttempt && !el.input.value) {
@@ -905,6 +1100,8 @@
             updateCounter();
           }
           toast(t('blocked'));
+        } else if (msg.reason === 'storage') {
+          toast(t('storageQueued'));
         } else {
           toast(msg.reason === 'rate' ? t('rate') : t('empty'));
         }

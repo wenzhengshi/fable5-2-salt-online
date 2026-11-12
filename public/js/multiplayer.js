@@ -8,6 +8,7 @@
   if (!uiRoot) return;
 
   const STORAGE_NAME = 'saltline.multiplayer.name';
+  const STORAGE_SOLDIER = 'saltline.multiplayer.soldier';
   const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS'];
   const REPO_URL = 'https://github.com/wenzhengshi/fable5-2-salt-online';
   const REPO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>';
@@ -91,7 +92,20 @@
     try { localStorage.setItem(STORAGE_NAME, value); } catch (err) { /* ignore */ }
   }
 
+  function normalizeSoldier(value) {
+    return value === 'female' ? 'female' : 'male';
+  }
+
+  function loadSoldier() {
+    try { return normalizeSoldier(localStorage.getItem(STORAGE_SOLDIER)); } catch (err) { return 'male'; }
+  }
+
+  function saveSoldier(value) {
+    try { localStorage.setItem(STORAGE_SOLDIER, normalizeSoldier(value)); } catch (err) { /* ignore */ }
+  }
+
   let myName = loadName();
+  let mySoldier = loadSoldier();
   let G = null;
   let THREE = null;
   let scene = null;
@@ -701,8 +715,36 @@
     avatar.texture.needsUpdate = true;
   }
 
-  function createAvatar(data) {
-    const color = avatarColor(data.color);
+  function resetAvatarModel(avatar) {
+    if (!avatar || !avatar.body) return;
+    if (avatar.hunter) {
+      avatar.body.remove(avatar.hunter);
+      avatar.hunter = null;
+      avatar.rig = null;
+      avatar.weapon = null;
+    }
+    if (avatar.fallbackBuilt) {
+      for (const child of avatar.body.children.slice()) {
+        if (!child.userData || !child.userData.mpHunterFallback) continue;
+        avatar.body.remove(child);
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach((mat) => mat.dispose());
+          else child.material.dispose();
+        }
+      }
+      avatar.fallbackBuilt = false;
+    }
+    avatar.legs = [];
+    avatar.arms = [];
+    avatar.soldierKind = null;
+  }
+
+  function buildFallbackAvatar(avatar, kind) {
+    if (!avatar || avatar.disposed || avatar.fallbackBuilt) return;
+    avatar.fallbackBuilt = true;
+    avatar.soldierKind = normalizeSoldier(kind);
+    const color = avatarColor(avatar.data && avatar.data.color);
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x151b20, roughness: 0.72, metalness: 0.32 });
     const trimMat = new THREE.MeshStandardMaterial({
       color,
@@ -712,9 +754,6 @@
       metalness: 0.2
     });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x0d1216, roughness: 0.55, metalness: 0.5 });
-
-    const group = new THREE.Group();
-    group.name = 'mp-avatar';
 
     const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.34, 0.7, 10), bodyMat);
     torso.position.y = 1.14;
@@ -742,23 +781,108 @@
 
     const armGeo = new THREE.CylinderGeometry(0.09, 0.1, 0.52, 8);
     const armL = new THREE.Mesh(armGeo, bodyMat);
-    armL.position.set(-0.37, 1.16, -0.02);
-    armL.rotation.z = 0.16;
+    armL.position.set(-0.27, 1.15, -0.24);
+    armL.rotation.z = 0.24;
+    armL.rotation.x = -0.92;
     const armR = new THREE.Mesh(armGeo, bodyMat);
-    armR.position.set(0.37, 1.14, -0.06);
-    armR.rotation.z = -0.12;
-    armR.rotation.x = -0.35;
+    armR.position.set(0.27, 1.14, -0.24);
+    armR.rotation.z = -0.24;
+    armR.rotation.x = -0.92;
 
-    const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.15, 0.72), darkMat);
-    rifle.position.set(0.28, 1.12, -0.32);
-    const rifleTrim = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.26), trimMat);
-    rifleTrim.position.set(0.28, 1.2, -0.42);
+    const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.15, 0.78), darkMat);
+    rifle.position.set(0.02, 1.18, -0.33);
+    rifle.rotation.y = Math.PI * 0.5;
+    const rifleTrim = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.28), trimMat);
+    rifleTrim.position.set(0.01, 1.13, -0.33);
+    rifleTrim.rotation.y = Math.PI * 0.5;
 
     for (const mesh of [torso, vest, backpack, head, helmet, visor, legL, legR, bootL, bootR, armL, armR, rifle, rifleTrim]) {
       mesh.castShadow = true;
       mesh.receiveShadow = false;
-      group.add(mesh);
+      mesh.userData.mpHunterFallback = true;
+      avatar.body.add(mesh);
     }
+    avatar.legs = [legL, legR];
+    avatar.arms = [armL, armR];
+  }
+
+  function mountHunterAvatar(avatar, kind) {
+    if (!avatar || avatar.disposed || avatar.hunter) return;
+    const api = window.HunterAvatar;
+    if (!api || !api.ready || typeof api.create !== 'function') {
+      buildFallbackAvatar(avatar, kind);
+      return;
+    }
+    try {
+      const hunter = api.create(kind);
+      if (!hunter || !hunter.model) throw new Error('hunter clone unavailable');
+      hunter.model.name = 'soldier-avatar-model';
+      avatar.body.add(hunter.model);
+      avatar.hunter = hunter.model;
+      avatar.rig = hunter.rig;
+      avatar.weapon = hunter.weapon || null;
+      avatar.soldierKind = hunter.kind || normalizeSoldier(kind);
+      avatar.legs = [];
+      avatar.arms = [];
+    } catch (err) {
+      console.error('[mp] soldier avatar mount failed', err);
+      buildFallbackAvatar(avatar, kind);
+    }
+  }
+
+  function requestHunterAvatar(avatar, kind) {
+    const soldier = normalizeSoldier(kind);
+    const requestId = (avatar.soldierRequest = (avatar.soldierRequest || 0) + 1);
+    const attach = (ok) => {
+      if (!avatar || avatar.disposed || avatar.soldierRequest !== requestId) return;
+      if (!ok || !window.HunterAvatar || !window.HunterAvatar.isReady(soldier)) {
+        buildFallbackAvatar(avatar, soldier);
+        return;
+      }
+      mountHunterAvatar(avatar, soldier);
+    };
+    if (window.HunterAvatar) {
+      window.HunterAvatar.whenReady(soldier).then(attach).catch(() => attach(false));
+      return;
+    }
+    let attempts = 0;
+    const wait = () => {
+      if (!avatar || avatar.disposed || avatar.soldierRequest !== requestId) return;
+      if (window.HunterAvatar) {
+        window.HunterAvatar.whenReady(soldier).then(attach).catch(() => attach(false));
+        return;
+      }
+      attempts += 1;
+      if (attempts < 60) window.setTimeout(wait, 100);
+      else buildFallbackAvatar(avatar, soldier);
+    };
+    window.setTimeout(wait, 100);
+  }
+
+  function createAvatar(data) {
+    const color = avatarColor(data.color);
+    const group = new THREE.Group();
+    group.name = 'mp-avatar';
+    const body = new THREE.Group();
+    body.name = 'mp-avatar-body';
+    body.rotation.order = 'YXZ';
+    group.add(body);
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.34, 0.47, 32),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.48,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    ring.name = 'mp-avatar-ring';
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.014;
+    ring.renderOrder = 2;
+    group.add(ring);
 
     const canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -787,29 +911,40 @@
       id: data.id,
       data,
       group,
+      body,
       label,
       texture,
       canvas,
       ctx: canvas.getContext('2d'),
       target,
       targetYaw: data.yaw || 0,
-      legs: [legL, legR],
-      arms: [armL, armR],
+      legs: [],
+      arms: [],
+      hunter: null,
+      rig: null,
+      weapon: null,
+      soldierKind: null,
+      soldierRequest: 0,
+      fallbackBuilt: false,
+      disposed: false,
       walk: Math.random() * 10,
       hiddenAt: 0,
       lastHp: -1,
       lastShield: null,
       hitAt: 0
     };
+    requestHunterAvatar(avatar, normalizeSoldier(data.soldier));
     drawAvatarLabel(avatar);
     return avatar;
   }
 
   function disposeAvatar(avatar) {
+    avatar.disposed = true;
     scene.remove(avatar.group);
     avatar.texture.dispose();
     try { avatar.label.material.dispose(); } catch (err) { /* ignore */ }
     avatar.group.traverse((child) => {
+      if (!child.userData || !child.userData.mpHunterFallback) return;
       if (child.geometry) child.geometry.dispose();
       if (child.material) {
         if (Array.isArray(child.material)) child.material.forEach((mat) => mat.dispose());
@@ -835,6 +970,11 @@
       avatar.hiddenAt = 0;
       avatar.target.set(item.x, item.y, item.z);
       avatar.targetYaw = item.yaw || 0;
+      const soldier = normalizeSoldier(item.soldier);
+      if (avatar.soldierKind && avatar.soldierKind !== soldier) {
+        resetAvatarModel(avatar);
+        requestHunterAvatar(avatar, soldier);
+      }
       if (avatar.lastHp !== item.hp || avatar.lastShield !== item.shield) {
         avatar.lastHp = item.hp;
         avatar.lastShield = item.shield;
@@ -866,7 +1006,12 @@
       avatar.group.rotation.y += delta * Math.min(1, dt * 14);
 
       const moving = !!(avatar.data && avatar.data.moving);
-      if (moving) {
+      if (avatar.rig) {
+        avatar.rig.update(dt, {
+          moving,
+          sprint: !!(avatar.data && avatar.data.sprint)
+        });
+      } else if (moving) {
         avatar.walk += dt * (avatar.data.sprint ? 14 : 9);
         const swing = Math.sin(avatar.walk) * 0.5;
         if (avatar.legs[0]) avatar.legs[0].rotation.x = swing;
@@ -877,15 +1022,23 @@
         if (avatar.legs[0]) avatar.legs[0].rotation.x *= 0.9;
         if (avatar.legs[1]) avatar.legs[1].rotation.x *= 0.9;
       }
-      if (avatar.data && avatar.data.crouch) {
-        avatar.group.scale.y += (0.78 - avatar.group.scale.y) * Math.min(1, dt * 8);
-      } else {
-        avatar.group.scale.y += (1 - avatar.group.scale.y) * Math.min(1, dt * 8);
+      const pose = Math.min(1, dt * 10);
+      const targetLabelY = 2.28;
+      if (avatar.body) {
+        avatar.body.rotation.y += (0 - avatar.body.rotation.y) * pose;
+        avatar.body.rotation.x += (0 - avatar.body.rotation.x) * pose;
+        avatar.body.position.y += (0 - avatar.body.position.y) * pose;
       }
+      avatar.label.position.y += (targetLabelY - avatar.label.position.y) * pose;
       if (avatar.hitAt && performance.now() - avatar.hitAt < 140) {
         avatar.group.position.x += (Math.random() - 0.5) * 0.06;
       }
     }
+  }
+
+  function avatarHitBox(avatar) {
+    const pos = avatar.group.position;
+    return { x: pos.x, y: pos.y + 0.95, z: pos.z, hx: 0.46, hy: 0.96, hz: 0.46 };
   }
 
   function rayBox(origin, dir, cx, cy, cz, hx, hy, hz) {
@@ -937,8 +1090,8 @@
         let best = null;
         for (const avatar of avatars.values()) {
           if (!avatar.group.visible || !avatar.data) continue;
-          const pos = avatar.group.position;
-          const hit = rayBox(origin, dir, pos.x, pos.y + 0.95, pos.z, 0.46, 0.96, 0.46);
+          const box = avatarHitBox(avatar);
+          const hit = rayBox(origin, dir, box.x, box.y, box.z, box.hx, box.hy, box.hz);
           if (hit == null || hit <= 0.35 || hit >= limit) continue;
           if (!best || hit < best.dist) best = { avatar, dist: hit };
         }
@@ -1038,8 +1191,7 @@
       pitch: player.pitch,
       active,
       moving: !!(player.vel && Math.hypot(player.vel.x, player.vel.z) > 0.6),
-      sprint: !!player.sprinting,
-      crouch: !!player.crouching
+      sprint: !!player.sprinting
     });
   }
 
@@ -1063,7 +1215,7 @@
       reconnectDelay = 1200;
       setConnection('online');
       everJoined = false;
-      send({ type: 'join', name: myName, spawns: spawnsFromLevel() });
+      send({ type: 'join', name: myName, soldier: mySoldier, spawns: spawnsFromLevel() });
       window.clearInterval(pingTimer);
       pingTimer = window.setInterval(() => {
         if (ws && ws.readyState === 1) send({ type: 'ping', t: performance.now() });
@@ -1121,6 +1273,7 @@
         myId = msg.id;
         myName = cleanName(myName) || msg.name;
         myColor = msg.color || myColor;
+        mySoldier = normalizeSoldier(msg.soldier || mySoldier);
         break;
       }
       case 'joined': {
@@ -1133,11 +1286,31 @@
         myId = msg.id;
         myName = msg.name;
         myColor = msg.color || myColor;
+        mySoldier = normalizeSoldier(msg.soldier || mySoldier);
+        saveSoldier(mySoldier);
         el.nameInput.value = myName;
         saveName(myName);
         everJoined = true;
         if (filtered) toast(t('nameFiltered'));
         else if (acceptedRename) toast(t('nameSaved'));
+        break;
+      }
+      case 'soldierAck': {
+        mySoldier = normalizeSoldier(msg.soldier || mySoldier);
+        saveSoldier(mySoldier);
+        break;
+      }
+      case 'soldierState': {
+        const soldier = normalizeSoldier(msg.soldier);
+        if (msg.id === myId) mySoldier = soldier;
+        const avatar = avatars.get(String(msg.id));
+        if (avatar && avatar.data) {
+          avatar.data.soldier = soldier;
+          if (avatar.soldierKind && avatar.soldierKind !== soldier) {
+            resetAvatarModel(avatar);
+            requestHunterAvatar(avatar, soldier);
+          }
+        }
         break;
       }
       case 'nameDenied': {
@@ -1389,6 +1562,7 @@
     get connected() { return connected; },
     get id() { return myId; },
     get name() { return myName; },
+    get soldier() { return mySoldier; },
     get avatars() { return avatars.size; },
     get roster() { return rosterData.slice(); },
     get respawn() { return { active: respawn.active, until: respawn.until }; },
@@ -1401,6 +1575,11 @@
           x: avatar.group.position.x,
           y: avatar.group.position.y,
           z: avatar.group.position.z,
+          soldier: avatar.data.soldier,
+          soldierKind: avatar.soldierKind,
+          hunterMounted: !!avatar.hunter,
+          weaponMounted: !!(avatar.weapon && avatar.weapon.parent),
+          fallbackBuilt: !!avatar.fallbackBuilt,
           data: avatar.data
         }));
     },
@@ -1410,8 +1589,8 @@
       const limit = Number(range) || 300;
       for (const avatar of avatars.values()) {
         if (!avatar.group.visible || !avatar.data) continue;
-        const pos = avatar.group.position;
-        const hit = rayBox(origin, dir, pos.x, pos.y + 0.95, pos.z, 0.48, 0.98, 0.48);
+        const box = avatarHitBox(avatar);
+        const hit = rayBox(origin, dir, box.x, box.y, box.z, box.hx, box.hy, box.hz);
         if (hit == null || hit <= 0.35 || hit >= limit) continue;
         if (!best || hit < best.dist) best = { id: avatar.id, dist: hit, data: avatar.data };
       }
@@ -1421,6 +1600,12 @@
     onMessage,
     onBinary,
     send,
-    sendBinary
+    sendBinary,
+    setSoldier(value) {
+      mySoldier = normalizeSoldier(value);
+      saveSoldier(mySoldier);
+      if (ws && ws.readyState === 1) send({ type: 'soldier', soldier: mySoldier });
+      return mySoldier;
+    }
   };
 })();

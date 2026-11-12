@@ -5,6 +5,7 @@ const {
   RESPAWN_MS
 } = require('../realtime/multiplayer');
 const contentFilter = require('../services/contentFilter');
+const chatHistoryStore = require('../services/chatHistory');
 
 module.exports = {
   health(req, res) {
@@ -17,15 +18,25 @@ module.exports = {
   },
 
   meta(req, res) {
+    const chatStorage = chatHistoryStore.status();
     res.json({
       ok: true,
       lang: req.lang,
       title: req.t('game.title'),
       tagline: req.t('game.tagline'),
-      version: '1.11.0',
-      engine: 'WebGL / Three.js (bundled)',
+      version: '1.20.0',
+      engine: 'WebGL2 / Three.js (bundled) + Canvas 2D fallback',
+      rendering: {
+        primary: 'webgl2',
+        fallback: 'canvas2d',
+        autoFallback: true
+      },
       mode: 'free-for-all',
       respawnSeconds: Math.round(RESPAWN_MS / 1000),
+      characters: [
+        { id: 'male', name: req.t('soldierSelect.maleName'), role: req.t('soldierSelect.maleRole') },
+        { id: 'female', name: req.t('soldierSelect.femaleName'), role: req.t('soldierSelect.femaleRole') }
+      ],
       online: getOnlinePlayers().length,
       websocket: '/ws',
       moderation: contentFilter.descriptor(),
@@ -37,7 +48,19 @@ module.exports = {
         listenerMicRequired: false,
         bigText: true,
         chatMaxLength: 80,
-        chatCooldownMs: 1200
+        chatCooldownMs: 1200,
+        chatHistory: {
+          endpoint: '/api/game/chat/history',
+          persisted: chatStorage.persisted && chatStorage.writable,
+          storage: chatStorage.file,
+          dataDir: chatStorage.dataDir,
+          dataSource: chatStorage.dataSource,
+          records: chatStorage.records,
+          pending: chatStorage.pending,
+          lastWriteAt: chatStorage.lastWriteAt,
+          pageSize: 20,
+          maxPageSize: 50
+        }
       },
       controls: [
         { keys: 'WASD', label: req.t('controls.move') },
@@ -48,13 +71,34 @@ module.exports = {
         { keys: 'E', label: req.t('controls.interact') },
         { keys: 'Space', label: req.t('controls.jump') },
         { keys: 'Shift', label: req.t('controls.sprint') },
-        { keys: 'C / Ctrl', label: req.t('controls.crouch') },
         { keys: 'F', label: req.t('controls.melee') },
         { keys: 'M', label: req.t('controls.mic') },
         { keys: 'T', label: req.t('controls.bigText') },
         { keys: 'Tab', label: req.t('controls.roster') },
         { keys: 'Esc / P', label: req.t('controls.pause') }
       ]
+    });
+  },
+
+  chatHistory(req, res) {
+    const storageStatus = chatHistoryStore.status();
+    const page = chatHistoryStore.list({
+      before: req.query && req.query.before,
+      limit: req.query && req.query.limit
+    });
+    res.json({
+      ok: true,
+      lang: req.lang,
+      persisted: storageStatus.persisted && storageStatus.writable,
+      storage: storageStatus.file,
+      dataDir: storageStatus.dataDir,
+      dataSource: storageStatus.dataSource,
+      pending: storageStatus.pending,
+      messages: page.messages,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+      total: page.total,
+      limit: page.limit
     });
   },
 

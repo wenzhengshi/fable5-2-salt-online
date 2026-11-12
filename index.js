@@ -4,12 +4,13 @@ const http = require('http');
 const express = require('express');
 const compression = require('compression');
 const apiRouter = require('./routes/api');
+const chatHistory = require('./services/chatHistory');
 const { attachMultiplayer, shutdownMultiplayer } = require('./realtime/multiplayer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const ASSET_VERSION = '20261112-clean';
+const ASSET_VERSION = '20261112-chat-storage-v3';
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -23,7 +24,7 @@ app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader(
     'Content-Security-Policy',
-    "default-src 'self';script-src 'self' 'unsafe-inline';style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;img-src 'self' data: blob:;connect-src 'self' ws: wss:;font-src 'self' data: https://fonts.gstatic.com;media-src 'self' data: blob:;worker-src 'self' blob:;frame-ancestors 'self';base-uri 'self';form-action 'self';object-src 'none';script-src-attr 'none';upgrade-insecure-requests"
+    "default-src 'self';script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval';style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;img-src 'self' data: blob:;connect-src 'self' ws: wss:;font-src 'self' data: https://fonts.gstatic.com;media-src 'self' data: blob:;worker-src 'self' blob:;frame-ancestors 'self';base-uri 'self';form-action 'self';object-src 'none';script-src-attr 'none';upgrade-insecure-requests"
   );
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -84,6 +85,13 @@ app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: '5m'
 }));
 
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
 app.use('/api', apiRouter);
 
 app.get('/', (req, res) => {
@@ -130,6 +138,13 @@ attachMultiplayer(server);
 server.listen(PORT, HOST, () => {
   console.log('Server running at http://' + HOST + ':' + PORT);
   console.log('Multiplayer WebSocket ready at ws://' + HOST + ':' + PORT + '/ws');
+  const chatStorage = chatHistory.status();
+  console.log('[chat] history file ' + chatStorage.file +
+    ' · dataDir=' + chatStorage.dataDir +
+    ' (' + chatStorage.dataSource + ')' +
+    ' · records=' + chatStorage.records +
+    ' · pending=' + chatStorage.pending +
+    ' · writable=' + chatStorage.writable);
 });
 
 let shuttingDown = false;
@@ -142,6 +157,7 @@ function shutdown(signal) {
   } catch (err) {
     console.error('[server] shutdown persist failed', err && err.message);
   }
+  chatHistory.flush();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref();
 }

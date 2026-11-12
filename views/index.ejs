@@ -12,13 +12,17 @@
     <link
       href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Barlow+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700;900&display=swap"
       rel="stylesheet"
+      media="print"
+      id="app-fonts"
     />
+    <script>setTimeout(function () { var link = document.getElementById('app-fonts'); if (link) link.media = 'all'; }, 500);</script>
     <link rel="stylesheet" href="/css/game.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/multiplayer.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/comms.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/style.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/compat.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/soldier-select.css?v=<%= assetVersion %>" />
+    <link rel="stylesheet" href="/css/focus.css?v=<%= assetVersion %>" />
   </head>
   <body>
     <div id="app">
@@ -52,19 +56,32 @@
       window.__SALT_I18N__ = <%- JSON.stringify({ lang: lang, messages: messages }).replace(/</g, '\\u003c') %>;
     </script>
     <script src="/js/webgl-guard.js?v=<%= assetVersion %>"></script>
+    <script src="/js/i18n.js?v=<%= assetVersion %>"></script>
+    <script src="/js/compat-game.js?v=<%= assetVersion %>"></script>
     <script src="/js/game.bundle.js?v=<%= assetVersion %>"></script>
     <script src="/js/ammo.js?v=<%= assetVersion %>"></script>
     <script src="/js/sail.js?v=<%= assetVersion %>"></script>
-    <script src="/js/i18n.js?v=<%= assetVersion %>"></script>
+    <script src="/js/focus-mode.js?v=<%= assetVersion %>"></script>
     <script src="/js/multiplayer.js?v=<%= assetVersion %>"></script>
     <script src="/js/comms.js?v=<%= assetVersion %>"></script>
-    <script src="/js/compat-game.js?v=<%= assetVersion %>"></script>
     <script src="/js/controls.js?v=<%= assetVersion %>"></script>
     <script type="importmap">
-      { "imports": { "three": "/vendor/three-game.js" } }
+      { "imports": { "three": "/vendor/three-game.js?v=<%= assetVersion %>" } }
     </script>
-    <script type="module" src="/js/hunter-avatar.js?v=<%= assetVersion %>"></script>
-    <script type="module" src="/js/unit-models.js?v=<%= assetVersion %>"></script>
-    <script type="module" src="/js/soldier-select.js?v=<%= assetVersion %>"></script>
+    <script>
+      (function () {
+        if (window.__SALT_FORCE_CANVAS__) return;
+        [
+          '/js/hunter-avatar.js?v=<%= assetVersion %>',
+          '/js/unit-models.js?v=<%= assetVersion %>',
+          '/js/soldier-select.js?v=<%= assetVersion %>'
+        ].forEach(function (src) {
+          var script = document.createElement('script');
+          script.type = 'module';
+          script.src = src;
+          document.body.appendChild(script);
+        });
+      })();
+    </script>
   </body>
 </html>

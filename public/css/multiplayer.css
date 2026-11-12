@@ -168,6 +168,11 @@ body.is-playing .mp-chip:hover,
 }
 
 .mp-fl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
   padding: 4px 9px;
   border-right: 2px solid var(--signal);
   background: rgba(8, 11, 13, 0.66);
@@ -184,6 +189,7 @@ body.is-playing .mp-chip:hover,
 .mp-fl b { font-weight: 700; }
 .mp-fl b.self { text-decoration: underline; text-underline-offset: 2px; }
 .mp-fl span { color: rgba(232, 228, 218, 0.55); }
+.mp-fl .mp-unit-tag { color: var(--unit-color); }
 .mp-fl.sys {
   border-right-color: var(--line);
   color: rgba(232, 228, 218, 0.6);
@@ -191,6 +197,65 @@ body.is-playing .mp-chip:hover,
   letter-spacing: 0.08em;
 }
 .mp-fl.out { opacity: 0; }
+
+/* Controlled-unit badge shared by kill feed and death card. */
+.mp-unit-tag {
+  --unit-color: #ffcf8a;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 3px 6px 3px 4px;
+  border: 1px solid rgba(255, 207, 138, 0.42);
+  border-radius: 3px;
+  background: rgba(6, 9, 11, 0.82);
+  color: var(--unit-color);
+  font: 700 8px/1 var(--f-mono);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: inset 0 0 12px rgba(255, 179, 71, 0.06);
+}
+
+.mp-unit-tag[data-kind="male"] {
+  --unit-color: #ffcf8a;
+  border-color: rgba(255, 207, 138, 0.4);
+}
+
+.mp-unit-tag[data-kind="female"] {
+  --unit-color: #ffb3cf;
+  border-color: rgba(255, 179, 207, 0.4);
+}
+
+.mp-unit-tag[data-kind="hound"] {
+  --unit-color: #8affc1;
+  border-color: rgba(138, 255, 193, 0.4);
+  box-shadow: inset 0 0 12px rgba(138, 255, 193, 0.07);
+}
+
+.mp-unit-tag[data-kind="drone"] {
+  --unit-color: #5fd0ff;
+  border-color: rgba(95, 208, 255, 0.4);
+  box-shadow: inset 0 0 12px rgba(95, 208, 255, 0.08);
+}
+
+.mp-unit-tag-i {
+  display: grid;
+  place-items: center;
+  width: 11px;
+  height: 11px;
+}
+
+.mp-unit-tag-i svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.mp-unit-tag em {
+  font-style: normal;
+}
 
 @keyframes mp-feed-in {
   to { opacity: 1; transform: none; }
@@ -247,6 +312,26 @@ body.is-playing .mp-chip:hover,
   font: 600 13px/1.4 var(--f-label);
   letter-spacing: 0.12em;
   color: rgba(232, 228, 218, 0.8);
+}
+
+.mp-respawn-unit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 7px;
+  color: rgba(232, 228, 218, 0.48);
+  font: 500 9px/1 var(--f-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.mp-respawn-unit[hidden] { display: none; }
+
+.mp-respawn-unit .mp-unit-tag {
+  padding: 5px 8px 5px 6px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
 }
 
 .mp-respawn-bar {

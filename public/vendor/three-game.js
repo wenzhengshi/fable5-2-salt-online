@@ -1,5 +1,4 @@
-const source = window.__G && window.__G.THREE;
-if (!source) throw new Error('Saltline THREE runtime is not ready');
+const source = (window.__G && window.__G.THREE) || {};
 
 const {
   AnimationClip,

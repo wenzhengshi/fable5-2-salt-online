@@ -6,6 +6,8 @@
 
   const params = new URLSearchParams(location.search);
   const force2d = params.get('gfx') === '2d' || params.get('render') === '2d';
+  const force3d = params.get('gfx') === '3d' || params.get('render') === '3d';
+  const SOFTWARE_RE = /SwiftShader|llvmpipe|Softpipe|Software Rasterizer|Microsoft Basic Render/i;
 
   const attempts = [];
   const common = {
@@ -43,11 +45,20 @@
       }
       if (context) {
         attempts.push({ ok: true, attrs });
+        let renderer = '';
+        try {
+          const info = context.getExtension('WEBGL_debug_renderer_info');
+          renderer = String(info ? context.getParameter(info.UNMASKED_RENDERER_WEBGL) : context.getParameter(context.RENDERER));
+        } catch (err) { /* ignore */ }
+        const software = SOFTWARE_RE.test(renderer);
         window.__SALT_GFX__ = {
           webgl2: true,
+          software,
+          renderer,
           recovered: attempts.length > 1,
           attempts: attempts.slice(-6)
         };
+        if (software && !force3d) window.__SALT_FORCE_CANVAS__ = true;
         return context;
       }
       if (!attempts.length || attempts[attempts.length - 1].error == null) {
@@ -72,4 +83,29 @@
   };
 
   window.__SALT_GFX__ = { webgl2: null, recovered: false, attempts: [] };
+
+  if (force2d) window.__SALT_FORCE_CANVAS__ = true;
+  if (!force2d && !force3d) {
+    try {
+      const probe = document.createElement('canvas');
+      const context = originalGetContext.call(probe, 'webgl2', common);
+      if (context) {
+        const info = context.getExtension('WEBGL_debug_renderer_info');
+        const renderer = String(info ? context.getParameter(info.UNMASKED_RENDERER_WEBGL) : context.getParameter(context.RENDERER));
+        window.__SALT_GFX__.renderer = renderer;
+        if (SOFTWARE_RE.test(renderer)) {
+          window.__SALT_FORCE_CANVAS__ = true;
+          window.__SALT_GFX__ = {
+            webgl2: false,
+            software: true,
+            renderer,
+            recovered: false,
+            attempts: []
+          };
+        }
+        const lose = context.getExtension('WEBGL_lose_context');
+        if (lose) lose.loseContext();
+      }
+    } catch (err) { /* keep the normal WebGL path */ }
+  }
 })();

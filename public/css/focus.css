@@ -1,0 +1,514 @@
+/* Manual focus mode: a read-only spectator layer shared by the 3D and Canvas 2D renderers. */
+.focus-setting-row { align-items: stretch; }
+
+.focus-setting-button {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 4px 12px;
+  min-width: 172px;
+  padding: 8px 12px;
+  border: 1px solid rgba(232, 228, 218, 0.28);
+  background: rgba(10, 13, 15, 0.65);
+  color: var(--bone, #e8e4da);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.focus-setting-button:hover,
+.focus-setting-button:focus-visible {
+  border-color: var(--signal, #ffb347);
+  background: rgba(255, 179, 71, 0.08);
+  outline: none;
+}
+
+.focus-setting-button b {
+  font: 600 12px/1.1 var(--f-label, "Barlow Condensed", sans-serif);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--signal, #ffb347);
+}
+
+.focus-setting-button i {
+  grid-column: 1 / -1;
+  font: 400 10px/1.35 var(--f-mono, "IBM Plex Mono", monospace);
+  font-style: normal;
+  color: rgba(232, 228, 218, 0.5);
+}
+
+.focus-setting-button.is-active {
+  border-color: rgba(255, 179, 71, 0.7);
+  background: rgba(255, 179, 71, 0.12);
+  box-shadow: inset 3px 0 0 var(--signal, #ffb347);
+}
+
+.compat-focus-btn {
+  min-height: 28px;
+  margin-right: auto;
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 179, 71, 0.4);
+  background: rgba(255, 179, 71, 0.08);
+  color: var(--compat-orange, #ffb347);
+  font: 600 9px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.compat-focus-btn.is-active {
+  background: rgba(255, 179, 71, 0.18);
+  color: #fff3d8;
+}
+
+#focus-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  color: #f1ede4;
+  background:
+    linear-gradient(180deg, rgba(4, 6, 8, 0.88) 0%, rgba(4, 6, 8, 0.14) 22%, rgba(4, 6, 8, 0) 62%, rgba(4, 6, 8, 0.9) 100%);
+  font-family: var(--f-label, "Barlow Condensed", sans-serif);
+  isolation: isolate;
+}
+
+#focus-mode[hidden] { display: none; }
+
+.focus-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.16;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at 50% 55%, #000 0%, transparent 76%);
+}
+
+.focus-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 180px rgba(0, 0, 0, 0.72);
+}
+
+.focus-head {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: calc(18px + env(safe-area-inset-top, 0px)) clamp(18px, 4vw, 54px) 14px;
+  border-bottom: 1px solid rgba(232, 228, 218, 0.12);
+  backdrop-filter: blur(10px);
+  background: linear-gradient(180deg, rgba(5, 8, 10, 0.72), rgba(5, 8, 10, 0.18));
+}
+
+.focus-brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+
+.focus-brand > span {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 179, 71, 0.62);
+  color: var(--signal, #ffb347);
+  font: 900 16px/1 var(--f-display, "Big Shoulders Display", sans-serif);
+  letter-spacing: 0.08em;
+  background: rgba(255, 179, 71, 0.08);
+}
+
+.focus-brand b {
+  display: block;
+  font: 600 11px/1.2 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.16em;
+  color: rgba(241, 237, 228, 0.92);
+}
+
+.focus-brand em {
+  display: block;
+  margin-top: 4px;
+  font: 500 9px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  font-style: normal;
+  letter-spacing: 0.18em;
+  color: var(--signal, #ffb347);
+  text-transform: uppercase;
+}
+
+.focus-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: center;
+  padding: 7px 12px 6px;
+  border: 1px solid rgba(126, 240, 226, 0.35);
+  background: rgba(12, 26, 28, 0.55);
+  font: 600 10px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #b9fff5;
+}
+
+.focus-live i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7ef0e2;
+  box-shadow: 0 0 0 0 rgba(126, 240, 226, 0.6);
+  animation: focusPulse 1.8s ease-out infinite;
+}
+
+.focus-time { justify-self: end; text-align: right; }
+
+.focus-time span {
+  display: block;
+  font: 500 9px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(241, 237, 228, 0.44);
+}
+
+.focus-time b {
+  display: block;
+  margin-top: 3px;
+  font: 800 clamp(22px, 3vw, 36px)/0.95 var(--f-display, "Big Shoulders Display", sans-serif);
+  letter-spacing: 0.08em;
+  color: var(--signal, #ffb347);
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-stage {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.focus-reticle {
+  position: absolute;
+  left: 50%;
+  top: 53%;
+  width: min(21vw, 190px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 179, 71, 0.2);
+  border-radius: 50%;
+}
+
+.focus-reticle::before,
+.focus-reticle::after {
+  content: "";
+  position: absolute;
+  inset: 17%;
+  border: 1px dashed rgba(232, 228, 218, 0.16);
+  border-radius: 50%;
+}
+
+.focus-reticle::after { inset: 42%; border-style: solid; border-color: rgba(255, 179, 71, 0.5); }
+
+.focus-reticle i,
+.focus-reticle b {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgba(255, 179, 71, 0.34);
+  transform: translate(-50%, -50%);
+}
+
+.focus-reticle i { width: 1px; height: 128%; }
+.focus-reticle b { width: 128%; height: 1px; }
+
+.focus-target-card {
+  justify-self: start;
+  align-self: end;
+  max-width: min(450px, 82vw);
+  margin: 0 0 clamp(22px, 6vh, 74px) clamp(4px, 5vw, 74px);
+  padding: 14px 18px 15px;
+  border-left: 3px solid var(--signal, #ffb347);
+  background: linear-gradient(90deg, rgba(6, 9, 11, 0.82), rgba(6, 9, 11, 0.4));
+  backdrop-filter: blur(8px);
+}
+
+.focus-target-k {
+  display: block;
+  font: 500 9px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(241, 237, 228, 0.48);
+}
+
+.focus-target-card b {
+  display: block;
+  margin-top: 7px;
+  overflow: hidden;
+  font: 800 clamp(25px, 4vw, 48px)/0.95 var(--f-display, "Big Shoulders Display", sans-serif);
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff8ed;
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.6);
+}
+
+.focus-target-card em {
+  display: block;
+  margin-top: 7px;
+  font: 600 11px/1 var(--f-label, "Barlow Condensed", sans-serif);
+  font-style: normal;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--signal, #ffb347);
+}
+
+.focus-waiting {
+  position: absolute;
+  left: 50%;
+  bottom: 19%;
+  transform: translateX(-50%);
+  text-align: center;
+  padding: 16px 24px;
+  border: 1px solid rgba(232, 228, 218, 0.16);
+  background: rgba(6, 9, 11, 0.64);
+  backdrop-filter: blur(8px);
+}
+
+.focus-waiting b {
+  display: block;
+  font: 800 24px/1 var(--f-display, "Big Shoulders Display", sans-serif);
+  letter-spacing: 0.08em;
+}
+
+.focus-waiting span {
+  display: block;
+  margin-top: 7px;
+  font: 400 10px/1.5 var(--f-mono, "IBM Plex Mono", monospace);
+  color: rgba(241, 237, 228, 0.5);
+}
+
+.focus-foot {
+  position: relative;
+  z-index: 2;
+  padding: 0 clamp(18px, 4vw, 54px) calc(18px + env(safe-area-inset-bottom, 0px));
+  backdrop-filter: blur(10px);
+}
+
+.focus-progress {
+  height: 2px;
+  overflow: hidden;
+  background: rgba(232, 228, 218, 0.14);
+}
+
+.focus-progress i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #ff7a55, var(--signal, #ffb347));
+  transform-origin: left center;
+  transition: transform 1s linear;
+}
+
+.focus-foot p {
+  margin: 10px 0 0;
+  font: 500 10px/1.45 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.05em;
+  color: rgba(241, 237, 228, 0.55);
+}
+
+.focus-foot small {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  font: 400 9px/1.4 var(--f-mono, "IBM Plex Mono", monospace);
+  color: rgba(241, 237, 228, 0.3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.focus-dialog[hidden] { display: none; }
+
+.focus-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 5, 7, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.focus-dialog-card {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: clamp(24px, 5vw, 42px);
+  border: 1px solid rgba(255, 179, 71, 0.34);
+  background:
+    linear-gradient(145deg, rgba(255, 179, 71, 0.08), transparent 42%),
+    #0b0e10;
+  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.64), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: #f1ede4;
+}
+
+.focus-dialog-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 96px;
+  height: 3px;
+  background: var(--signal, #ffb347);
+}
+
+.focus-dialog-kicker {
+  display: block;
+  font: 600 9px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.22em;
+  color: var(--signal, #ffb347);
+}
+
+.focus-dialog-card h2 {
+  margin: 13px 0 0;
+  font: 800 clamp(31px, 6vw, 48px)/1 var(--f-display, "Big Shoulders Display", sans-serif);
+  letter-spacing: 0.04em;
+}
+
+.focus-dialog-lead {
+  margin: 16px 0 0;
+  font: 400 13px/1.7 var(--f-label, "Barlow Condensed", sans-serif);
+  letter-spacing: 0.025em;
+  color: rgba(241, 237, 228, 0.72);
+}
+
+.focus-dialog-card ul {
+  display: grid;
+  gap: 8px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.focus-dialog-card li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 9px;
+  align-items: baseline;
+  padding: 9px 11px;
+  border: 1px solid rgba(232, 228, 218, 0.1);
+  background: rgba(232, 228, 218, 0.035);
+  font: 500 12px/1.45 var(--f-label, "Barlow Condensed", sans-serif);
+  color: rgba(241, 237, 228, 0.8);
+}
+
+.focus-dialog-card li i {
+  font: 500 9px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  font-style: normal;
+  color: var(--signal, #ffb347);
+}
+
+.focus-dialog-privacy {
+  margin: 14px 0 0;
+  font: 400 10px/1.55 var(--f-mono, "IBM Plex Mono", monospace);
+  color: rgba(241, 237, 228, 0.38);
+}
+
+.focus-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.focus-dialog-actions .btn.primary { min-width: 206px; }
+.focus-dialog-actions .btn[aria-busy="true"] { opacity: 0.62; cursor: wait; }
+
+body.focus-mode-on .hud,
+body.focus-mode-on .menu,
+body.focus-mode-on .panel,
+body.focus-mode-on .touch,
+body.focus-mode-on .comms,
+body.focus-mode-on #vc-ui,
+body.focus-mode-on #compat-ui,
+body.focus-mode-on .lang-switch,
+body.focus-mode-on .mp-chip,
+body.focus-mode-on .mp-unit,
+body.focus-mode-on .mp-respawn,
+body.focus-mode-on .mp-roster,
+body.focus-mode-on .boot {
+  display: none !important;
+}
+
+body.focus-mode-on .mp-feed {
+  top: calc(94px + env(safe-area-inset-top, 0px));
+  right: clamp(18px, 4vw, 54px);
+  z-index: 95;
+}
+
+body.focus-mode-on #view,
+body.focus-mode-on #compat-view {
+  filter: saturate(0.9) contrast(1.06) brightness(0.92);
+}
+
+body.focus-mode-on .app-toast {
+  z-index: 150 !important;
+}
+
+@keyframes focusPulse {
+  0% { box-shadow: 0 0 0 0 rgba(126, 240, 226, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(126, 240, 226, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(126, 240, 226, 0); }
+}
+
+@media (max-width: 720px) {
+  .focus-setting-button { min-width: 0; width: 100%; }
+  .focus-head {
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .focus-brand > span { width: 32px; height: 32px; }
+  .focus-brand b { font-size: 9px; letter-spacing: 0.1em; }
+  .focus-brand em { font-size: 8px; }
+  .focus-live { display: none; }
+  .focus-time b { font-size: 24px; }
+  .focus-reticle { width: 190px; opacity: 0.7; }
+  .focus-target-card {
+    margin-left: 4px;
+    margin-bottom: 40px;
+    max-width: min(330px, 84vw);
+  }
+  .focus-target-card b { font-size: 30px; }
+  .focus-foot { padding-left: 14px; padding-right: 14px; }
+  .focus-foot p { font-size: 9px; }
+  .focus-dialog-actions { flex-direction: column-reverse; }
+  .focus-dialog-actions .btn { width: 100%; }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .focus-head { padding-top: calc(8px + env(safe-area-inset-top, 0px)); padding-bottom: 8px; }
+  .focus-brand > span { width: 30px; height: 30px; }
+  .focus-brand b, .focus-brand em { display: none; }
+  .focus-time b { font-size: 22px; }
+  .focus-target-card { margin-bottom: 8px; padding: 9px 13px; }
+  .focus-target-card b { font-size: 25px; }
+  .focus-foot { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+  .focus-foot p, .focus-foot small { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focus-live i { animation: none; }
+  .focus-progress i { transition: none; }
+}

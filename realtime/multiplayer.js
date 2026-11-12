@@ -4,6 +4,7 @@ const { WebSocketServer } = require('ws');
 const storage = require('../config/storage');
 const contentFilter = require('../services/contentFilter');
 const chatHistory = require('../services/chatHistory');
+const focusMode = require('../services/focusMode');
 
 const TICK_MS = 100;
 const RESPAWN_MS = 5000;
@@ -21,6 +22,10 @@ const MAX_AUDIO_BYTES_PER_SEC = 96 * 1024;
 const VOICE_MAGIC = 0x56;
 const COLORS = ['#ffb347', '#5fd0ff', '#8affc1', '#ff7a90', '#c39bff', '#ffe066', '#7ef0e2', '#ff9f5a'];
 const SOLDIERS = ['male', 'female', 'hound', 'drone'];
+const FOCUS_BLOCKED_TYPES = new Set([
+  'state', 'soldier', 'spawns', 'chat', 'voiceState', 'rename',
+  'shot', 'hit', 'died', 'respawn'
+]);
 
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
 
@@ -142,7 +147,8 @@ function broadcastBinary(payload, filter) {
 }
 
 function relayPlayerAudio(player, data) {
-  if (!player || !player.voice || !player.voice.enabled || player.voice.muted) return;
+  if (!player || player.focusUntil > Date.now()) return;
+  if (!player.voice || !player.voice.enabled || player.voice.muted) return;
   const frame = Buffer.isBuffer(data) ? data : Buffer.from(data);
   if (frame.length < 2 || frame.length % 2 !== 0 || frame.length > MAX_AUDIO_CHUNK) return;
 
@@ -264,6 +270,7 @@ function getLeaderboard(limit) {
 }
 
 function getOnlinePlayers() {
+  const now = Date.now();
   return [...players.values()].map((player) => ({
     id: player.id,
     name: player.name,
@@ -274,6 +281,7 @@ function getOnlinePlayers() {
     streak: player.streak,
     alive: player.alive,
     active: player.active,
+    focused: player.focusUntil > now,
     voice: publicVoice(player)
   }));
 }
@@ -281,6 +289,7 @@ function getOnlinePlayers() {
 /* ------------------------------------------------------------- game actions */
 
 function rosterPayload() {
+  const now = Date.now();
   return [...players.values()]
     .map((player) => ({
       id: player.id,
@@ -292,9 +301,20 @@ function rosterPayload() {
       streak: player.streak,
       alive: player.alive,
       active: player.active,
+      focused: player.focusUntil > now,
       voice: publicVoice(player)
     }))
     .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || a.name.localeCompare(b.name));
+}
+
+function publicFighter(player) {
+  if (!player) return null;
+  return {
+    id: player.id,
+    name: player.name,
+    color: player.color,
+    soldier: player.soldier
+  };
 }
 
 function killPlayer(victim, killer, now) {
@@ -313,13 +333,13 @@ function killPlayer(victim, killer, now) {
   touchBoard(victim.name, 0, 1, 0);
   broadcast({
     type: 'kill',
-    killer: killer ? { id: killer.id, name: killer.name, color: killer.color } : null,
-    victim: { id: victim.id, name: victim.name, color: victim.color },
+    killer: publicFighter(killer),
+    victim: publicFighter(victim),
     at: now
   });
   send(victim.ws, {
     type: 'youDied',
-    by: killer ? { id: killer.id, name: killer.name, color: killer.color } : null,
+    by: publicFighter(killer),
     respawnIn: RESPAWN_MS,
     respawnAt: victim.respawnAt
   });
@@ -335,6 +355,60 @@ function uniqueName(candidate, self) {
   let index = 2;
   while (taken.has((name + '#' + index).toLowerCase()) && index < 50) index += 1;
   return (name.slice(0, MAX_NAME - 3) + '#' + index).slice(0, MAX_NAME);
+}
+
+function focusPayload(player, extra) {
+  const now = Date.now();
+  return {
+    type: 'focusState',
+    active: !!(player.focusUntil > now),
+    until: player.focusUntil || 0,
+    remainingMs: Math.max(0, (player.focusUntil || 0) - now),
+    recordId: player.focusRecordId || '',
+    serverTime: now,
+    ...(extra || {})
+  };
+}
+
+function setFocusLock(player, until, recordId) {
+  if (!player) return 0;
+  const expiresAt = Math.max(Date.now(), Number(until) || 0);
+  const hadVoice = !!(player.voice && player.voice.enabled);
+  player.focusUntil = expiresAt;
+  player.focusRecordId = String(recordId || player.focusRecordId || '');
+  player.active = false;
+  player.alive = false;
+  player.hp = 0;
+  player.respawnAt = 0;
+  player.protectedUntil = 0;
+  player.moving = false;
+  player.sprint = false;
+  player.prone = false;
+  player.voice = { enabled: false, muted: true, speaking: false, windowAt: 0, windowBytes: 0 };
+  send(player.ws, focusPayload(player, { scope: 'manual' }));
+  if (hadVoice) {
+    broadcast({ type: 'voiceState', player: publicVoice(player) });
+  }
+  return 1;
+}
+
+function playerMatchesFocus(player, clientId, fingerprint) {
+  if (!player) return false;
+  if (clientId && player.clientId === clientId) return true;
+  if (fingerprint && player.fingerprint === fingerprint) return true;
+  return false;
+}
+
+function applyFocusLock({ clientId, fingerprint, until, recordId } = {}) {
+  let matched = 0;
+  const cleanId = focusMode.normalizeClientId(clientId);
+  const cleanFingerprint = focusMode.normalizeFingerprint(fingerprint);
+  if (!cleanId && !cleanFingerprint) return matched;
+  for (const player of players.values()) {
+    if (!playerMatchesFocus(player, cleanId, cleanFingerprint)) continue;
+    matched += setFocusLock(player, until, recordId);
+  }
+  return matched;
 }
 
 function handleMessage(player, raw) {
@@ -355,6 +429,19 @@ function handleMessage(player, raw) {
 
   const now = Date.now();
 
+  if (player.focusUntil > now && FOCUS_BLOCKED_TYPES.has(msg.type)) {
+    if (msg.type === 'chat') {
+      send(player.ws, { type: 'chatDenied', reason: 'focus', retryIn: Math.max(0, player.focusUntil - now) });
+    } else {
+      send(player.ws, focusPayload(player, { scope: 'manual', denied: true }));
+    }
+    return;
+  }
+  if (player.focusUntil > now && msg.type !== 'ping' && msg.type !== 'join' && msg.type !== 'focusEnd') {
+    send(player.ws, focusPayload(player, { scope: 'manual', denied: true }));
+    return;
+  }
+
   switch (msg.type) {
     case 'join': {
       const requested = sanitizeName(msg.name);
@@ -363,15 +450,22 @@ function handleMessage(player, raw) {
       player.spawns = sanitizeSpawns(msg.spawns);
       player.soldier = normalizeSoldier(msg.soldier);
       player.joined = true;
+      const focused = player.focusUntil > now;
+      if (focused) {
+        player.active = false;
+        player.alive = false;
+        player.hp = 0;
+      }
       send(player.ws, {
         type: 'joined',
         id: player.id,
         name: player.name,
         color: player.color,
         soldier: player.soldier,
-        filtered
+        filtered,
+        focus: focusPayload(player)
       });
-      broadcast({ type: 'notice', kind: 'join', name: player.name, id: player.id });
+      if (!focused) broadcast({ type: 'notice', kind: 'join', name: player.name, id: player.id });
       break;
     }
     case 'soldier': {
@@ -539,7 +633,13 @@ function handleMessage(player, raw) {
         type: 'damaged',
         amount: HIT_DAMAGE,
         hp: target.hp,
-        from: { id: player.id, name: player.name, color: player.color, pos: player.pos }
+        from: {
+          id: player.id,
+          name: player.name,
+          color: player.color,
+          soldier: player.soldier,
+          pos: player.pos
+        }
       });
       send(player.ws, {
         type: 'hitConfirm',
@@ -562,7 +662,7 @@ function handleMessage(player, raw) {
       broadcast({
         type: 'kill',
         killer: null,
-        victim: { id: player.id, name: player.name, color: player.color },
+        victim: publicFighter(player),
         at: now
       });
       send(player.ws, { type: 'deathAck', respawnIn: RESPAWN_MS, respawnAt: player.respawnAt });
@@ -597,6 +697,32 @@ function handleMessage(player, raw) {
       broadcast({ type: 'notice', kind: 'return', name: player.name, id: player.id });
       break;
     }
+    case 'focusEnd': {
+      if (player.focusUntil > now) {
+        send(player.ws, focusPayload(player, { scope: 'manual', denied: true }));
+        break;
+      }
+      player.focusUntil = 0;
+      player.focusRecordId = '';
+      const spawn = pickSpawn(player);
+      player.alive = true;
+      player.active = false;
+      player.hp = MAX_HP;
+      player.respawnAt = 0;
+      player.pos = { x: spawn.x, y: spawn.y, z: spawn.z };
+      player.yaw = Math.random() * Math.PI * 2;
+      player.moving = false;
+      player.sprint = false;
+      player.protectedUntil = now + PROTECT_MS;
+      send(player.ws, focusPayload(player, { scope: 'manual', ended: true, spawn }));
+      send(player.ws, {
+        type: 'respawned',
+        pos: spawn,
+        yaw: player.yaw,
+        protectedUntil: player.protectedUntil
+      });
+      break;
+    }
     case 'ping': {
       if (typeof msg.t === 'number') send(player.ws, { type: 'pong', t: msg.t });
       break;
@@ -608,10 +734,22 @@ function handleMessage(player, raw) {
 
 /* --------------------------------------------------------------- connection */
 
-function addPlayer(ws) {
+function requestIp(req) {
+  const forwarded = req && req.headers && req.headers['x-forwarded-for'];
+  const raw = forwarded ? String(forwarded).split(',')[0] : (req && req.socket && req.socket.remoteAddress);
+  return focusMode.normalizeIp(raw);
+}
+
+function addPlayer(ws, req) {
   const numId = nextId;
   const id = 'p' + numId;
   nextId += 1;
+  const query = new URLSearchParams(String((req && req.url) || '').split('?')[1] || '');
+  const clientId = focusMode.normalizeClientId(query.get('clientId'));
+  const fingerprint = focusMode.normalizeFingerprint(query.get('fingerprint'));
+  const ip = requestIp(req);
+  const focusRecord = focusMode.findActive(clientId, fingerprint);
+  const focusUntil = focusRecord ? Number(focusRecord.expiresAt) || 0 : 0;
   const player = {
     id,
     numId,
@@ -639,6 +777,11 @@ function addPlayer(ws) {
     voice: { enabled: false, muted: true, speaking: false, windowAt: 0, windowBytes: 0 },
     lastSeen: Date.now(),
     joined: false,
+    clientId,
+    fingerprint,
+    ip,
+    focusUntil,
+    focusRecordId: focusRecord ? focusRecord.id : '',
     msgWindow: Math.floor(Date.now() / 1000),
     msgCount: 0,
     isAlive: true
@@ -658,8 +801,14 @@ function addPlayer(ws) {
       frameSamples: 320,
       globalAudience: true,
       listenerMicRequired: false
-    }
+    },
+    focus: focusPayload(player)
   });
+  if (focusUntil > Date.now()) {
+    player.active = false;
+    player.alive = false;
+    player.hp = 0;
+  }
   return player;
 }
 
@@ -686,6 +835,19 @@ function removePlayer(player, reason) {
 
 function tick() {
   const now = Date.now();
+  for (const player of players.values()) {
+    if (!player.focusUntil || player.focusUntil > now) continue;
+    player.focusUntil = 0;
+    player.focusRecordId = '';
+    send(player.ws, {
+      type: 'focusState',
+      active: false,
+      expired: true,
+      until: 0,
+      remainingMs: 0,
+      serverTime: now
+    });
+  }
   const roster = rosterPayload();
   const visible = [];
   for (const player of players.values()) {
@@ -724,6 +886,8 @@ function tick() {
         bestStreak: player.bestStreak,
         hp: Math.round(player.hp),
         alive: player.alive,
+        active: player.active,
+        focusUntil: player.focusUntil || 0,
         respawnAt: player.respawnAt,
         protectedUntil: player.protectedUntil
       }
@@ -750,7 +914,7 @@ function attachMultiplayer(server) {
 
   wss.on('connection', (ws, req) => {
     ws.isAlive = true;
-    const player = addPlayer(ws);
+    const player = addPlayer(ws, req);
 
     ws.on('pong', () => {
       ws.isAlive = true;
@@ -819,6 +983,7 @@ module.exports = {
   attachMultiplayer,
   getLeaderboard,
   getOnlinePlayers,
+  applyFocusLock,
   shutdownMultiplayer() {
     flushBoard();
     chatHistory.flush();

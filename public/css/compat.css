@@ -269,6 +269,16 @@ body.is-compat { --compat-orange: #ffb347; --compat-orange-hot: #ffc977; }
   letter-spacing: 0.04em;
 }
 
+.compat-dead-by {
+  min-height: 16px;
+  margin: 2px 0 5px;
+  color: var(--compat-orange);
+  font: 600 11px/1.45 var(--f-label);
+  letter-spacing: 0.08em;
+}
+
+.compat-dead-by[hidden] { display: none; }
+
 .compat-dead-line {
   color: rgba(232, 228, 218, 0.58);
   font: 400 10px/1.5 var(--f-mono);

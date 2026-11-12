@@ -17,6 +17,7 @@
   function reasonKey() {
     if (reason === 'forced') return 'reasonForced';
     if (reason === 'timeout') return 'reasonTimeout';
+    if (reason === 'software') return 'reasonSoftware';
     if (reason === 'mobile') return 'reasonMobile';
     return 'reasonWebgl';
   }
@@ -32,6 +33,18 @@
   const UNIT_KINDS = ['male', 'female', 'hound', 'drone'];
   function normalizeUnit(value) {
     return UNIT_KINDS.includes(value) ? value : 'male';
+  }
+
+  const UNIT_LABEL_KEYS = {
+    male: 'unitMale',
+    female: 'unitFemale',
+    hound: 'unitHound',
+    drone: 'unitDrone'
+  };
+
+  function killerUnitLabel(by) {
+    if (!by || !UNIT_KINDS.includes(by.soldier)) return '';
+    return t(UNIT_LABEL_KEYS[by.soldier]);
   }
 
   const query = new URLSearchParams(location.search);
@@ -58,6 +71,7 @@
   let hitMarker = 0;
   let reloadFlash = 0;
   let touchMode = false;
+  let spectateId = null;
 
   const keys = new Set();
   const pointer = { x: 0, y: 0, down: false, seen: false };
@@ -105,6 +119,7 @@
     kind: 'male',
     phase: 0,
     deadUntil: 0,
+    deadBy: null,
     invulnerableUntil: 0
   };
   const drones = [
@@ -182,11 +197,12 @@
     const deadCard = createNode('div', 'compat-dead-card');
     const deadK = createNode('div', 'compat-dead-k', t('down'));
     const deadN = createNode('div', 'compat-dead-n', '5');
+    const deadBy = createNode('div', 'compat-dead-by', '');
     const deadLine = createNode('div', 'compat-dead-line', '');
     const deadBtn = createNode('button', 'compat-dead-btn', t('respawnNow'));
     deadBtn.type = 'button';
     deadBtn.disabled = true;
-    deadCard.append(deadK, deadN, deadLine, deadBtn);
+    deadCard.append(deadK, deadN, deadBy, deadLine, deadBtn);
     dead.appendChild(deadCard);
 
     const touch = createNode('div', 'compat-touch');
@@ -222,6 +238,7 @@
     ui.heliText = heliText;
     ui.dead = dead;
     ui.deadN = deadN;
+    ui.deadBy = deadBy;
     ui.deadLine = deadLine;
     ui.deadBtn = deadBtn;
     ui.touch = touch;
@@ -483,10 +500,11 @@
     if (me.hp <= 0) enterDeath(Date.now() + 5000, true);
   }
 
-  function enterDeath(until, report) {
+  function enterDeath(until, report, by) {
     if (!me.alive) return;
     me.alive = false;
     me.deadUntil = Math.max(Date.now() + 800, Number(until) || Date.now() + 5000);
+    me.deadBy = by || null;
     me.deaths += 1;
     me.inHeli = false;
     heli.piloting = false;
@@ -506,6 +524,7 @@
     me.alive = true;
     me.hp = me.maxHp;
     me.deadUntil = 0;
+    me.deadBy = null;
     me.invulnerableUntil = Number(protectedUntil) || Date.now() + 1600;
     me.reloadingUntil = 0;
     me.ammo = me.mag;
@@ -521,6 +540,10 @@
     }
     me.y = me.kind === 'drone' ? 1.2 : 0;
     ui.dead.hidden = true;
+    if (ui.deadBy) {
+      ui.deadBy.hidden = true;
+      ui.deadBy.textContent = '';
+    }
     shake = 0;
     toast(t('respawned'));
   }
@@ -541,6 +564,16 @@
     ui.dead.hidden = false;
     const left = Math.max(0, me.deadUntil - Date.now());
     ui.deadN.textContent = String(Math.max(0, Math.ceil(left / 1000)));
+    const unit = killerUnitLabel(me.deadBy);
+    if (me.deadBy) {
+      ui.deadBy.textContent = unit
+        ? t('downByUnit', { name: me.deadBy.name, unit })
+        : t('downBy', { name: me.deadBy.name });
+      ui.deadBy.hidden = false;
+    } else {
+      ui.deadBy.textContent = '';
+      ui.deadBy.hidden = true;
+    }
     ui.deadLine.textContent = left > 0 ? t('respawnIn', { n: Math.ceil(left / 1000) }) : t('respawnReady');
     ui.deadBtn.disabled = left > 0;
   }
@@ -552,9 +585,9 @@
         online = Number(msg.online) || 0;
         if (msg.you) {
           serverId = msg.you.id;
-          if (!msg.you.alive && me.alive) {
+          if (!spectateId && !document.body.classList.contains('focus-mode-on') && !msg.you.alive && me.alive) {
             enterDeath(Number(msg.you.respawnAt) || Date.now() + 5000, false);
-          } else if (msg.you.alive && !me.alive && Date.now() >= me.deadUntil) {
+          } else if (!spectateId && !document.body.classList.contains('focus-mode-on') && msg.you.alive && !me.alive && Date.now() >= me.deadUntil) {
             revive(null, msg.you.protectedUntil);
           }
         }
@@ -589,7 +622,9 @@
         break;
       }
       case 'youDied': {
-        enterDeath(Date.now() + Math.max(500, Number(msg.respawnIn) || 5000), false);
+        me.deadBy = msg.by || null;
+        enterDeath(Date.now() + Math.max(500, Number(msg.respawnIn) || 5000), false, msg.by);
+        if (!me.alive) updateDeadUi();
         break;
       }
       case 'deathAck': {
@@ -656,6 +691,16 @@
   }
 
   function updateInput(dt, now) {
+    if (spectateId || document.body.classList.contains('focus-mode-on')) {
+      const target = spectateId ? remote.get(spectateId) : null;
+      if (target) {
+        me.x += (target.x - me.x) * Math.min(0.32, Math.max(0.06, dt * 5));
+        me.z += (target.z - me.z) * Math.min(0.32, Math.max(0.06, dt * 5));
+        me.yaw = target.yaw || 0;
+        me.moving = true;
+      }
+      return;
+    }
     if (!me.alive) {
       ui.deadBtn.disabled = Date.now() < me.deadUntil;
       updateDeadUi();
@@ -1232,6 +1277,7 @@
   }
 
   function drawPlayer(cam, now) {
+    if (spectateId || document.body.classList.contains('focus-mode-on')) return;
     const p = worldToScreen(me.x, me.z, cam);
     const machine = me.kind === 'hound' || me.kind === 'drone';
     const radius = (me.inHeli ? 0.32 : machine ? 0.58 : 0.48) * scale;
@@ -1282,6 +1328,7 @@
   }
 
   function drawCrosshair() {
+    if (spectateId || document.body.classList.contains('focus-mode-on')) return;
     const x = touchMode && !pointer.seen ? width / 2 : pointer.x;
     const y = touchMode && !pointer.seen ? height * 0.45 : pointer.y;
     const target = pickScreenTarget(x, y);
@@ -1553,13 +1600,35 @@
       get online() { return online; },
       get remotes() { return [...remote.values()].map((item) => ({ id: item.id, x: item.x, z: item.z, data: item.data })); },
       get helicopter() { return { x: heli.x, z: heli.z, piloting: heli.piloting }; },
-      useHelicopter
+      useHelicopter,
+      setSpectate(id) {
+        spectateId = id ? String(id) : null;
+      },
+      focusDeploy(spawn, protectedUntil) {
+        spectateId = null;
+        if (spawn) {
+          me.x = Number(spawn.x) || me.x;
+          me.y = Number(spawn.y) || 0;
+          me.z = Number(spawn.z) || me.z;
+        }
+        me.alive = true;
+        me.hp = me.maxHp;
+        me.deadUntil = 0;
+        me.deadBy = null;
+        me.invulnerableUntil = Number(protectedUntil) || Date.now() + 1800;
+        if (ui.dead) ui.dead.hidden = true;
+      }
     };
     raf = window.requestAnimationFrame(frame);
   }
 
   function watch() {
     if (forced) {
+      enterCompatibilityMode();
+      return;
+    }
+    if (window.__SALT_GFX__ && window.__SALT_GFX__.software) {
+      reason = 'software';
       enterCompatibilityMode();
       return;
     }
@@ -1591,7 +1660,8 @@
         enterCompatibilityMode();
         return;
       }
-      if (performance.now() - startedAt > 12000) {
+      const now = performance.now();
+      if (now - startedAt > 20000) {
         window.clearInterval(timer);
         reason = 'timeout';
         enterCompatibilityMode();
@@ -1599,7 +1669,10 @@
     }, 300);
   }
 
-  if (document.readyState === 'loading') {
+  if (window.__SALT_FORCE_CANVAS__) {
+    if (!forced && window.__SALT_GFX__ && window.__SALT_GFX__.software) reason = 'software';
+    enterCompatibilityMode();
+  } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', watch, { once: true });
   } else {
     watch();

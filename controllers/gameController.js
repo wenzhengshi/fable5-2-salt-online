@@ -24,7 +24,7 @@ module.exports = {
       lang: req.lang,
       title: req.t('game.title'),
       tagline: req.t('game.tagline'),
-      version: '1.21.8',
+      version: '1.22.0',
       engine: 'WebGL2 / Three.js (bundled) + Canvas 2D fallback',
       rendering: {
         primary: 'webgl2',
@@ -42,6 +42,15 @@ module.exports = {
       online: getOnlinePlayers().length,
       websocket: '/ws',
       moderation: contentFilter.descriptor(),
+      focusMode: {
+        durationMinutes: 30,
+        enforcement: 'server',
+        autoSpectate: true,
+        storage: 'focus-records.json',
+        records: ['clientId', 'fingerprint', 'ip'],
+        statusEndpoint: '/api/focus/status',
+        startEndpoint: '/api/focus/start'
+      },
       comms: {
         voice: 'server-pcm-relay',
         sampleRate: 16000,

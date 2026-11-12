@@ -182,6 +182,7 @@
         <div class="mp-respawn-k"></div>
         <div class="mp-respawn-num" id="mp-count">5</div>
         <div class="mp-respawn-line" id="mp-killer"></div>
+        <div class="mp-respawn-unit" id="mp-killer-unit" hidden></div>
         <div class="mp-respawn-bar"><i id="mp-bar"></i></div>
         <button class="mp-respawn-btn" id="mp-respawn-btn" type="button" disabled></button>
       </div>
@@ -232,6 +233,7 @@
     respawn: ui.querySelector('#mp-respawn'),
     count: ui.querySelector('#mp-count'),
     killer: ui.querySelector('#mp-killer'),
+    killerUnit: ui.querySelector('#mp-killer-unit'),
     bar: ui.querySelector('#mp-bar'),
     respawnBtn: ui.querySelector('#mp-respawn-btn'),
     roster: ui.querySelector('#mp-roster'),
@@ -339,6 +341,60 @@
 
   /* ------------------------------------------------------------- kill feed */
 
+  const UNIT_META = {
+    male: {
+      key: 'unitMale',
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z"/></svg>'
+    },
+    female: {
+      key: 'unitFemale',
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm-1 9h2v3h3v2h-3v3h3v2h-3v3h-2v-3H7v-2h3v-3H7v-2h3v-3Z"/></svg>'
+    },
+    hound: {
+      key: 'unitHound',
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM9 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM15 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM19.5 9.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM17.34 14.86c-.87-1.02-1.6-1.89-2.48-2.91-.46-.54-1.05-1.08-1.75-1.32-.11-.04-.22-.07-.33-.09-.25-.04-.52-.04-.78-.04s-.53 0-.79.05c-.11.02-.22.05-.33.09-.7.24-1.28.78-1.75 1.32-.87 1.02-1.6 1.89-2.48 2.91-1.31 1.31-2.92 2.76-2.62 4.79.29 1.02 1.02 2.03 2.33 2.32.73.15 3.06-.44 5.54-.44h.18c2.48 0 4.81.58 5.54.44 1.31-.29 2.04-1.31 2.33-2.32.31-2.04-1.3-3.49-2.61-4.8Z"/></svg>'
+    },
+    drone: {
+      key: 'unitDrone',
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h5v2H5v3H3V4Zm13 0h5v5h-2V6h-3V4ZM3 15h2v3h3v2H3v-5Zm16 0h2v5h-5v-2h3v-3ZM9 9h6l2 3v4l-2 2H9l-2-2v-4l2-3Zm1 3v3l1 1h2l1-1v-3l-1-1h-2l-1 1Z"/></svg>'
+    }
+  };
+
+  function unitLabel(kind) {
+    const meta = UNIT_META[kind];
+    return meta ? t(meta.key) : '';
+  }
+
+  function resolveUnitKind(entity) {
+    if (!entity) return null;
+    if (UNIT_KINDS.includes(entity.soldier)) return entity.soldier;
+    const id = entity.id == null ? '' : String(entity.id);
+    if (!id) return null;
+    const avatar = avatars.get(id);
+    if (avatar && avatar.data && UNIT_KINDS.includes(avatar.data.soldier)) return avatar.data.soldier;
+    const roster = rosterData.find((item) => String(item.id) === id);
+    return roster && UNIT_KINDS.includes(roster.soldier) ? roster.soldier : null;
+  }
+
+  function createUnitBadge(kind) {
+    const meta = UNIT_META[kind];
+    if (!meta) return null;
+    const label = t(meta.key);
+    const tag = document.createElement('span');
+    tag.className = 'mp-unit-tag';
+    tag.dataset.kind = kind;
+    tag.title = label;
+    tag.setAttribute('aria-label', label);
+    const glyph = document.createElement('span');
+    glyph.className = 'mp-unit-tag-i';
+    glyph.setAttribute('aria-hidden', 'true');
+    glyph.innerHTML = meta.icon;
+    const text = document.createElement('em');
+    text.textContent = label;
+    tag.append(glyph, text);
+    return tag;
+  }
+
   function feedLine(text, kind) {
     const row = document.createElement('div');
     row.className = 'mp-fl' + (kind ? ' ' + kind : '');
@@ -356,27 +412,36 @@
     row.className = 'mp-fl kill';
     const killer = kill.killer;
     const victim = kill.victim || {};
+    const victimName = victim.name || '—';
     if (killer) {
+      const kind = resolveUnitKind(killer);
       const a = document.createElement('b');
       a.textContent = killer.name;
       a.style.color = killer.color || 'var(--signal)';
       if (killer.id === myId) a.classList.add('self');
+      row.append(a);
+      const badge = createUnitBadge(kind);
+      if (badge) row.append(badge);
       const verb = document.createElement('span');
       verb.textContent = ' ▸ ';
       const b = document.createElement('b');
-      b.textContent = victim.name || '—';
+      b.textContent = victimName;
       b.style.color = victim.color || 'var(--bone)';
       if (victim.id === myId) b.classList.add('self');
-      row.append(a, verb, b);
+      row.append(verb, b);
+      row.setAttribute('aria-label', badge
+        ? t('feedKillUnit', { killer: killer.name, unit: unitLabel(kind), victim: victimName })
+        : t('feedKill', { killer: killer.name, victim: victimName }));
     } else {
       const b = document.createElement('b');
-      b.textContent = victim.name || '—';
+      b.textContent = victimName;
       b.style.color = victim.color || 'var(--bone)';
       if (victim.id === myId) b.classList.add('self');
       row.append(b);
       const span = document.createElement('span');
       span.textContent = ' · ' + t('fallenShort');
       row.append(span);
+      row.setAttribute('aria-label', victimName + ' · ' + t('fallenShort'));
     }
     el.feed.appendChild(row);
     while (el.feed.children.length > 5) el.feed.firstElementChild.remove();
@@ -551,6 +616,22 @@
     el.respawn.hidden = false;
     document.body.classList.add('mp-respawning');
     el.killer.textContent = respawn.by ? t('downBy', { name: respawn.by.name }) : '';
+    el.killerUnit.innerHTML = '';
+    const killerKind = resolveUnitKind(respawn.by);
+    if (respawn.by && killerKind) {
+      const label = document.createElement('span');
+      label.className = 'mp-respawn-unit-k';
+      label.textContent = t('killerUnit');
+      const badge = createUnitBadge(killerKind);
+      if (badge) {
+        el.killerUnit.append(label, badge);
+        el.killerUnit.hidden = false;
+      } else {
+        el.killerUnit.hidden = true;
+      }
+    } else {
+      el.killerUnit.hidden = true;
+    }
     el.respawnBtn.disabled = true;
     updateRespawnOverlay();
   }
@@ -1261,7 +1342,12 @@
 
   function wsUrl() {
     const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
-    return proto + location.host + '/ws';
+    const params = new URLSearchParams();
+    const identity = window.__SALT_FOCUS__ || {};
+    if (identity.clientId) params.set('clientId', identity.clientId);
+    if (identity.fingerprint) params.set('fingerprint', identity.fingerprint);
+    const query = params.toString();
+    return proto + location.host + '/ws' + (query ? '?' + query : '');
   }
 
   function send(payload) {
@@ -1958,6 +2044,11 @@
     onBinary,
     send,
     sendBinary,
+    focusDeploy(spawn, protectedUntil) {
+      if (!G || !G.player) return false;
+      revive(spawn, protectedUntil);
+      return true;
+    },
     setSoldier(value) {
       mySoldier = normalizeSoldier(value);
       saveSoldier(mySoldier);

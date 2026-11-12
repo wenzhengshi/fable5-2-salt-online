@@ -11,7 +11,7 @@ const { attachMultiplayer, shutdownMultiplayer } = require('./realtime/multiplay
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const ASSET_VERSION = '20261113-focus-api-v20';
+const ASSET_VERSION = '20261113-auto-focus-v21';
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -147,11 +147,17 @@ server.listen(PORT, HOST, () => {
     ' · pending=' + chatStorage.pending +
     ' · writable=' + chatStorage.writable);
   const focusStorage = focusMode.persistence();
+  const playStorage = focusMode.playPersistence();
   console.log('[focus] records file data/' + focusMode.FILE +
     ' · dataDir=' + focusStorage.dataDir +
     ' (' + focusStorage.dataSource + ')' +
     ' · pending=' + focusStorage.pending +
     ' · writable=' + focusStorage.writable);
+  console.log('[focus] play time file data/' + focusMode.PLAY_FILE +
+    ' · dataDir=' + playStorage.dataDir +
+    ' (' + playStorage.dataSource + ')' +
+    ' · pending=' + playStorage.pending +
+    ' · writable=' + playStorage.writable);
 });
 
 let shuttingDown = false;

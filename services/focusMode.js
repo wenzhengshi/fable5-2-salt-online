@@ -4,18 +4,33 @@ const crypto = require('crypto');
 const storage = require('../config/storage');
 
 const FILE = 'focus-records.json';
-const DURATION_MS = 30 * 60 * 1000;
+const PLAY_FILE = 'play-sessions.json';
+const MANUAL_DURATION_MS = 30 * 60 * 1000;
+const AUTO_DURATION_MS = 20 * 60 * 1000;
+const DURATION_MS = MANUAL_DURATION_MS;
+const CONTINUOUS_PLAY_LIMIT_MS = 4 * 60 * 60 * 1000;
+const PLAY_RESET_MS = 5 * 60 * 1000;
+const PLAY_SAMPLE_MAX_MS = 2500;
+const PLAY_SAVE_DELAY_MS = 15000;
+const PLAY_MAX_RECORDS = 1000;
 const MAX_RECORDS = 1000;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{6,80}$/;
 const RETRY_MS = 4000;
 const RETRY_LOG_MS = 30000;
 
 const pendingRecords = new Map();
+const playRecords = new Map();
+const dirtyPlayRecords = new Set();
 let retryTimer = null;
 let persistCooldownUntil = 0;
 let lastPersistError = null;
 let lastPersistLogAt = 0;
 let lastPersistAt = 0;
+let playRecordsLoaded = false;
+let playSaveTimer = null;
+let lastPlayPersistAt = 0;
+let lastPlayPersistError = null;
+let lastPlayPersistLogAt = 0;
 
 function normalizeClientId(value) {
   const text = String(value || '').trim();
@@ -61,6 +76,11 @@ function readRecords() {
 
 function errorText(err) {
   return err ? String(err.message || err) : 'storage unavailable';
+}
+
+function finiteNow(value) {
+  const now = Number(value);
+  return Number.isFinite(now) && now > 0 ? now : Date.now();
 }
 
 function persistError(err) {
@@ -113,6 +133,185 @@ function scheduleRetry() {
   if (typeof retryTimer.unref === 'function') retryTimer.unref();
 }
 
+function playKey(clientId, fingerprint) {
+  const cleanId = normalizeClientId(clientId);
+  if (cleanId) return 'c:' + cleanId;
+  const cleanFingerprint = normalizeFingerprint(fingerprint);
+  return cleanFingerprint.length >= 8 ? 'f:' + cleanFingerprint : '';
+}
+
+function loadPlayRecords() {
+  if (playRecordsLoaded) return;
+  playRecordsLoaded = true;
+  try {
+    const rows = storage.readJson(PLAY_FILE);
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (!row || typeof row !== 'object') continue;
+      const key = String(row.key || playKey(row.clientId, row.fingerprint));
+      if (!key || playRecords.has(key)) continue;
+      playRecords.set(key, {
+        key,
+        clientId: normalizeClientId(row.clientId),
+        fingerprint: normalizeFingerprint(row.fingerprint),
+        continuousMs: Math.max(0, Math.min(CONTINUOUS_PLAY_LIMIT_MS, Number(row.continuousMs) || 0)),
+        lastActiveAt: Math.max(0, Number(row.lastActiveAt) || 0),
+        lastSampleAt: Math.max(0, Number(row.lastSampleAt) || 0),
+        triggeredAt: Math.max(0, Number(row.triggeredAt) || 0),
+        updatedAt: Math.max(0, Number(row.updatedAt) || 0)
+      });
+    }
+  } catch (err) {
+    console.error('[focus] play records read failed', err && err.message);
+  }
+}
+
+function schedulePlaySave() {
+  if (playSaveTimer || !dirtyPlayRecords.size) return;
+  playSaveTimer = setTimeout(() => {
+    playSaveTimer = null;
+    persistPlayRecords(true);
+  }, PLAY_SAVE_DELAY_MS);
+  if (typeof playSaveTimer.unref === 'function') playSaveTimer.unref();
+}
+
+function markPlayDirty(key) {
+  if (!key) return;
+  dirtyPlayRecords.add(key);
+  schedulePlaySave();
+}
+
+function persistPlayRecords() {
+  if (!dirtyPlayRecords.size) return true;
+  try {
+    storage.updateJson(PLAY_FILE, (rows) => {
+      const byKey = new Map();
+      for (const row of Array.isArray(rows) ? rows : []) {
+        if (!row || typeof row !== 'object') continue;
+        const key = String(row.key || playKey(row.clientId, row.fingerprint));
+        if (key) byKey.set(key, row);
+      }
+      for (const key of dirtyPlayRecords) {
+        const row = playRecords.get(key);
+        if (row) byKey.set(key, row);
+      }
+      return [...byKey.values()]
+        .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))
+        .slice(0, PLAY_MAX_RECORDS);
+    });
+    dirtyPlayRecords.clear();
+    lastPlayPersistAt = Date.now();
+    lastPlayPersistError = null;
+    return true;
+  } catch (err) {
+    lastPlayPersistError = err || new Error('storage unavailable');
+    const now = Date.now();
+    if (now - lastPlayPersistLogAt >= RETRY_LOG_MS) {
+      lastPlayPersistLogAt = now;
+      console.error('[focus] play time write failed, keeping counter in memory: ' + errorText(lastPlayPersistError));
+    }
+    schedulePlaySave();
+    return false;
+  }
+}
+
+function playSnapshot(row, now) {
+  const at = finiteNow(now);
+  const stale = !!(row && row.lastActiveAt && at - row.lastActiveAt > PLAY_RESET_MS);
+  const continuousMs = row && !stale
+    ? Math.max(0, Math.min(CONTINUOUS_PLAY_LIMIT_MS, Number(row.continuousMs) || 0))
+    : 0;
+  return {
+    enabled: true,
+    active: !!(row && row.lastActiveAt && at - row.lastActiveAt <= 15000),
+    continuousMs,
+    limitMs: CONTINUOUS_PLAY_LIMIT_MS,
+    remainingMs: Math.max(0, CONTINUOUS_PLAY_LIMIT_MS - continuousMs),
+    autoDurationMs: AUTO_DURATION_MS,
+    resetAfterMs: PLAY_RESET_MS,
+    lastActiveAt: row ? Number(row.lastActiveAt) || 0 : 0
+  };
+}
+
+function trackPlay({ clientId, fingerprint, active, now } = {}) {
+  const at = finiteNow(now);
+  const key = playKey(clientId, fingerprint);
+  if (!key) return { ...playSnapshot(null, at), triggered: false, playMs: 0 };
+
+  loadPlayRecords();
+  let row = playRecords.get(key);
+  if (!row) {
+    row = {
+      key,
+      clientId: normalizeClientId(clientId),
+      fingerprint: normalizeFingerprint(fingerprint),
+      continuousMs: 0,
+      lastActiveAt: 0,
+      lastSampleAt: 0,
+      triggeredAt: 0,
+      updatedAt: 0
+    };
+    playRecords.set(key, row);
+  }
+
+  if (active !== true) {
+    if (row.lastSampleAt) {
+      row.lastSampleAt = 0;
+      row.updatedAt = at;
+      markPlayDirty(key);
+    }
+    return { ...playSnapshot(row, at), triggered: false, playMs: 0 };
+  }
+
+  if (row.lastActiveAt && at - row.lastActiveAt > PLAY_RESET_MS) {
+    row.continuousMs = 0;
+    row.lastSampleAt = 0;
+    row.triggeredAt = 0;
+  }
+
+  const previousSample = Number(row.lastSampleAt) || 0;
+  const delta = previousSample && at > previousSample
+    ? Math.min(PLAY_SAMPLE_MAX_MS, at - previousSample)
+    : 0;
+  row.continuousMs = Math.min(CONTINUOUS_PLAY_LIMIT_MS, (Number(row.continuousMs) || 0) + delta);
+  row.lastActiveAt = at;
+  row.lastSampleAt = at;
+  row.updatedAt = at;
+
+  let triggered = false;
+  let playMs = 0;
+  if (row.continuousMs >= CONTINUOUS_PLAY_LIMIT_MS && !row.triggeredAt) {
+    triggered = true;
+    playMs = row.continuousMs;
+    row.triggeredAt = at;
+    row.continuousMs = 0;
+    row.lastSampleAt = 0;
+  }
+  markPlayDirty(key);
+  return { ...playSnapshot(row, at), triggered, playMs };
+}
+
+function playStatus(clientId, fingerprint, now) {
+  const at = finiteNow(now);
+  const key = playKey(clientId, fingerprint);
+  if (!key) return playSnapshot(null, at);
+  loadPlayRecords();
+  return playSnapshot(playRecords.get(key), at);
+}
+
+function playPersistence() {
+  const info = storage.info();
+  return {
+    storage: PLAY_FILE,
+    persisted: dirtyPlayRecords.size === 0 && info.writable,
+    pending: dirtyPlayRecords.size,
+    writable: info.writable,
+    dataDir: info.dir,
+    dataSource: info.source,
+    lastWriteAt: lastPlayPersistAt,
+    lastError: lastPlayPersistError ? errorText(lastPlayPersistError) : info.error
+  };
+}
+
 function recordMatches(record, clientId, fingerprint) {
   if (!record || typeof record !== 'object') return false;
   if (clientId && record.clientId === clientId) return true;
@@ -153,6 +352,7 @@ function publicRecord(record, now) {
   if (!record) return null;
   const at = Number(now) || Date.now();
   const expiresAt = Number(record.expiresAt) || 0;
+  const kind = record.kind === 'auto' ? 'auto' : 'manual';
   return {
     id: record.id,
     clientId: record.clientId,
@@ -161,6 +361,9 @@ function publicRecord(record, now) {
     startedAt: Number(record.startedAt) || 0,
     expiresAt,
     durationMs: Number(record.durationMs) || DURATION_MS,
+    kind,
+    trigger: record.trigger || (kind === 'auto' ? 'continuous_play' : 'manual'),
+    playMs: Math.max(0, Number(record.playMs) || 0),
     remainingMs: Math.max(0, expiresAt - at),
     active: expiresAt > at
   };
@@ -177,7 +380,16 @@ function status(clientId, fingerprint, now) {
   };
 }
 
-function start({ clientId, fingerprint, ip, userAgent, lang } = {}) {
+function createFocusRecord({
+  clientId,
+  fingerprint,
+  ip,
+  userAgent,
+  lang,
+  kind,
+  trigger,
+  playMs
+} = {}) {
   const cleanId = normalizeClientId(clientId);
   const cleanFingerprint = normalizeFingerprint(fingerprint);
   if (!cleanId) {
@@ -194,6 +406,8 @@ function start({ clientId, fingerprint, ip, userAgent, lang } = {}) {
   }
 
   const now = Date.now();
+  const focusKind = kind === 'auto' ? 'auto' : 'manual';
+  const focusDuration = focusKind === 'auto' ? AUTO_DURATION_MS : MANUAL_DURATION_MS;
   const existing = findActiveIn(readRecords(), cleanId, cleanFingerprint, now);
   if (existing) {
     return {
@@ -212,8 +426,11 @@ function start({ clientId, fingerprint, ip, userAgent, lang } = {}) {
     userAgent: String(userAgent || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 240),
     lang: lang === 'en-US' ? 'en-US' : 'zh-CN',
     startedAt: now,
-    expiresAt: now + DURATION_MS,
-    durationMs: DURATION_MS,
+    expiresAt: now + focusDuration,
+    durationMs: focusDuration,
+    kind: focusKind,
+    trigger: String(trigger || (focusKind === 'auto' ? 'continuous_play' : 'manual')).slice(0, 40),
+    playMs: Math.max(0, Number(playMs) || 0),
     updatedAt: now
   };
 
@@ -255,6 +472,18 @@ function start({ clientId, fingerprint, ip, userAgent, lang } = {}) {
   };
 }
 
+function start(options) {
+  return createFocusRecord({ ...(options || {}), kind: 'manual', trigger: 'manual' });
+}
+
+function startAutomatic(options) {
+  return createFocusRecord({
+    ...(options || {}),
+    kind: 'auto',
+    trigger: 'continuous_play'
+  });
+}
+
 function persistence() {
   const info = storage.info();
   return {
@@ -274,18 +503,31 @@ function flush() {
   if (!saved && pendingRecords.size) {
     console.error('[focus] shutdown flush failed: ' + errorText(lastPersistError));
   }
-  return saved;
+  const playSaved = persistPlayRecords();
+  if (!playSaved && dirtyPlayRecords.size) {
+    console.error('[focus] play time shutdown flush failed: ' + errorText(lastPlayPersistError));
+  }
+  return saved && playSaved;
 }
 
 module.exports = {
   FILE,
+  PLAY_FILE,
   DURATION_MS,
+  MANUAL_DURATION_MS,
+  AUTO_DURATION_MS,
+  CONTINUOUS_PLAY_LIMIT_MS,
+  PLAY_RESET_MS,
   normalizeClientId,
   normalizeFingerprint,
   normalizeIp,
   findActive,
   status,
   start,
+  startAutomatic,
+  trackPlay,
+  playStatus,
+  playPersistence,
   persistence,
   flush,
   publicRecord

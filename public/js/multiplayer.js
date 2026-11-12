@@ -1416,6 +1416,7 @@
       yaw: player.yaw,
       pitch: player.pitch,
       active,
+      visible: !document.hidden,
       moving: !!(player.vel && Math.hypot(player.vel.x, player.vel.z) > 0.6),
       sprint: !!player.sprinting
     });

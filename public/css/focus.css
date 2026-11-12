@@ -74,6 +74,19 @@
   isolation: isolate;
 }
 
+#focus-mode.focus-auto {
+  --signal: #7ef0e2;
+}
+
+#focus-mode.focus-auto .focus-progress i {
+  background: linear-gradient(90deg, #5fd0ff, #7ef0e2);
+}
+
+#focus-mode.focus-auto .focus-brand > span {
+  border-color: rgba(126, 240, 226, 0.62);
+  background: rgba(126, 240, 226, 0.08);
+}
+
 #focus-mode[hidden] { display: none; }
 
 .focus-grid {

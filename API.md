@@ -9,7 +9,7 @@
 - 实时通信：同端口 WebSocket，玩家路径 `/ws`
 - 数据格式：WebSocket 文本帧为 JSON；玩家语音为二进制 PCM 帧
 - 国际化：`lang` cookie，可选 `zh-CN` / `en-US`；接口提示文案随语言变化
-- 持久化目录：优先使用托管平台注入的 `JICREATE_DATA_DIR`，其次 `DATA_DIR`，本地开发回退到项目内 `data/`。排行榜写入 `data/leaderboard.json`，大字历史追加写入 `data/chat-history.jsonl`，手动专注记录写入 `data/focus-records.json`，统一由 `config/storage.js` 原子读写。
+- 持久化目录：优先使用托管平台注入的 `JICREATE_DATA_DIR`，其次 `DATA_DIR`，本地开发回退到项目内 `data/`。排行榜写入 `data/leaderboard.json`，大字历史追加写入 `data/chat-history.jsonl`，专注记录写入 `data/focus-records.json`，连续游玩计时写入 `data/play-sessions.json`，统一由 `config/storage.js` 原子读写。
 - 落盘策略：正常时同步追加并 `fsync` 后再广播；若部署目录暂时不可写，大字仍会立即广播，同时进入进程内重试队列，每 4 秒自动重试并通过 `chatWarning` 提醒发送者。历史接口会返回尚未落盘的 `pending` 记录。进程收到 `SIGTERM` / `SIGINT` 时会最后重试一次并同步排行榜与大字文件。
 - API 缓存：`/api/*` 统一返回 `Cache-Control: no-store`，避免历史分页被浏览器或代理缓存成空列表。
 - 内容安全：玩家代号与全服大字在服务端统一做敏感词过滤；拆字、全角、零宽字符、符号替代与常见同形字规避同样会被识别。
@@ -21,7 +21,7 @@
 - 方法：`GET`
 - 路径：`/`
 - 参数：可选 `?lang=zh-CN` 或 `?lang=en-US`，会同步写入 `lang` cookie
-- 说明：多人 3D 港口枪战首页。玩家可直接部署，并通过“设置 → 操控单位”在男士兵、女士兵、机器狗和无人机之间切换；移动端选择层在手势结束后打开，不会因同一次触摸的后续点击而闪现或误触关闭。设置中还提供“手动专注模式”：开启后服务端强制锁定 30 分钟，期间不能移动、射击、聊天、开麦、改名或复活，只能自动跟随观战在线玩家的实时战局；本机标识、浏览器指纹与 IP 会写入 `data/focus-records.json` 作为限制与审计记录。包含在线人数、战场名单、5 秒复活、全服开麦语音、单独静音与全服大字。大字记录持久保存在服务端，频道内按最新在上排列，滚动到底部会自动加载更早记录。单位选择会写入浏览器本地存储，并通过 WebSocket 同步给所有玩家；服务端接受 `male` / `female` / `hound` / `drone`。机器狗复用港口猎犬模型，无人机复用港口海鸥无人机模型，四类单位均拥有开火、受击、语音、通讯、昵称与复活权限。无人机按 `Space` 上升、`Shift` 下降。自定义士兵模型、持枪行走与冲刺姿态通过 `hunter-avatar.js` 驱动，机器狗和无人机模型由 `unit-models.js` 从现有敌人模型池克隆；蹲伏动作已从输入、角色姿态和同步协议中移除。若浏览器无法创建 WebGL 上下文，页面会自动降级到 Canvas 2D 战术兼容模式；`GET /?gfx=2d` 可手动进入该模式，兼容层复用同一 WebSocket 房间、语音、代号、单位选择、专注锁定与复活协议。游戏内标题页、暂停菜单与战场名单面板均提供 GitHub 仓库链接 `https://github.com/wenzhengshi/fable5-2-salt-online`。
+- 说明：多人 3D 港口枪战首页。玩家可直接部署，并通过“设置 → 操控单位”在男士兵、女士兵、机器狗和无人机之间切换；移动端选择层在手势结束后打开，不会因同一次触摸的后续点击而闪现或误触关闭。设置中还提供“手动专注模式”：开启后服务端强制锁定 30 分钟；同时服务端按战斗状态累计连续游玩时间，达到 4 小时后自动强制专注 20 分钟。两种专注期间都不能移动、射击、聊天、开麦、改名或复活，只能自动跟随观战在线玩家的实时战局；本机标识、浏览器指纹与 IP 会写入 `data/focus-records.json` 作为限制与审计记录，连续游玩进度写入 `data/play-sessions.json`。包含在线人数、战场名单、5 秒复活、全服开麦语音、单独静音与全服大字。大字记录持久保存在服务端，频道内按最新在上排列，滚动到底部会自动加载更早记录。单位选择会写入浏览器本地存储，并通过 WebSocket 同步给所有玩家；服务端接受 `male` / `female` / `hound` / `drone`。机器狗复用港口猎犬模型，无人机复用港口海鸥无人机模型，四类单位均拥有开火、受击、语音、通讯、昵称与复活权限。无人机按 `Space` 上升、`Shift` 下降。自定义士兵模型、持枪行走与冲刺姿态通过 `hunter-avatar.js` 驱动，机器狗和无人机模型由 `unit-models.js` 从现有敌人模型池克隆；蹲伏动作已从输入、角色姿态和同步协议中移除。若浏览器无法创建 WebGL 上下文，页面会自动降级到 Canvas 2D 战术兼容模式；`GET /?gfx=2d` 可手动进入该模式，兼容层复用同一 WebSocket 房间、语音、代号、单位选择、专注锁定与复活协议。游戏内标题页、暂停菜单与战场名单面板均提供 GitHub 仓库链接 `https://github.com/wenzhengshi/fable5-2-salt-online`。
 - 缓存：`Cache-Control: no-store`
 
 ### 静态资源
@@ -67,10 +67,16 @@
   - `moderation.names` / `moderation.chat`：代号与大字是否启用过滤
   - `moderation.evasionResistant`：是否启用拆字与同形字规避识别
   - `moderation.categories`：当前过滤类别列表
-  - `focusMode.durationMinutes`：手动专注模式固定时长，当前为 `30`
+  - `focusMode.durationMinutes`：兼容字段，等同手动专注固定时长 `30`
+  - `focusMode.manualDurationMinutes`：手动专注固定时长 `30`
+  - `focusMode.autoDurationMinutes`：连续游玩触发的强制专注时长 `20`
+  - `focusMode.continuousPlayLimitMinutes`：连续游玩触发阈值 `240`
+  - `focusMode.continuousResetMinutes`：连续游玩中断判定，当前为 `5` 分钟
   - `focusMode.enforcement`：`server`，表示操作锁定由服务端强制执行
   - `focusMode.autoSpectate`：是否自动切换观战视角
-  - `focusMode.storage`：持久化文件 `focus-records.json`
+  - `focusMode.storage`：专注记录持久化文件 `focus-records.json`
+  - `focusMode.playStorage`：连续游玩计时文件 `play-sessions.json`
+  - `focusMode.playPersistence`：连续游玩计时存储诊断，字段与 `focusMode.persistence` 相同
   - `focusMode.records`：登记字段 `clientId`、`fingerprint`、`ip`
   - `focusMode.persistence`：专注记录存储诊断，包含 `persisted`、`pending`、`writable`、`dataDir`、`dataSource`、`lastWriteAt`、`lastError`
   - `comms.voice`：`server-pcm-relay`
@@ -88,7 +94,7 @@
   - `comms.chatHistory.pageSize` / `maxPageSize`：默认每页 `20` 条，最大 `50` 条
   - `comms.chatHistory.persisted`：`true` 表示当前目录可写且没有待重试记录
   - `controls`：本地化操作列表；仅保留移动、观察、射击、瞄准、换弹、交互、跳跃、冲刺、近战、语音、大字、名单与暂停
-- 返回示例：`{"ok":true,"version":"1.22.0","mode":"free-for-all","respawnSeconds":5,"characters":[{"id":"male","name":"男士兵","role":"重装突击手"},{"id":"female","name":"女士兵","role":"先锋侦察兵"},{"id":"hound","name":"机器狗","role":"四足突击平台"},{"id":"drone","name":"无人机","role":"空中侦察平台"}],"websocket":"/ws","moderation":{"enabled":true,"names":true,"chat":true,"evasionResistant":true},"focusMode":{"durationMinutes":30,"enforcement":"server","autoSpectate":true,"storage":"focus-records.json","records":["clientId","fingerprint","ip"]},"comms":{"voice":"server-pcm-relay","sampleRate":16000,"frameMs":20,"globalAudience":true,"listenerMicRequired":false,"chatHistory":{"endpoint":"/api/game/chat/history","persisted":true,"storage":"data/chat-history.jsonl","dataDir":"/srv/runtime-data/data","dataSource":"JICREATE_DATA_DIR","records":42,"pending":0}},"controls":[{"keys":"WASD","label":"移动"}]}`
+- 返回示例：`{"ok":true,"version":"1.23.0","mode":"free-for-all","respawnSeconds":5,"characters":[{"id":"male","name":"男士兵","role":"重装突击手"},{"id":"female","name":"女士兵","role":"先锋侦察兵"},{"id":"hound","name":"机器狗","role":"四足突击平台"},{"id":"drone","name":"无人机","role":"空中侦察平台"}],"websocket":"/ws","moderation":{"enabled":true,"names":true,"chat":true,"evasionResistant":true},"focusMode":{"durationMinutes":30,"manualDurationMinutes":30,"autoDurationMinutes":20,"continuousPlayLimitMinutes":240,"continuousResetMinutes":5,"enforcement":"server","autoSpectate":true,"storage":"focus-records.json","playStorage":"play-sessions.json","records":["clientId","fingerprint","ip"]},"comms":{"voice":"server-pcm-relay","sampleRate":16000,"frameMs":20,"globalAudience":true,"listenerMicRequired":false,"chatHistory":{"endpoint":"/api/game/chat/history","persisted":true,"storage":"data/chat-history.jsonl","dataDir":"/srv/runtime-data/data","dataSource":"JICREATE_DATA_DIR","records":42,"pending":0}},"controls":[{"keys":"WASD","label":"移动"}]}`
 
 ### 排行榜与在线列表
 
@@ -116,28 +122,36 @@
 - 路径：`/api/hello`
 - 返回示例：`{"message":"你好，世界！"}`
 
-### 手动专注状态
+### 专注状态与连续游玩进度
 
 - 方法：`GET`
 - 路径：`/api/focus/status`
 - 参数：
   - `clientId`：浏览器持久化的本机标识
   - `fingerprint`：浏览器指纹摘要；`clientId` 与 `fingerprint` 至少提供一个
-- 返回字段：`focus.active`、`focus.durationMs`、`focus.record`
-- `focus.record` 仅在锁定生效时返回，包含 `id`（专注记录 ID）、`clientId`、脱敏后的 `fingerprint` / `ip`、`startedAt`、`expiresAt`、`remainingMs`
-- 说明：服务端以 `clientId` 或 `fingerprint` 匹配 30 分钟内的最新记录；页面刷新、WebSocket 重连后仍保持只读锁定
-- 返回示例：`{"ok":true,"now":1794500000000,"focus":{"active":true,"durationMs":1800000,"record":{"id":"focus_m7x2_a1b2c3d4","clientId":"c_...","fingerprint":"fp1-ab…9f2c","ip":"203.0.*.*","startedAt":1794500000000,"expiresAt":1794501800000,"remainingMs":1800000,"active":true}}}`
+- 返回字段：`focus.active`、`focus.durationMs`、`focus.manualDurationMs`、`focus.autoDurationMs`、`focus.continuousPlayLimitMs`、`focus.record`、`play`
+- `focus.record` 仅在锁定生效时返回，包含 `id`（专注记录 ID）、`clientId`、脱敏后的 `fingerprint` / `ip`、`startedAt`、`expiresAt`、`durationMs`、`remainingMs`、`kind`（`manual` / `auto`）、`trigger`、`playMs`
+- `play` 返回连续游玩状态：`continuousMs`（当前连续战斗时长）、`limitMs`（`14400000`）、`remainingMs`、`autoDurationMs`（`1200000`）、`resetAfterMs`（`300000`）、`lastActiveAt`
+- 说明：服务端以 `clientId` 或 `fingerprint` 匹配有效专注记录；页面刷新、WebSocket 重连后仍保持只读锁定。连续游玩按 WebSocket `state.active: true` 的实际战斗时间累计，暂停或离开战斗超过 5 分钟后重新累计
+- 返回示例：`{"ok":true,"now":1794500000000,"focus":{"active":true,"durationMs":1200000,"manualDurationMs":1800000,"autoDurationMs":1200000,"continuousPlayLimitMs":14400000,"record":{"id":"focus_m7x2_a1b2c3d4","clientId":"c_...","fingerprint":"fp1-ab…9f2c","ip":"203.0.*.*","startedAt":1794500000000,"expiresAt":1794501200000,"durationMs":1200000,"remainingMs":1200000,"kind":"auto","trigger":"continuous_play","playMs":14400000,"active":true}},"play":{"enabled":true,"active":true,"continuousMs":0,"limitMs":14400000,"remainingMs":14400000,"autoDurationMs":1200000,"resetAfterMs":300000,"lastActiveAt":1794500000000}}`
+
+自动强制专注规则：
+
+- 服务端按 `clientId`（缺失时用 `fingerprint`）累计实际战斗时间；同一设备多个标签页不会重复计时。
+- 连续游玩达到 4 小时时，服务端自动创建 20 分钟 `kind: "auto"` 记录、立即通过 WebSocket 锁定当前会话，并将本轮计时归零。
+- 计时每 15 秒尽量原子写入 `data/play-sessions.json`；写盘失败不会中断计时或锁定，进程退出时会最后补写一次。
+- 自动专注同样不可跳过；到期后恢复出生并可重新累计下一轮 4 小时。
 
 ### 开启手动专注模式
 
 - 方法：`POST`
 - 路径：`/api/focus/start`
 - Body：`{"clientId":"c_...","fingerprint":"fp1-..."}`
-- 说明：固定锁定 30 分钟，不接受客户端指定更短时长；已存在有效记录时复用原到期时间，不会因重复提交延长。服务端会同步锁定该 `clientId` / `fingerprint` 对应的在线 WebSocket 会话，并记录请求 IP。
+- 说明：固定手动锁定 30 分钟，不接受客户端指定更短时长；已存在有效记录时复用原到期时间，不会因重复提交延长。服务端会同步锁定该 `clientId` / `fingerprint` 对应的在线 WebSocket 会话，并记录请求 IP。自动强制专注由服务端内部创建，不通过此接口触发。
 - 返回字段：`focus.active`、`focus.record`、`reused`、`persisted`（审计记录是否已落盘）、`sessions`（本次同步锁定的在线会话数）
 - 状态码：首次创建 `201`；已有有效记录 `200`
 - 容错说明：托管数据目录或文件锁暂时不可写时，服务端仍会立即建立内存锁定并返回成功，`persisted` 为 `false`；记录会每 4 秒自动重试原子写入，进程收到 `SIGTERM` / `SIGINT` 时也会再次补写。单次 WebSocket 会话同步异常同样不会改变成功状态码。
-- 返回示例：`{"ok":true,"now":1794500000000,"reused":false,"persisted":true,"sessions":1,"focus":{"active":true,"durationMs":1800000,"record":{"id":"focus_m7x2_a1b2c3d4","clientId":"c_...","fingerprint":"fp1-ab…9f2c","ip":"203.0.*.*","startedAt":1794500000000,"expiresAt":1794501800000,"remainingMs":1800000,"active":true}},"message":"手动专注模式已开启，30 分钟内只能观战"}`
+- 返回示例：`{"ok":true,"now":1794500000000,"reused":false,"persisted":true,"sessions":1,"focus":{"active":true,"durationMs":1800000,"record":{"id":"focus_m7x2_a1b2c3d4","clientId":"c_...","fingerprint":"fp1-ab…9f2c","ip":"203.0.*.*","startedAt":1794500000000,"expiresAt":1794501800000,"durationMs":1800000,"remainingMs":1800000,"kind":"manual","trigger":"manual","playMs":0,"active":true}},"message":"手动专注模式已开启，30 分钟内只能观战"}`
 
 ### 切换语言
 
@@ -154,7 +168,7 @@
 - 协议：JSON 文本帧用于游戏状态与聊天；二进制帧用于玩家语音
 - 心跳：服务端每 30 秒发送 WebSocket ping
 - 鉴权：无需登录；连接后获得临时玩家 ID（如 `p12`）
-- 专注锁定：连接时携带 `clientId` 与 `fingerprint`；若命中有效专注记录，服务端立即把会话设为只读观战，重连后仍生效
+- 专注锁定：连接时携带 `clientId` 与 `fingerprint`；若命中有效手动或自动专注记录，服务端立即把会话设为只读观战，重连后仍生效
 
 ### 客户端 → 服务端（文本）
 
@@ -166,12 +180,12 @@
 | `chat` | `text` | 全服大字，最长 80 字，冷却 1200 ms；命中敏感词返回 `chatDenied` 且不广播。通过校验的消息会立即广播并尽力同步写入 `data/chat-history.jsonl`；写盘失败时仍广播，同时进入自动重试队列，并向发送者发送 `chatWarning` |
 | `voiceState` | `enabled`, `muted`, `speaking` | 同步麦克风开关、静音、说话状态 |
 | `rename` | `name` | 修改代号，最长 16 字；命中敏感词返回 `nameDenied` 并保留原代号 |
-| `state` | `pos`, `yaw`, `pitch`, `active`, `moving`, `sprint` | 10 Hz 位置与动作状态；仅同步移动与冲刺，蹲伏和趴下已移除 |
+| `state` | `pos`, `yaw`, `pitch`, `active`, `visible`, `moving`, `sprint` | 10 Hz 位置与动作状态；仅同步移动与冲刺，蹲伏和趴下已移除。服务端仅在 `active: true` 且 `visible` 不为 `false` 时累计连续游玩时间，达到 4 小时会立即下发自动专注锁定 |
 | `shot` | `origin`, `dir` | 射击特效广播 |
 | `hit` | `targetId` | 命中判定，服务端校验距离与保护状态 |
 | `died` | 无 | 主动上报死亡 |
 | `respawn` | 无 | 请求复活；死亡后至少等待 5 秒 |
-| `focusEnd` | 无 | 30 分钟到期后请求结束只读观战并恢复出生；未到期时返回 `focusState.denied: true` |
+| `focusEnd` | 无 | 手动 30 分钟或自动 20 分钟到期后请求结束只读观战并恢复出生；未到期时返回 `focusState.denied: true` |
 | `ping` | `t` | 延迟探测，服务端回 `pong` |
 
 专注锁定期间，`state`、`soldier`、`spawns`、`chat`、`voiceState`、`rename`、`shot`、`hit`、`died`、`respawn` 均被服务端拒绝；只允许 `join`、`focusEnd` 与 `ping`。二进制语音帧同样不会转发。
@@ -204,7 +218,7 @@
 | `respawnWait` | `ms` | 复活等待剩余毫秒 |
 | `notice` | `kind`, `name`, `id`, `previous`, `reason` | 加入 / 离开 / 复活 / 改名通知 |
 | `shot` | `id`, `origin`, `dir` | 其他玩家射击特效 |
-| `focusState` | `active`, `until`, `remainingMs`, `recordId`, `scope`, `ended`, `expired`, `denied`, `spawn` | 专注状态变化。`active: true` 表示进入只读观战；`expired: true` 表示 30 分钟已到期；`ended: true` 表示只读解除并附带新的 `spawn`；`denied: true` 表示锁定期间的操作被拒绝 |
+| `focusState` | `active`, `until`, `remainingMs`, `recordId`, `kind`, `durationMs`, `trigger`, `scope`, `playMs`, `ended`, `expired`, `denied`, `spawn` | 专注状态变化。`active: true` 表示进入只读观战；`kind: "manual"` 为 30 分钟手动模式，`kind: "auto"` / `trigger: "continuous_play"` 为连续游玩 4 小时触发的 20 分钟强制模式；`expired: true` 表示对应时长已到期；`ended: true` 表示只读解除并附带新的 `spawn`；`denied: true` 表示锁定期间的操作被拒绝 |
 | `pong` | `t` | 延迟响应 |
 
 ### 服务端 → 客户端（二进制）

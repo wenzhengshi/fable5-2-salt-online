@@ -19,14 +19,19 @@ module.exports = {
       return res.status(400).json({ ok: false, message: req.t('focus.invalidRequest') });
     }
     const current = focusMode.status(clientId, fingerprint);
+    const play = focusMode.playStatus(clientId, fingerprint);
     res.json({
       ok: true,
       now: Date.now(),
       focus: {
         active: current.active,
-        durationMs: focusMode.DURATION_MS,
+        durationMs: current.record ? current.record.durationMs : focusMode.MANUAL_DURATION_MS,
+        manualDurationMs: focusMode.MANUAL_DURATION_MS,
+        autoDurationMs: focusMode.AUTO_DURATION_MS,
+        continuousPlayLimitMs: focusMode.CONTINUOUS_PLAY_LIMIT_MS,
         record: current.record
-      }
+      },
+      play
     });
   },
 
@@ -47,7 +52,10 @@ module.exports = {
           clientId: record.clientId,
           fingerprint: record.fingerprint,
           until: record.expiresAt,
-          recordId: record.id
+          recordId: record.id,
+          kind: record.kind,
+          durationMs: record.durationMs,
+          trigger: record.trigger
         });
       } catch (lockErr) {
         // 锁定记录已经生效；单个在线会话同步失败不应把成功请求变成 500。
@@ -61,10 +69,10 @@ module.exports = {
         sessions,
         focus: {
           active: true,
-          durationMs: focusMode.DURATION_MS,
+          durationMs: record.durationMs,
           record: focusMode.publicRecord(record)
         },
-        message: req.t('focus.started')
+        message: req.t(record.kind === 'auto' ? 'focus.autoStarted' : 'focus.started')
       });
     } catch (err) {
       const status = Number(err && err.status) || 500;

@@ -365,17 +365,26 @@ function focusPayload(player, extra) {
     until: player.focusUntil || 0,
     remainingMs: Math.max(0, (player.focusUntil || 0) - now),
     recordId: player.focusRecordId || '',
+    kind: player.focusKind || 'manual',
+    durationMs: player.focusDurationMs || focusMode.MANUAL_DURATION_MS,
+    trigger: player.focusTrigger || 'manual',
     serverTime: now,
     ...(extra || {})
   };
 }
 
-function setFocusLock(player, until, recordId) {
+function setFocusLock(player, until, recordId, options) {
   if (!player) return 0;
+  const meta = options || {};
   const expiresAt = Math.max(Date.now(), Number(until) || 0);
   const hadVoice = !!(player.voice && player.voice.enabled);
   player.focusUntil = expiresAt;
   player.focusRecordId = String(recordId || player.focusRecordId || '');
+  player.focusKind = meta.kind === 'auto' ? 'auto' : 'manual';
+  player.focusDurationMs = Number(meta.durationMs) || (player.focusKind === 'auto'
+    ? focusMode.AUTO_DURATION_MS
+    : focusMode.MANUAL_DURATION_MS);
+  player.focusTrigger = String(meta.trigger || (player.focusKind === 'auto' ? 'continuous_play' : 'manual')).slice(0, 40);
   player.active = false;
   player.alive = false;
   player.hp = 0;
@@ -385,7 +394,7 @@ function setFocusLock(player, until, recordId) {
   player.sprint = false;
   player.prone = false;
   player.voice = { enabled: false, muted: true, speaking: false, windowAt: 0, windowBytes: 0 };
-  send(player.ws, focusPayload(player, { scope: 'manual' }));
+  send(player.ws, focusPayload(player, { scope: player.focusKind, playMs: Math.max(0, Number(meta.playMs) || 0) }));
   if (hadVoice) {
     broadcast({ type: 'voiceState', player: publicVoice(player) });
   }
@@ -399,16 +408,42 @@ function playerMatchesFocus(player, clientId, fingerprint) {
   return false;
 }
 
-function applyFocusLock({ clientId, fingerprint, until, recordId } = {}) {
+function applyFocusLock({ clientId, fingerprint, until, recordId, kind, durationMs, trigger, playMs } = {}) {
   let matched = 0;
   const cleanId = focusMode.normalizeClientId(clientId);
   const cleanFingerprint = focusMode.normalizeFingerprint(fingerprint);
   if (!cleanId && !cleanFingerprint) return matched;
   for (const player of players.values()) {
     if (!playerMatchesFocus(player, cleanId, cleanFingerprint)) continue;
-    matched += setFocusLock(player, until, recordId);
+    matched += setFocusLock(player, until, recordId, { kind, durationMs, trigger, playMs });
   }
   return matched;
+}
+
+function beginAutomaticFocus(player, play) {
+  if (!player || player.focusUntil > Date.now()) return false;
+  try {
+    const result = focusMode.startAutomatic({
+      clientId: player.clientId,
+      fingerprint: player.fingerprint,
+      ip: player.ip,
+      userAgent: player.userAgent,
+      lang: player.lang,
+      playMs: play && play.playMs
+    });
+    const record = result.record;
+    const recordKind = record.kind === 'auto' ? 'auto' : 'manual';
+    setFocusLock(player, record.expiresAt, record.id, {
+      kind: recordKind,
+      durationMs: record.durationMs,
+      trigger: record.trigger || (recordKind === 'auto' ? 'continuous_play' : 'manual'),
+      playMs: record.playMs
+    });
+    return true;
+  } catch (err) {
+    console.error('[focus] automatic focus failed', err && err.stack ? err.stack : err);
+    return false;
+  }
 }
 
 function handleMessage(player, raw) {
@@ -433,12 +468,12 @@ function handleMessage(player, raw) {
     if (msg.type === 'chat') {
       send(player.ws, { type: 'chatDenied', reason: 'focus', retryIn: Math.max(0, player.focusUntil - now) });
     } else {
-      send(player.ws, focusPayload(player, { scope: 'manual', denied: true }));
+      send(player.ws, focusPayload(player, { scope: player.focusKind || 'manual', denied: true }));
     }
     return;
   }
   if (player.focusUntil > now && msg.type !== 'ping' && msg.type !== 'join' && msg.type !== 'focusEnd') {
-    send(player.ws, focusPayload(player, { scope: 'manual', denied: true }));
+    send(player.ws, focusPayload(player, { scope: player.focusKind || 'manual', denied: true }));
     return;
   }
 
@@ -596,6 +631,13 @@ function handleMessage(player, raw) {
       player.sprint = !!msg.sprint;
       player.prone = false;
       player.lastSeen = now;
+      const play = focusMode.trackPlay({
+        clientId: player.clientId,
+        fingerprint: player.fingerprint,
+        active: player.joined && msg.active === true && msg.visible !== false,
+        now
+      });
+      if (play.triggered) beginAutomaticFocus(player, play);
       break;
     }
     case 'shot': {
@@ -699,11 +741,15 @@ function handleMessage(player, raw) {
     }
     case 'focusEnd': {
       if (player.focusUntil > now) {
-        send(player.ws, focusPayload(player, { scope: 'manual', denied: true }));
+        send(player.ws, focusPayload(player, { scope: player.focusKind || 'manual', denied: true }));
         break;
       }
+      const endedKind = player.focusKind || 'manual';
       player.focusUntil = 0;
       player.focusRecordId = '';
+      player.focusKind = '';
+      player.focusDurationMs = 0;
+      player.focusTrigger = '';
       const spawn = pickSpawn(player);
       player.alive = true;
       player.active = false;
@@ -714,7 +760,7 @@ function handleMessage(player, raw) {
       player.moving = false;
       player.sprint = false;
       player.protectedUntil = now + PROTECT_MS;
-      send(player.ws, focusPayload(player, { scope: 'manual', ended: true, spawn }));
+      send(player.ws, focusPayload(player, { scope: endedKind, kind: endedKind, ended: true, spawn }));
       send(player.ws, {
         type: 'respawned',
         pos: spawn,
@@ -750,6 +796,7 @@ function addPlayer(ws, req) {
   const ip = requestIp(req);
   const focusRecord = focusMode.findActive(clientId, fingerprint);
   const focusUntil = focusRecord ? Number(focusRecord.expiresAt) || 0 : 0;
+  const focusKind = focusRecord && focusRecord.kind === 'auto' ? 'auto' : 'manual';
   const player = {
     id,
     numId,
@@ -780,8 +827,15 @@ function addPlayer(ws, req) {
     clientId,
     fingerprint,
     ip,
+    userAgent: String((req && req.headers && req.headers['user-agent']) || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 240),
+    lang: query.get('lang') === 'en-US' ? 'en-US' : 'zh-CN',
     focusUntil,
     focusRecordId: focusRecord ? focusRecord.id : '',
+    focusKind: focusRecord ? focusKind : '',
+    focusDurationMs: focusRecord
+      ? Number(focusRecord.durationMs) || (focusKind === 'auto' ? focusMode.AUTO_DURATION_MS : focusMode.MANUAL_DURATION_MS)
+      : 0,
+    focusTrigger: focusRecord ? String(focusRecord.trigger || (focusKind === 'auto' ? 'continuous_play' : 'manual')).slice(0, 40) : '',
     msgWindow: Math.floor(Date.now() / 1000),
     msgCount: 0,
     isAlive: true
@@ -837,12 +891,17 @@ function tick() {
   const now = Date.now();
   for (const player of players.values()) {
     if (!player.focusUntil || player.focusUntil > now) continue;
+    const expiredKind = player.focusKind || 'manual';
     player.focusUntil = 0;
     player.focusRecordId = '';
+    player.focusKind = '';
+    player.focusDurationMs = 0;
+    player.focusTrigger = '';
     send(player.ws, {
       type: 'focusState',
       active: false,
       expired: true,
+      kind: expiredKind,
       until: 0,
       remainingMs: 0,
       serverTime: now

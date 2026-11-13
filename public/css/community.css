@@ -1,0 +1,439 @@
+/* ------------------------------------------------ community / WeChat group */
+.community-mount,
+.community-mount *,
+.community-mount *::before,
+.community-mount *::after,
+.community-modal,
+.community-modal *,
+.community-modal *::before,
+.community-modal *::after {
+  box-sizing: border-box;
+}
+
+.community-mount {
+  display: flex;
+  width: min(100%, 390px);
+  margin-top: clamp(12px, 2.2vh, 20px);
+}
+
+.community-mount--paused { width: 100%; }
+
+.community-mount--select {
+  width: auto;
+  margin: 0 0 0 auto;
+  align-self: flex-start;
+}
+
+.community-launch {
+  position: relative;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 74px;
+  padding: 8px 13px 8px 8px;
+  overflow: hidden;
+  border: 1px solid rgba(232, 228, 218, .22);
+  border-left: 2px solid #ffb347;
+  border-radius: 2px;
+  background:
+    linear-gradient(112deg, rgba(255, 179, 71, .14), transparent 50%),
+    rgba(11, 13, 15, .78);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .045);
+  color: #e8e4d9;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(12px) saturate(1.12);
+  -webkit-backdrop-filter: blur(12px) saturate(1.12);
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.community-launch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .055) 48%, transparent 66%);
+  transform: translateX(-120%);
+  transition: transform .5s ease;
+  pointer-events: none;
+}
+
+.community-launch:hover {
+  border-color: rgba(255, 179, 71, .62);
+  background:
+    linear-gradient(112deg, rgba(255, 179, 71, .2), transparent 55%),
+    rgba(11, 13, 15, .9);
+  transform: translateY(-1px);
+}
+
+.community-launch:hover::after { transform: translateX(120%); }
+.community-launch:active { transform: translateY(0) scale(.995); }
+.community-launch:focus-visible { outline: 2px solid #ffc977; outline-offset: 3px; }
+
+.community-launch-thumb {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  padding: 4px;
+  flex: none;
+  border: 1px solid #dddee0;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, .28);
+}
+
+.community-launch-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.community-launch-copy { display: block; min-width: 0; }
+
+.community-launch-copy b {
+  display: block;
+  color: #ffb347;
+  font: 600 10px/1 "IBM Plex Mono", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", ui-monospace, monospace;
+  letter-spacing: .17em;
+  text-transform: uppercase;
+}
+
+.community-launch-copy em {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  color: rgba(232, 228, 218, .76);
+  font: 500 11px/1.35 "IBM Plex Mono", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", ui-monospace, monospace;
+  font-style: normal;
+  letter-spacing: .015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-launch-arrow {
+  padding-left: 2px;
+  color: rgba(232, 228, 218, .46);
+  font: 500 15px/1 "IBM Plex Mono", ui-monospace, monospace;
+  transition: color .18s ease, transform .18s ease;
+}
+
+.community-launch--select {
+  grid-template-columns: 42px auto auto;
+  width: auto;
+  min-height: 48px;
+  padding: 4px 10px 4px 4px;
+  gap: 9px;
+}
+
+.community-launch--select .community-launch-thumb {
+  width: 42px;
+  height: 42px;
+  padding: 3px;
+}
+
+.community-launch--select .community-launch-copy b { font-size: 9px; letter-spacing: .13em; }
+.community-launch--select .community-launch-copy em { display: none; }
+
+.community-launch:hover .community-launch-arrow {
+  color: #ffc977;
+  transform: translate(1px, -1px);
+}
+
+/* ------------------------------------------------ modal */
+body.community-locked { overflow: hidden; }
+
+.community-modal[hidden] { display: none; }
+
+.community-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20050;
+  display: grid;
+  place-items: center;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 24px;
+  overflow: hidden;
+}
+
+.community-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 5, 7, .76);
+  opacity: 0;
+  transition: opacity .2s ease;
+  backdrop-filter: blur(7px) saturate(.85);
+  -webkit-backdrop-filter: blur(7px) saturate(.85);
+}
+
+.community-dialog {
+  position: relative;
+  width: min(780px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  border: 1px solid rgba(232, 228, 218, .24);
+  border-radius: 10px;
+  background:
+    radial-gradient(100% 90% at 88% 0%, rgba(255, 179, 71, .12), transparent 58%),
+    #0d1013;
+  box-shadow: 0 32px 110px rgba(0, 0, 0, .72), inset 0 1px 0 rgba(255, 255, 255, .055);
+  color: #e8e4d9;
+  outline: none;
+  opacity: 0;
+  transform: translateY(14px) scale(.985);
+  transition: opacity .22s ease, transform .22s ease;
+}
+
+.community-modal.open .community-backdrop { opacity: 1; }
+.community-modal.open .community-dialog { opacity: 1; transform: none; }
+
+.community-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(232, 228, 218, .22);
+  border-radius: 50%;
+  background: rgba(11, 13, 15, .62);
+  color: rgba(232, 228, 218, .76);
+  cursor: pointer;
+  transition: color .16s ease, border-color .16s ease, background .16s ease;
+}
+
+.community-close svg { width: 17px; height: 17px; fill: currentColor; }
+.community-close:hover { border-color: #ffb347; background: rgba(255, 179, 71, .12); color: #ffc977; }
+.community-close:focus-visible { outline: 2px solid #ffc977; outline-offset: 3px; }
+
+.community-head {
+  padding: 24px 68px 18px 28px;
+  border-bottom: 1px solid rgba(232, 228, 218, .14);
+}
+
+.community-kicker {
+  color: #ffb347;
+  font: 600 10px/1 "IBM Plex Mono", "Noto Sans SC", ui-monospace, monospace;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+}
+
+.community-head h2 {
+  margin: 10px 0 0;
+  color: #e8e4d9;
+  font: 900 clamp(34px, 4.2vw, 54px)/.94 "Big Shoulders Display", "Noto Sans SC", sans-serif;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.community-desc {
+  max-width: 58ch;
+  margin: 9px 0 0;
+  color: rgba(232, 228, 218, .66);
+  font: 500 13px/1.55 "Noto Sans SC", "IBM Plex Mono", sans-serif;
+}
+
+.community-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 34px);
+  align-items: center;
+  padding: 26px 28px 30px;
+}
+
+.community-qr-card {
+  margin: 0;
+  padding: 15px 15px 14px;
+  border: 1px solid #dddee0;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .3);
+}
+
+.community-qr-frame {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.community-qr-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.community-qr-card figcaption { padding: 12px 2px 0; text-align: center; }
+
+.community-qr-card figcaption strong {
+  display: block;
+  color: #191919;
+  font: 600 14px/1.35 "Noto Sans SC", sans-serif;
+  letter-spacing: .01em;
+}
+
+.community-qr-card figcaption span {
+  display: block;
+  margin-top: 3px;
+  color: #b2b2b2;
+  font: 500 10px/1.4 "IBM Plex Mono", "Noto Sans SC", ui-monospace, monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.community-info { min-width: 0; }
+
+.community-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.community-chips li {
+  padding: 6px 9px 5px;
+  border: 1px solid rgba(232, 228, 218, .2);
+  border-radius: 999px;
+  background: rgba(232, 228, 218, .055);
+  color: rgba(232, 228, 218, .74);
+  font: 500 9px/1 "IBM Plex Mono", "Noto Sans SC", ui-monospace, monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.community-validity {
+  margin: 18px 0 0;
+  padding-left: 12px;
+  border-left: 2px solid #ffb347;
+  color: rgba(232, 228, 218, .82);
+  font: 500 12px/1.6 "Noto Sans SC", sans-serif;
+}
+
+.community-actions { margin-top: 22px; }
+
+.community-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 2px 18px 0 15px;
+  border: 1px solid #ffb347;
+  border-radius: 2px;
+  background: #ffb347;
+  color: #0b0d0f;
+  font: 600 12px/1 "IBM Plex Mono", "Noto Sans SC", ui-monospace, monospace;
+  letter-spacing: .12em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: background .16s ease, border-color .16s ease, transform .16s ease;
+}
+
+.community-save svg { width: 16px; height: 16px; fill: currentColor; }
+.community-save:hover { border-color: #ffc977; background: #ffc977; transform: translateY(-1px); }
+.community-save:active { transform: translateY(0); }
+.community-save:focus-visible { outline: 2px solid #e8e4d9; outline-offset: 3px; }
+
+.community-save-hint {
+  margin: 12px 0 0;
+  color: #b2b2b2;
+  font: 500 10px/1.55 "IBM Plex Mono", "Noto Sans SC", ui-monospace, monospace;
+  letter-spacing: .01em;
+}
+
+.community-expired {
+  margin: 14px 0 0;
+  padding-top: 13px;
+  border-top: 1px solid rgba(232, 228, 218, .12);
+  color: rgba(232, 228, 218, .46);
+  font: 500 10px/1.55 "IBM Plex Mono", "Noto Sans SC", ui-monospace, monospace;
+}
+
+@media (max-width: 720px) {
+  .community-mount { width: 100%; margin-top: 10px; }
+
+  .community-mount--select { width: auto; margin: 0 0 0 auto; }
+
+  .community-launch--select {
+    grid-template-columns: 38px auto;
+    min-height: 42px;
+    padding: 3px 10px 3px 3px;
+    gap: 8px;
+  }
+
+  .community-launch--select .community-launch-thumb { width: 38px; height: 38px; padding: 2px; }
+  .community-launch--select .community-launch-arrow { display: none; }
+
+  .community-launch {
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    min-height: 66px;
+    padding: 7px 11px 7px 7px;
+  }
+
+  .community-launch-thumb { width: 52px; height: 52px; padding: 3px; }
+  .community-launch-copy b { font-size: 9.5px; }
+  .community-launch-copy em { margin-top: 5px; font-size: 10px; }
+
+  .community-modal { place-items: end center; padding: 0; }
+
+  .community-dialog {
+    width: 100%;
+    max-height: 92dvh;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 14px 14px 0 0;
+    /* The sheet is already anchored to the viewport bottom; fades avoid a
+       transient 24px overflow while the game loop is occupying frames. */
+    transform: none;
+  }
+
+  .community-head { padding: 18px 58px 14px 18px; }
+  .community-head h2 { font-size: clamp(31px, 10vw, 44px); }
+  .community-desc { font-size: 12px; }
+  .community-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px 18px calc(20px + env(safe-area-inset-bottom)); }
+  .community-qr-card { width: min(100%, 230px); margin: 0 auto; padding: 10px; }
+  .community-info { text-align: center; }
+  .community-chips { justify-content: center; }
+  .community-validity { padding: 0; border-left: 0; }
+  .community-validity::before { content: ''; display: block; width: 44px; height: 2px; margin: 0 auto 9px; background: #ffb347; }
+  .community-actions { margin-top: 14px; }
+  .community-save { justify-content: center; width: 100%; }
+  .community-save-hint { margin-top: 10px; }
+  .community-expired { margin-top: 12px; padding-top: 11px; }
+}
+
+@media (max-height: 560px) and (max-width: 720px) {
+  .community-qr-card { width: 176px; }
+  .community-head { padding-top: 15px; }
+  .community-head h2 { margin-top: 6px; }
+  .community-desc { display: none; }
+  .community-grid { padding-top: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .community-launch,
+  .community-launch::after,
+  .community-launch-arrow,
+  .community-backdrop,
+  .community-dialog,
+  .community-save,
+  .community-close {
+    transition: none !important;
+  }
+}

@@ -13,9 +13,9 @@
 - 落盘策略：正常时同步追加并 `fsync` 后再广播；若部署目录暂时不可写，大字仍会立即广播，同时进入进程内重试队列，每 4 秒自动重试并通过 `chatWarning` 提醒发送者。历史接口会返回尚未落盘的 `pending` 记录。进程收到 `SIGTERM` / `SIGINT` 时会最后重试一次并同步排行榜与大字文件。
 - API 缓存：`/api/*` 统一返回 `Cache-Control: no-store`，避免历史分页被浏览器或代理缓存成空列表。
 - 内容安全：玩家代号与全服大字在服务端统一做敏感词过滤；拆字、全角、零宽字符、符号替代与常见同形字规避同样会被识别。
-- 当前版本：`1.27.0`。相对上一版的完整差异、兼容性影响与验收重点见 [CHANGELOG.md](./CHANGELOG.md)。
+- 当前版本：`1.28.0`。相对上一版的完整差异、兼容性影响与验收重点见 [CHANGELOG.md](./CHANGELOG.md)。
 
-### v1.27.0 接口契约说明
+### v1.28.0 接口契约说明
 
 - 移除 Canvas 2D 战术兼容模式；`GET /?gfx=2d`、`?render=2d` 不再切换渲染路径，页面只加载 WebGL2 / Three.js 三维战场。
 - `engine` 仅接受 `webgl`。`join.engine` 中的其他值会被忽略；运行中发送 `engine: "canvas"` 会记录 `bad_input` 且不会改变服务端速度上限。
@@ -36,7 +36,7 @@
 
 - 方法：`GET`
 - 路径：`/css/*`、`/js/*`、`/models/*`
-- 说明：游戏样式、Three.js 游戏 bundle、多人对战、全服开麦语音与大字客户端脚本、男女士兵 GLB 模型、PAC-9 步枪模型，以及机器狗/无人机单位模型脚本。机器狗和无人机直接复用游戏 bundle 内的 `hound` / `gull` 敌人建模与材质，不新增重复模型资源。
+- 说明：游戏样式、Three.js 游戏 bundle、多人对战、全服开麦语音与大字客户端脚本、男女士兵 GLB 模型、PAC-9 步枪模型，以及机器狗/无人机单位模型脚本。机器狗和无人机直接复用游戏 bundle 内的 `hound` / `gull` 敌人建模与材质，不新增重复模型资源。`/audio/killstreak/01-first` 至 `06-hexa` 提供 MP3 / WebM 连杀播报，`/img/saltline-wechat-group.svg` 和 `/js/community.js` 提供游戏内微信群社区入口。
 
 ## 内容安全与敏感词拦截
 

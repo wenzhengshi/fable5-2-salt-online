@@ -11,7 +11,7 @@ const { attachMultiplayer, shutdownMultiplayer } = require('./realtime/multiplay
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const ASSET_VERSION = '20261113-authority-v24';
+const ASSET_VERSION = '20261113-community-killstreak-v25';
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));

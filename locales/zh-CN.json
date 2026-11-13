@@ -11,6 +11,25 @@
     "title": "盐线行动",
     "language": "切换语言"
   },
+  "community": {
+    "launch": "玩家群聊",
+    "launchSub": "扫码加入 Saltline 交流群",
+    "launchHint": "打开微信群聊二维码",
+    "kicker": "SALTLINE / 玩家通讯",
+    "title": "加入玩家群聊",
+    "desc": "战术讨论、组队开黑、版本反馈都在这里。用微信扫一扫，或保存二维码后在微信中识别。",
+    "groupName": "Saltline-多人联机交流群",
+    "scan": "微信扫码加入",
+    "save": "保存二维码",
+    "validity": "该二维码 7 天内（11 月 19 日前）有效，重新进入将更新。",
+    "expiredHint": "若二维码过期，请在游戏内或 GitHub 仓库联系管理员更新。",
+    "close": "关闭",
+    "qrAlt": "Saltline-多人联机交流群微信群二维码",
+    "saveHint": "手机端可长按二维码保存后，在微信中识别。",
+    "chipScan": "扫码入群",
+    "chipValid": "7 天有效",
+    "chipTalk": "玩家交流"
+  },
   "ui": {
     "switching": "正在切换语言…",
     "switchFailed": "语言切换失败，请重试",

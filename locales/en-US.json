@@ -11,6 +11,25 @@
     "title": "Saltline",
     "language": "Switch language"
   },
+  "community": {
+    "launch": "PLAYER GROUP",
+    "launchSub": "Scan to join the Saltline community",
+    "launchHint": "Open the WeChat group QR code",
+    "kicker": "SALTLINE / COMMUNITY",
+    "title": "Join the player group",
+    "desc": "Talk tactics, squad up and share feedback. Scan with WeChat, or save the code and open it in WeChat.",
+    "groupName": "Saltline Multiplayer Community",
+    "scan": "Scan with WeChat",
+    "save": "Save QR code",
+    "validity": "This QR code is valid for 7 days (until Nov 19). Re-entering will refresh it.",
+    "expiredHint": "If it expires, ask an admin in-game or via the GitHub repository for a new one.",
+    "close": "Close",
+    "qrAlt": "Saltline multiplayer community WeChat group QR code",
+    "saveHint": "On mobile, press and hold the QR code to save it, then open it in WeChat.",
+    "chipScan": "Scan to join",
+    "chipValid": "7-day invite",
+    "chipTalk": "Player chat"
+  },
   "ui": {
     "switching": "Switching language…",
     "switchFailed": "Language switch failed. Please try again.",

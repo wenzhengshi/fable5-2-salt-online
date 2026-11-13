@@ -1,4 +1,4 @@
-/* Manual focus mode: a read-only spectator layer shared by the 3D and Canvas 2D renderers. */
+/* Manual focus mode: a read-only spectator layer over the 3D renderer. */
 .focus-setting-row { align-items: stretch; }
 
 .focus-setting-button {
@@ -37,27 +37,37 @@
   color: rgba(232, 228, 218, 0.5);
 }
 
+.focus-play-meter {
+  grid-column: 1 / -1;
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(232, 228, 218, 0.12);
+}
+
+.focus-play-meter[hidden] { display: none; }
+
+.focus-play-meter i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #ffb347, #ffe066);
+  transition: width 0.55s linear;
+}
+
+.focus-play-meter.is-near-break i {
+  background: linear-gradient(90deg, #ff7a55, #ffb347);
+}
+
 .focus-setting-button.is-active {
   border-color: rgba(255, 179, 71, 0.7);
   background: rgba(255, 179, 71, 0.12);
   box-shadow: inset 3px 0 0 var(--signal, #ffb347);
 }
 
-.compat-focus-btn {
-  min-height: 28px;
-  margin-right: auto;
-  padding: 4px 9px;
-  border: 1px solid rgba(255, 179, 71, 0.4);
-  background: rgba(255, 179, 71, 0.08);
-  color: var(--compat-orange, #ffb347);
-  font: 600 9px/1 var(--f-mono, "IBM Plex Mono", monospace);
-  letter-spacing: 0.08em;
-  cursor: pointer;
-}
-
-.compat-focus-btn.is-active {
-  background: rgba(255, 179, 71, 0.18);
-  color: #fff3d8;
+.focus-setting-button.is-near-break {
+  border-color: rgba(255, 122, 85, 0.64);
+  background: rgba(255, 122, 85, 0.08);
 }
 
 #focus-mode {
@@ -453,7 +463,6 @@ body.focus-mode-on .panel,
 body.focus-mode-on .touch,
 body.focus-mode-on .comms,
 body.focus-mode-on #vc-ui,
-body.focus-mode-on #compat-ui,
 body.focus-mode-on .lang-switch,
 body.focus-mode-on .mp-chip,
 body.focus-mode-on .mp-unit,
@@ -469,8 +478,7 @@ body.focus-mode-on .mp-feed {
   z-index: 95;
 }
 
-body.focus-mode-on #view,
-body.focus-mode-on #compat-view {
+body.focus-mode-on #view {
   filter: saturate(0.9) contrast(1.06) brightness(0.92);
 }
 

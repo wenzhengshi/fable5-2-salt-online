@@ -156,6 +156,24 @@
   const binaryListeners = new Set();
   let lastFrame = 0;
 
+  /* ---- 服务端权威网络层：增量快照、插值缓冲、本地预测校正 ---- */
+  const net = {
+    entities: new Map(),
+    clockOffset: 0,
+    clockReady: false,
+    lastSnapshotAt: 0,
+    snapInterval: 100,
+    interpMs: 130,
+    inputSeq: 0,
+    lastInputAt: 0,
+    lastFire: null,
+    lastActive: null,
+    lastPos: { x: 0, y: 0, z: 0 },
+    lastPosAt: 0,
+    selfError: { x: 0, z: 0, since: 0 },
+    rate: 10
+  };
+
   /* ------------------------------------------------------------------- UI */
 
   const ui = document.createElement('div');
@@ -169,6 +187,7 @@
         <i>D</i><b id="mp-deaths">0</b>
       </span>
       <span class="mp-ping" id="mp-ping">—</span>
+      <span class="mp-net" id="mp-net" hidden></span>
       <button class="mp-roster-btn" id="mp-roster-btn" type="button"></button>
     </div>
     <div class="mp-unit" id="mp-unit" hidden>
@@ -228,6 +247,7 @@
     kills: ui.querySelector('#mp-kills'),
     deaths: ui.querySelector('#mp-deaths'),
     ping: ui.querySelector('#mp-ping'),
+    net: ui.querySelector('#mp-net'),
     rosterBtn: ui.querySelector('#mp-roster-btn'),
     feed: ui.querySelector('#mp-feed'),
     respawn: ui.querySelector('#mp-respawn'),
@@ -302,6 +322,13 @@
     el.deaths.textContent = String(selfStats.deaths || 0);
     el.ping.textContent = pingMs == null ? '—' : Math.round(pingMs) + 'ms';
     el.ping.classList.toggle('bad', pingMs != null && pingMs > 160);
+    if (el.net) {
+      el.net.hidden = !net.clockReady;
+      if (net.clockReady) {
+        el.net.textContent = net.rate + 'Hz';
+        el.net.title = t('netHint', { ms: Math.round(net.interpMs) });
+      }
+    }
   }
 
   function updateTitleLine() {
@@ -1166,6 +1193,213 @@
     });
   }
 
+  function clampNum(value, min, max) {
+    return value < min ? min : (value > max ? max : value);
+  }
+
+  function serverNow() {
+    return Date.now() + net.clockOffset;
+  }
+
+  function upsertEntity(entry, t) {
+    if (!Array.isArray(entry) || entry.length < 8) return null;
+    const id = String(entry[0]);
+    const x = Number(entry[1]);
+    const y = Number(entry[2]);
+    const z = Number(entry[3]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    let entity = net.entities.get(id);
+    if (!entity) {
+      entity = { id, samples: [] };
+      net.entities.set(id, entity);
+    }
+    const yaw = Number(entry[4]) || 0;
+    const pitch = Number(entry[5]) || 0;
+    const hp = Number(entry[6]);
+    const flags = Number(entry[7]) || 0;
+    entity.x = x;
+    entity.y = y;
+    entity.z = z;
+    entity.yaw = yaw;
+    entity.pitch = pitch;
+    entity.hp = Number.isFinite(hp) ? hp : 100;
+    entity.moving = !!(flags & 1);
+    entity.sprint = !!(flags & 2);
+    entity.shield = !!(flags & 4);
+    if (typeof entry[8] === 'string') entity.soldier = entry[8];
+    if (typeof entry[9] === 'string') entity.name = entry[9];
+    if (typeof entry[10] === 'string') entity.color = entry[10];
+    const last = entity.samples[entity.samples.length - 1];
+    if (!last || last.t !== t) {
+      entity.samples.push({ t, x, y, z, yaw });
+      if (entity.samples.length > 12) entity.samples.shift();
+    }
+    return entity;
+  }
+
+  function entityView(entity) {
+    return {
+      id: entity.id,
+      name: entity.name || '',
+      color: entity.color || '#ffb347',
+      soldier: normalizeSoldier(entity.soldier),
+      x: entity.x,
+      y: entity.y,
+      z: entity.z,
+      yaw: entity.yaw,
+      pitch: entity.pitch,
+      hp: entity.hp,
+      moving: !!entity.moving,
+      sprint: !!entity.sprint,
+      shield: !!entity.shield
+    };
+  }
+
+  /**
+   * 把服务端增量快照合成为完整实体列表，旧版消费者（Canvas 兜底）继续读 msg.players。
+   */
+  function prepareSnapshot(msg) {
+    const t = Number(msg.t) || Date.now();
+    const now = Date.now();
+    const rawOffset = t - now;
+    if (!net.clockReady) {
+      net.clockOffset = rawOffset;
+      net.clockReady = true;
+    } else {
+      const delta = rawOffset - net.clockOffset;
+      if (delta < -90 || delta > 300) net.clockOffset = rawOffset;
+      else net.clockOffset += clampNum(delta * 0.1, -20, 20);
+    }
+
+    if (Number.isFinite(Number(msg.interp))) {
+      net.interpMs = clampNum(net.interpMs * 0.88 + Number(msg.interp) * 0.12, 70, 420);
+    }
+    if (Number.isFinite(Number(msg.rate)) && Number(msg.rate) > 0) net.rate = Number(msg.rate);
+    if (net.lastSnapshotAt) {
+      const gap = clampNum(now - net.lastSnapshotAt, 30, 600);
+      net.snapInterval = net.snapInterval * 0.85 + gap * 0.15;
+      net.interpMs = clampNum(Math.max(net.interpMs, net.snapInterval * 1.12), 70, 420);
+    }
+    net.lastSnapshotAt = now;
+
+    if (msg.full) {
+      const keep = new Set();
+      for (const entry of msg.add || []) {
+        const entity = upsertEntity(entry, t);
+        if (entity) keep.add(entity.id);
+      }
+      for (const id of [...net.entities.keys()]) {
+        if (!keep.has(id)) net.entities.delete(id);
+      }
+    } else {
+      for (const id of msg.rm || []) net.entities.delete(String(id));
+      for (const entry of msg.add || []) upsertEntity(entry, t);
+      for (const entry of msg.upd || []) upsertEntity(entry, t);
+    }
+
+    msg.players = [];
+    for (const entity of net.entities.values()) msg.players.push(entityView(entity));
+    return msg;
+  }
+
+  function lerpAngle(from, to, amount) {
+    let delta = to - from;
+    delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+    return from + delta * amount;
+  }
+
+  /**
+   * 在快照缓冲里按“服务端渲染时间”采样，短距离外推最多 140ms。
+   */
+  function sampleEntity(entity, time) {
+    const samples = entity && entity.samples;
+    if (!samples || !samples.length) return null;
+    if (samples.length === 1) return samples[0];
+    if (time <= samples[0].t) return samples[0];
+    for (let i = samples.length - 1; i > 0; i -= 1) {
+      const a = samples[i - 1];
+      const b = samples[i];
+      if (a.t > time) continue;
+      const span = b.t - a.t;
+      if (span <= 0) return b;
+      let k = (time - a.t) / span;
+      if (k < 1) {
+        return {
+          x: a.x + (b.x - a.x) * k,
+          y: a.y + (b.y - a.y) * k,
+          z: a.z + (b.z - a.z) * k,
+          yaw: lerpAngle(a.yaw, b.yaw, k)
+        };
+      }
+      const overshoot = Math.min(140, time - b.t);
+      const vx = (b.x - a.x) / span;
+      const vz = (b.z - a.z) / span;
+      return {
+        x: b.x + (vx * overshoot) / 1000,
+        y: b.y,
+        z: b.z + (vz * overshoot) / 1000,
+        yaw: b.yaw
+      };
+    }
+    return samples[samples.length - 1];
+  }
+
+  /**
+   * 服务端位置与本地预测的误差：小误差软收敛，大误差直接回拉。
+   */
+  function reconcileSelf(you) {
+    if (!G || !G.player || !you) return;
+    if (typeof you.x !== 'number' || typeof you.z !== 'number') return;
+    if (!you.alive || respawn.active || !G.player.alive) {
+      net.selfError.x = 0;
+      net.selfError.z = 0;
+      net.selfError.since = 0;
+      return;
+    }
+    const dx = you.x - G.player.pos.x;
+    const dz = you.z - G.player.pos.z;
+    const dy = (Number(you.y) || 0) - G.player.pos.y;
+    const dist = Math.hypot(dx, dz);
+    if (dist > 7 || Math.abs(dy) > 5) {
+      G.player.pos.x = you.x;
+      G.player.pos.z = you.z;
+      if (Math.abs(dy) <= 5) G.player.pos.y = you.y;
+      net.selfError.x = 0;
+      net.selfError.z = 0;
+      net.selfError.since = 0;
+      return;
+    }
+    net.selfError.x = dx;
+    net.selfError.z = dz;
+  }
+
+  function applySelfCorrection(dt) {
+    if (!G || !G.player || !G.player.alive || respawn.active) return;
+    const err = net.selfError;
+    const dist = Math.hypot(err.x, err.z);
+    if (dist < 0.02) {
+      err.x = 0;
+      err.z = 0;
+      err.since = 0;
+      return;
+    }
+    if (!err.since) err.since = Date.now();
+    if (Date.now() - err.since > 4500) {
+      G.player.pos.x += err.x;
+      G.player.pos.z += err.z;
+      err.x = 0;
+      err.z = 0;
+      err.since = 0;
+      return;
+    }
+    const step = Math.min(dist, Math.max(0.004, dist * (1 - Math.exp(-dt * 9))), 0.16);
+    const k = step / dist;
+    G.player.pos.x += err.x * k;
+    G.player.pos.z += err.z * k;
+    err.x -= err.x * k;
+    err.z -= err.z * k;
+  }
+
   function reconcileAvatars(list) {
     if (!scene || !THREE) return;
     const seen = new Set();
@@ -1179,9 +1413,9 @@
         scene.add(avatar.group);
       }
       avatar.data = item;
+      avatar.entity = net.entities.get(item.id) || null;
       avatar.group.visible = true;
       avatar.hiddenAt = 0;
-      avatar.target.set(item.x, item.y, item.z);
       avatar.targetYaw = item.yaw || 0;
       const soldier = normalizeSoldier(item.soldier);
       if (avatar.soldierKind && avatar.soldierKind !== soldier) {
@@ -1206,17 +1440,31 @@
   }
 
   function updateAvatars(dt) {
+    const renderTime = serverNow() - net.interpMs;
     for (const avatar of avatars.values()) {
       if (!avatar.group.visible) continue;
-      const distanceSq = avatar.group.position.distanceToSquared(avatar.target);
-      if (distanceSq > 64) avatar.group.position.copy(avatar.target);
-      else {
-        const alpha = 1 - Math.exp(-dt * 16);
-        avatar.group.position.lerp(avatar.target, alpha);
+      const entity = avatar.entity || net.entities.get(avatar.id);
+      const sample = entity ? sampleEntity(entity, renderTime) : null;
+      if (sample) {
+        avatar.target.set(sample.x, sample.y, sample.z);
+        const dx = avatar.target.x - avatar.group.position.x;
+        const dy = avatar.target.y - avatar.group.position.y;
+        const dz = avatar.target.z - avatar.group.position.z;
+        if (dx * dx + dy * dy + dz * dz > 36) {
+          avatar.group.position.copy(avatar.target);
+        } else {
+          const alpha = 1 - Math.exp(-dt * 26);
+          avatar.group.position.x += dx * alpha;
+          avatar.group.position.y += dy * alpha;
+          avatar.group.position.z += dz * alpha;
+        }
+        avatar.targetYaw = sample.yaw;
       }
-      let delta = avatar.targetYaw - avatar.group.rotation.y;
-      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-      avatar.group.rotation.y += delta * Math.min(1, dt * 14);
+      const yawDelta = Math.atan2(
+        Math.sin(avatar.targetYaw - avatar.group.rotation.y),
+        Math.cos(avatar.targetYaw - avatar.group.rotation.y)
+      );
+      avatar.group.rotation.y += yawDelta * Math.min(1, dt * 14);
 
       const moving = !!(avatar.data && avatar.data.moving);
       if (avatar.rig) {
@@ -1298,11 +1546,8 @@
       const result = original.call(this, origin, dir, opts);
       try {
         if (origin && dir && G.game && G.game.state === 'playing' && !respawn.active) {
-          send({
-            type: 'shot',
-            origin: { x: origin.x, y: origin.y, z: origin.z },
-            dir: { x: dir.x, y: dir.y, z: dir.z }
-          });
+          /* 开火意图立即上报：服务端按自己的冷却与命中盒裁决伤害。 */
+          sendInput(true);
         }
       } catch (err) { /* ignore */ }
       try {
@@ -1318,7 +1563,6 @@
         }
         if (!best) return result;
         const point = origin.clone().addScaledVector(dir, best.dist);
-        send({ type: 'hit', targetId: best.avatar.id });
         best.avatar.hitAt = performance.now();
         try { G.fx && G.fx.sparks && G.fx.sparks(point, dir, 6); } catch (err) { /* ignore */ }
         return {
@@ -1402,24 +1646,104 @@
     }
   }
 
-  function sendState(force) {
-    if (!G || !G.player || !send) return;
-    const now = performance.now();
-    if (!force && now - lastStateAt < 90) return;
-    lastStateAt = now;
-    const state = G.game && G.game.state;
-    const active = state === 'playing' && !respawn.active;
+  function buildInputPayload() {
+    if (!G || !G.player || !THREE) return null;
     const player = G.player;
-    send({
-      type: 'state',
-      pos: { x: player.pos.x, y: player.pos.y, z: player.pos.z },
-      yaw: player.yaw,
-      pitch: player.pitch,
+    const input = G.input || {};
+    const move = input.move || { x: 0, y: 0 };
+    const f = clampNum(Number(move.y) || 0, -1, 1);
+    const s = clampNum(Number(move.x) || 0, -1, 1);
+    const yaw = Number(player.yaw) || 0;
+    let mvx = s * Math.cos(yaw) - f * Math.sin(yaw);
+    let mvz = -s * Math.sin(yaw) - f * Math.cos(yaw);
+    const mag = Math.hypot(mvx, mvz);
+    if (mag > 1) {
+      mvx /= mag;
+      mvz /= mag;
+    }
+
+    let aim = null;
+    try {
+      if (G.camera) {
+        const dir = new THREE.Vector3();
+        G.camera.getWorldDirection(dir);
+        if (dir.lengthSq() > 1e-6) {
+          dir.normalize();
+          aim = { x: dir.x, y: dir.y, z: dir.z };
+        }
+      }
+    } catch (err) { /* ignore */ }
+
+    /*
+     * spd 取本地实际位移速度而不是输入速度：撞墙滑行时服务端不会继续推墙，
+     * 这也让服务端的位移上限校验更有意义（真实速度不可能超过上限）。
+     */
+    const now = performance.now();
+    const pos = player.pos || { x: 0, y: 0, z: 0 };
+    let speed = 0;
+    if (net.lastPosAt && now > net.lastPosAt) {
+      const dtPos = (now - net.lastPosAt) / 1000;
+      const disp = Math.hypot(pos.x - net.lastPos.x, pos.z - net.lastPos.z);
+      const dispSpeed = dtPos > 0.004 ? disp / dtPos : 0;
+      const vel = player.vel || { x: 0, z: 0 };
+      const velSpeed = Math.hypot(Number(vel.x) || 0, Number(vel.z) || 0);
+      if (dispSpeed < 22 && (dispSpeed > 1.2 || velSpeed > 0.6)) {
+        speed = Math.min(dispSpeed, velSpeed + 1.2, 20);
+      }
+    }
+    net.lastPos.x = pos.x;
+    net.lastPos.y = pos.y;
+    net.lastPos.z = pos.z;
+    net.lastPosAt = now;
+
+    const active = !!(G.game && G.game.state === 'playing' && !respawn.active);
+    const kind = normalizeSoldier(mySoldier);
+    const down = typeof input.down === 'function' ? input.down.bind(input) : () => false;
+    const jump = kind === 'drone'
+      ? false
+      : !!(input.jump || down('jump'));
+    const ascend = kind === 'drone' && !!(virtualUnitInput.ascend || down('jump'));
+    const descend = kind === 'drone' && !!(virtualUnitInput.descend || down('sprint'));
+    const fire = !!(active && input.fire);
+
+    return {
+      type: 'input',
+      seq: ++net.inputSeq,
+      f,
+      s,
+      mv: { x: mvx, z: mvz },
+      spd: Math.round(speed * 100) / 100,
+      sprint: !!player.sprinting,
+      yaw: Math.round(yaw * 1000) / 1000,
+      pitch: Math.round((Number(player.pitch) || 0) * 1000) / 1000,
+      aim,
+      jump,
+      up: ascend,
+      down: descend,
+      fire,
+      ads: !!(input.ads || player.ads),
       active,
       visible: !document.hidden,
-      moving: !!(player.vel && Math.hypot(player.vel.x, player.vel.z) > 0.6),
-      sprint: !!player.sprinting
-    });
+      engine: 'webgl'
+    };
+  }
+
+  function sendInput(force) {
+    if (!G || !G.player) return false;
+    const now = performance.now();
+    if (!force && now - net.lastInputAt < 30) return false;
+    const payload = buildInputPayload();
+    if (!payload) return false;
+    const changed = payload.fire !== net.lastFire || payload.active !== net.lastActive;
+    if (!force && !changed && now - net.lastInputAt < 30) return false;
+    net.lastInputAt = now;
+    net.lastFire = payload.fire;
+    net.lastActive = payload.active;
+    return send(payload);
+  }
+
+  function sendState(force) {
+    return sendInput(force !== false);
   }
 
   function unitName(kind) {
@@ -1646,7 +1970,12 @@
       reconnectDelay = 1200;
       setConnection('online');
       everJoined = false;
-      send({ type: 'join', name: myName, soldier: mySoldier, spawns: spawnsFromLevel() });
+      net.entities.clear();
+      net.clockReady = false;
+      net.selfError.x = 0;
+      net.selfError.z = 0;
+      net.selfError.since = 0;
+      send({ type: 'join', name: myName, soldier: mySoldier, engine: 'webgl', spawns: spawnsFromLevel() });
       window.clearInterval(pingTimer);
       pingTimer = window.setInterval(() => {
         if (ws && ws.readyState === 1) send({ type: 'ping', t: performance.now() });
@@ -1666,6 +1995,12 @@
       }
       let msg;
       try { msg = JSON.parse(event.data); } catch (err) { return; }
+      if (msg && msg.type === 'snapshot') {
+        try { prepareSnapshot(msg); } catch (err) {
+          console.error('[mp] snapshot prepare failed', err);
+          return;
+        }
+      }
       handleMessage(msg);
     });
 
@@ -1778,11 +2113,12 @@
             respawn.until = Math.min(respawn.until, Date.now());
           }
         }
-        rosterData = Array.isArray(msg.roster) ? msg.roster : [];
+        if (Array.isArray(msg.roster)) rosterData = msg.roster;
         updateChip();
         if (!el.roster.hidden) renderRoster();
         updateTitleLine();
         reconcileAvatars(Array.isArray(msg.players) ? msg.players : []);
+        reconcileSelf(msg.you);
         break;
       }
       case 'hitConfirm': {
@@ -1897,6 +2233,35 @@
         } catch (err) { /* ignore */ }
         break;
       }
+      case 'correction': {
+        if (!G || !G.player || !msg.pos) break;
+        const dx = (Number(msg.pos.x) || 0) - G.player.pos.x;
+        const dz = (Number(msg.pos.z) || 0) - G.player.pos.z;
+        if (!G.player.alive || respawn.active) break;
+        if (Math.hypot(dx, dz) > 2.2) {
+          G.player.pos.x = Number(msg.pos.x) || G.player.pos.x;
+          G.player.pos.z = Number(msg.pos.z) || G.player.pos.z;
+          net.selfError.x = 0;
+          net.selfError.z = 0;
+        } else {
+          net.selfError.x = dx;
+          net.selfError.z = dz;
+        }
+        break;
+      }
+      case 'antiCheat': {
+        console.warn('[mp] anti-cheat', msg.kind, msg.action, msg.score);
+        if (msg.action === 'kick') toast(t('antiCheatKick'));
+        else if (msg.action === 'lock_move' || msg.action === 'lock_fire') toast(t('antiCheatLock'));
+        else toast(t('antiCheatWarn'));
+        break;
+      }
+      case 'idle': {
+        if (respawn.active && Number(msg.respawnAt)) {
+          respawn.until = Math.min(respawn.until, Number(msg.respawnAt));
+        }
+        break;
+      }
       case 'pong': {
         if (typeof msg.t === 'number') pingMs = performance.now() - msg.t;
         break;
@@ -1926,7 +2291,15 @@
     updateUnitBadge();
 
     window.clearInterval(stateTimer);
-    stateTimer = window.setInterval(() => sendState(false), 100);
+    stateTimer = window.setInterval(() => sendInput(false), 33);
+    try {
+      if (G.player && G.player.pos) {
+        net.lastPos.x = G.player.pos.x;
+        net.lastPos.y = G.player.pos.y;
+        net.lastPos.z = G.player.pos.z;
+        net.lastPosAt = performance.now();
+      }
+    } catch (err) { /* ignore */ }
 
     // Watch for pending server deaths (player was in the intro / menu when hit).
     window.setInterval(() => {
@@ -1954,7 +2327,10 @@
     const frame = (now) => {
       const dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0.016;
       lastFrame = now;
-      try { updateAvatars(dt); } catch (err) { /* ignore */ }
+      try {
+        updateAvatars(dt);
+        applySelfCorrection(dt);
+      } catch (err) { /* ignore */ }
       if (isMachine(mySoldier) && now - lastUnitBadgeAt > 180) {
         lastUnitBadgeAt = now;
         try { updateUnitBadge(); } catch (err) { /* ignore */ }

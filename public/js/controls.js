@@ -72,7 +72,7 @@
 
   function scrubObsoleteControls(root) {
     const scope = root || document;
-    scope.querySelectorAll('.t-crouch, .t-prone, .mp-stance, .compat-stance').forEach((node) => node.remove());
+    scope.querySelectorAll('.t-crouch, .t-prone, .mp-stance').forEach((node) => node.remove());
     scope.querySelectorAll('dt, dd, span').forEach((node) => {
       if (!OBSOLETE_COPY.test(node.textContent || '')) return;
       if (node.tagName === 'DT' || node.tagName === 'DD') {

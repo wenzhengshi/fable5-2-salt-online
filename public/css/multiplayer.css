@@ -101,6 +101,19 @@ body.is-playing .mp-chip:hover,
 
 .mp-ping.bad { color: var(--alarm); }
 
+.mp-net {
+  padding: 3px 7px;
+  border: 1px solid rgba(138, 255, 193, 0.26);
+  border-radius: 999px;
+  color: #9dffd0;
+  font: 600 9px/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body.is-playing .mp-net { opacity: 0.78; }
+
 .mp-roster-btn {
   min-height: 26px;
   padding: 0 11px;

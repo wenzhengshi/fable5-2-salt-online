@@ -2,11 +2,16 @@ const startedAt = Date.now();
 const {
   getLeaderboard,
   getOnlinePlayers,
-  RESPAWN_MS
+  getNetStats,
+  RESPAWN_MS,
+  TICK_MS
 } = require('../realtime/multiplayer');
 const contentFilter = require('../services/contentFilter');
 const chatHistoryStore = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
+const antiCheat = require('../services/antiCheat');
+const world = require('../realtime/world');
+const { version: APP_VERSION } = require('../package.json');
 
 module.exports = {
   health(req, res) {
@@ -25,12 +30,12 @@ module.exports = {
       lang: req.lang,
       title: req.t('game.title'),
       tagline: req.t('game.tagline'),
-      version: '1.23.0',
-      engine: 'WebGL2 / Three.js (bundled) + Canvas 2D fallback',
+      version: APP_VERSION,
+      engine: 'WebGL2 / Three.js (bundled)',
       rendering: {
         primary: 'webgl2',
-        fallback: 'canvas2d',
-        autoFallback: true
+        fallback: null,
+        autoFallback: false
       },
       mode: 'free-for-all',
       respawnSeconds: Math.round(RESPAWN_MS / 1000),
@@ -42,6 +47,26 @@ module.exports = {
       ],
       online: getOnlinePlayers().length,
       websocket: '/ws',
+      authority: 'server',
+      netcode: {
+        model: 'server-authoritative input simulation',
+        tickMs: TICK_MS,
+        tickHz: Math.round(1000 / TICK_MS),
+        snapshot: 'delta+aoi+adaptive',
+        snapshotHz: getNetStats().snapshotHz,
+        interpolationMs: getNetStats().interpMs,
+        clientPrediction: true,
+        reconciliation: 'soft-correct+hard-snap',
+        movementSpeedLimits: getNetStats().simulation.speedLimits,
+        fireCooldownMs: getNetStats().simulation.fireCooldownMs,
+        weaponRange: getNetStats().simulation.weaponRange,
+        damage: getNetStats().simulation.damage,
+        endpoint: '/api/game/netcode'
+      },
+      world: {
+        boxes: world.stats().boxes,
+        source: world.stats().file
+      },
       moderation: contentFilter.descriptor(),
       focusMode: {
         durationMinutes: 30,
@@ -49,6 +74,7 @@ module.exports = {
         autoDurationMinutes: 20,
         continuousPlayLimitMinutes: 240,
         continuousResetMinutes: 5,
+        warningMinutes: [5, 1],
         enforcement: 'server',
         autoSpectate: true,
         storage: 'focus-records.json',
@@ -119,6 +145,26 @@ module.exports = {
       total: page.total,
       limit: page.limit
     });
+  },
+
+  netcode(req, res) {
+    res.json({ ok: true, lang: req.lang, ...getNetStats() });
+  },
+
+  anticheat(req, res) {
+    const stats = antiCheat.stats();
+    res.json({
+      ok: true,
+      lang: req.lang,
+      limits: stats.limits,
+      weights: stats.weights,
+      totals: stats.totals,
+      recent: antiCheat.recentEvents(req.query && req.query.limit)
+    });
+  },
+
+  worldInfo(req, res) {
+    res.json({ ok: true, lang: req.lang, ...world.stats() });
   },
 
   leaderboard(req, res) {

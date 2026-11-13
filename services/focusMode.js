@@ -10,7 +10,6 @@ const AUTO_DURATION_MS = 20 * 60 * 1000;
 const DURATION_MS = MANUAL_DURATION_MS;
 const CONTINUOUS_PLAY_LIMIT_MS = 4 * 60 * 60 * 1000;
 const PLAY_RESET_MS = 5 * 60 * 1000;
-const PLAY_WARNING_MS = 5 * 60 * 1000;
 const PLAY_SAMPLE_MAX_MS = 2500;
 const PLAY_SAVE_DELAY_MS = 15000;
 const PLAY_MAX_RECORDS = 1000;
@@ -221,17 +220,12 @@ function playSnapshot(row, now) {
   const continuousMs = row && !stale
     ? Math.max(0, Math.min(CONTINUOUS_PLAY_LIMIT_MS, Number(row.continuousMs) || 0))
     : 0;
-  const active = !!(row && row.lastActiveAt && at - row.lastActiveAt <= 15000);
-  const remainingMs = Math.max(0, CONTINUOUS_PLAY_LIMIT_MS - continuousMs);
   return {
     enabled: true,
-    active,
+    active: !!(row && row.lastActiveAt && at - row.lastActiveAt <= 15000),
     continuousMs,
     limitMs: CONTINUOUS_PLAY_LIMIT_MS,
-    remainingMs,
-    progress: Math.min(1, continuousMs / CONTINUOUS_PLAY_LIMIT_MS),
-    nextBreakAt: active && remainingMs > 0 ? at + remainingMs : 0,
-    warning: active && remainingMs <= PLAY_WARNING_MS,
+    remainingMs: Math.max(0, CONTINUOUS_PLAY_LIMIT_MS - continuousMs),
     autoDurationMs: AUTO_DURATION_MS,
     resetAfterMs: PLAY_RESET_MS,
     lastActiveAt: row ? Number(row.lastActiveAt) || 0 : 0
@@ -359,7 +353,6 @@ function publicRecord(record, now) {
   const at = Number(now) || Date.now();
   const expiresAt = Number(record.expiresAt) || 0;
   const kind = record.kind === 'auto' ? 'auto' : 'manual';
-  const fallbackDuration = kind === 'auto' ? AUTO_DURATION_MS : DURATION_MS;
   return {
     id: record.id,
     clientId: record.clientId,
@@ -367,7 +360,7 @@ function publicRecord(record, now) {
     ip: maskIp(record.ip),
     startedAt: Number(record.startedAt) || 0,
     expiresAt,
-    durationMs: Number(record.durationMs) || fallbackDuration,
+    durationMs: Number(record.durationMs) || DURATION_MS,
     kind,
     trigger: record.trigger || (kind === 'auto' ? 'continuous_play' : 'manual'),
     playMs: Math.max(0, Number(record.playMs) || 0),
@@ -525,7 +518,6 @@ module.exports = {
   AUTO_DURATION_MS,
   CONTINUOUS_PLAY_LIMIT_MS,
   PLAY_RESET_MS,
-  PLAY_WARNING_MS,
   normalizeClientId,
   normalizeFingerprint,
   normalizeIp,

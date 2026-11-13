@@ -4,7 +4,7 @@
   const i18n = window.__SALT_I18N__ || {};
   const COPY = (i18n.messages && i18n.messages.soldierSelect) || {};
   const STORAGE_KEY = 'saltline.multiplayer.soldier';
-  const UNIT_KINDS = ['male', 'female', 'hound', 'drone'];
+  const UNIT_KINDS = ['male', 'female', 'hound', 'drone', 'classic'];
   const app = document.getElementById('app');
   if (!app) return;
 
@@ -17,7 +17,7 @@
   }
 
   function normalizeSoldier(value) {
-    return UNIT_KINDS.includes(value) ? value : 'male';
+    return UNIT_KINDS.includes(value) ? value : 'classic';
   }
 
   function isMachine(value) {
@@ -25,7 +25,7 @@
   }
 
   function loadSoldier() {
-    try { return normalizeSoldier(localStorage.getItem(STORAGE_KEY)); } catch (err) { return 'male'; }
+    try { return normalizeSoldier(localStorage.getItem(STORAGE_KEY)); } catch (err) { return 'classic'; }
   }
 
   function saveSoldier(value) {
@@ -293,6 +293,7 @@
   }
 
   function modelApiFor(kind) {
+    if (kind === 'classic') return window.ClassicAvatar;
     return isMachine(kind)
       ? window.SaltUnitModels
       : (window.SoldierModels || window.HunterAvatar);
@@ -388,7 +389,11 @@
   function waitForModels() {
     const humanApi = window.SoldierModels || window.HunterAvatar;
     const machineApi = window.SaltUnitModels;
-    if (!humanApi || !machineApi || typeof humanApi.whenReady !== 'function' || typeof machineApi.whenReady !== 'function') {
+    const classicApi = window.ClassicAvatar;
+    if (!humanApi || !machineApi || !classicApi ||
+        typeof humanApi.whenReady !== 'function' ||
+        typeof machineApi.whenReady !== 'function' ||
+        typeof classicApi.whenReady !== 'function') {
       window.setTimeout(waitForModels, 150);
       return;
     }

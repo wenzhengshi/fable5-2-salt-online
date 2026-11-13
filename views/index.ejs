@@ -23,6 +23,9 @@
     <link rel="stylesheet" href="/css/soldier-select.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/focus.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/community.css?v=<%= assetVersion %>" />
+    <link rel="stylesheet" href="/css/replay.css?v=<%= assetVersion %>" />
+    <link rel="stylesheet" href="/css/mobile.css?v=<%= assetVersion %>" />
+    <link rel="preload" href="/js/game.bundle.js?v=<%= assetVersion %>" as="script" />
   </head>
   <body>
     <div id="app">
@@ -57,31 +60,9 @@
     </script>
     <script src="/js/webgl-guard.js?v=<%= assetVersion %>"></script>
     <script src="/js/i18n.js?v=<%= assetVersion %>"></script>
-    <script src="/js/game.bundle.js?v=<%= assetVersion %>"></script>
-    <script src="/js/ammo.js?v=<%= assetVersion %>"></script>
-    <script src="/js/sail.js?v=<%= assetVersion %>"></script>
-    <script src="/js/focus-mode.js?v=<%= assetVersion %>"></script>
-    <script src="/js/multiplayer.js?v=<%= assetVersion %>"></script>
-    <script src="/js/kill-streak.js?v=<%= assetVersion %>"></script>
-    <script src="/js/community.js?v=<%= assetVersion %>"></script>
-    <script src="/js/comms.js?v=<%= assetVersion %>"></script>
-    <script src="/js/controls.js?v=<%= assetVersion %>"></script>
     <script type="importmap">
       { "imports": { "three": "/vendor/three-game.js?v=<%= assetVersion %>" } }
     </script>
-    <script>
-      (function () {
-        [
-          '/js/hunter-avatar.js?v=<%= assetVersion %>',
-          '/js/unit-models.js?v=<%= assetVersion %>',
-          '/js/soldier-select.js?v=<%= assetVersion %>'
-        ].forEach(function (src) {
-          var script = document.createElement('script');
-          script.type = 'module';
-          script.src = src;
-          document.body.appendChild(script);
-        });
-      })();
-    </script>
+    <script src="/js/boot-gate.js?v=<%= assetVersion %>" data-version="<%= assetVersion %>"></script>
   </body>
 </html>

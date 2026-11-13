@@ -5,7 +5,13 @@
   const COPY = (i18n.messages && i18n.messages.focus) || {};
   const MP_COPY = (i18n.messages && i18n.messages.mp) || {};
   const CLIENT_KEY = 'saltline.focus.clientId';
-  const UNIT_KEYS = { male: 'unitMale', female: 'unitFemale', hound: 'unitHound', drone: 'unitDrone' };
+  const UNIT_KEYS = {
+    male: 'unitMale',
+    female: 'unitFemale',
+    hound: 'unitHound',
+    drone: 'unitDrone',
+    classic: 'unitClassic'
+  };
   const MANUAL_DURATION_MS = 30 * 60 * 1000;
   const AUTO_DURATION_MS = 20 * 60 * 1000;
 
@@ -106,22 +112,6 @@
     fingerprint: browserFingerprint()
   };
 
-  let serverOffsetMs = 0;
-  let serverOffsetReady = false;
-
-  function syncServerTime(serverTime, localTime) {
-    const remote = Number(serverTime);
-    const local = Number(localTime) || Date.now();
-    if (!Number.isFinite(remote) || remote <= 0) return;
-    const sample = remote - local;
-    serverOffsetMs = serverOffsetReady ? serverOffsetMs * 0.7 + sample * 0.3 : sample;
-    serverOffsetReady = true;
-  }
-
-  function currentServerTime() {
-    return Date.now() + serverOffsetMs;
-  }
-
   const state = {
     active: false,
     ending: false,
@@ -136,8 +126,7 @@
     statusAt: 0,
     kind: 'manual',
     durationMs: MANUAL_DURATION_MS,
-    play: null,
-    playServerAt: 0
+    play: null
   };
 
   window.__SALT_FOCUS__ = {
@@ -253,7 +242,6 @@
   }
 
   async function fetchStatus() {
-    const requestedAt = Date.now();
     try {
       const res = await fetch(apiUrl('/api/focus/status'), {
         cache: 'no-store',
@@ -261,12 +249,10 @@
       });
       if (!res.ok) return null;
       const data = await res.json();
-      const receivedAt = Date.now();
-      syncServerTime(data && data.now, (requestedAt + receivedAt) / 2);
       return data && data.focus ? {
         focus: data.focus,
         play: data.play || null,
-        now: Number(data.now) || currentServerTime()
+        now: Number(data.now) || Date.now()
       } : null;
     } catch (err) {
       return null;
@@ -311,7 +297,7 @@
   function activate(focus) {
     const record = focus && focus.record ? focus.record : state.record;
     const until = Number(focus && focus.until) || Number(record && record.expiresAt) || 0;
-    if (!until || until <= currentServerTime() + 500) {
+    if (!until || until <= Date.now() + 500) {
       refreshStatus();
       return;
     }
@@ -367,7 +353,6 @@
     }
     state.resumeGameplay = false;
     updateSettingsRow();
-    window.setTimeout(refreshStatus, 500);
     if (wasActive) toast(t(endedKind === 'auto' ? 'autoEnded' : 'ended'));
   }
 
@@ -387,7 +372,6 @@
     state.statusAt = Date.now();
     if (!status) return;
     state.play = status.play;
-    state.playServerAt = Number(status.now) || currentServerTime();
     const focus = status.focus;
     if (focus.active && focus.record) {
       if (!state.active) {
@@ -399,7 +383,7 @@
         applyRecord(focus.record);
         updateSettingsRow();
       }
-    } else if (state.active && (!focus.active || state.ending || currentServerTime() >= state.until)) {
+    } else if (state.active && (!focus.active || state.ending || Date.now() >= state.until)) {
       requestFocusEnd();
       if (!state.finishFallbackAt) state.finishFallbackAt = Date.now() + 6500;
       if (Date.now() > state.finishFallbackAt) finishFocus(null);
@@ -519,24 +503,21 @@
 
   function renderFocus() {
     if (!state.active) return;
-    const left = Math.max(0, state.until - currentServerTime());
+    const left = Math.max(0, state.until - Date.now());
     const duration = Math.max(1000, Number(state.durationMs) || MANUAL_DURATION_MS);
     renderModeChrome();
     ui.clock.textContent = formatClock(left);
     ui.progress.style.transform = 'scaleX(' + Math.max(0, Math.min(1, left / duration)).toFixed(4) + ')';
-    renderTarget(pickTarget(currentServerTime()));
+    renderTarget(pickTarget(Date.now()));
     updateSettingsRow();
   }
 
   function tick() {
     attachGame();
-    if (!state.active) {
-      updateSettingsRow();
-      return;
-    }
+    if (!state.active) return;
     enforceLock();
     renderFocus();
-    if (currentServerTime() >= state.until) {
+    if (Date.now() >= state.until) {
       if (!state.ending) {
         state.ending = true;
         state.finishFallbackAt = Date.now() + 6500;
@@ -586,7 +567,6 @@
         failureText = typeof data.message === 'string' ? data.message : '';
         throw new Error('focus start failed');
       }
-      syncServerTime(data.now, Date.now());
       activate(data.focus);
       closeDialog();
       toast(data.persisted === false ? t('startedUnpersisted') : t('started'));
@@ -603,8 +583,6 @@
   let settingButton = null;
   let settingState = null;
   let settingMeta = null;
-  let settingMeter = null;
-  let settingFill = null;
 
   function createSettingsRow() {
     const row = document.createElement('div');
@@ -615,7 +593,6 @@
       '<button class="focus-setting-button" type="button" data-focus-setting aria-pressed="false">',
       '  <b data-focus-setting-state>' + t('settingOff') + '</b>',
       '  <i data-focus-setting-meta>' + t('settingMetaOff') + '</i>',
-      '  <em class="focus-play-meter" data-focus-play-meter hidden><i data-focus-play-fill></i></em>',
       '</button>'
     ].join('');
     return row;
@@ -625,41 +602,21 @@
     if (node && node.textContent !== value) node.textContent = value;
   }
 
-  function playNowMs(play) {
-    const base = Math.max(0, Number(play && play.continuousMs) || 0);
-    if (!play || !play.active || !state.playServerAt) return base;
-    const elapsed = currentServerTime() - state.playServerAt;
-    if (elapsed <= 0 || elapsed > 45000) return base;
-    return Math.min(Number(play.limitMs) || 0, base + elapsed);
-  }
-
   function updateSettingsRow() {
-    const left = Math.max(0, state.until - currentServerTime());
+    const left = Math.max(0, state.until - Date.now());
     const play = state.play;
-    const playMs = playNowMs(play);
-    const limitMs = Number(play && play.limitMs) || 0;
-    const remainingMs = Math.max(0, limitMs - playMs);
-    const nearBreak = !!(play && play.enabled && playMs > 0 && remainingMs <= 5 * 60 * 1000);
     const playMeta = play && play.enabled
-      ? t(nearBreak ? 'settingMetaWarning' : 'settingMetaPlay', {
-        minutes: formatMinutes(playMs),
-        limit: formatMinutes(limitMs),
-        focus: formatMinutes(play.autoDurationMs),
-        remaining: String(Math.max(1, Math.ceil(remainingMs / 60000)))
+      ? t('settingMetaPlay', {
+        minutes: formatMinutes(play.continuousMs),
+        limit: formatMinutes(play.limitMs),
+        focus: formatMinutes(play.autoDurationMs)
       })
       : t('settingMetaOff');
     if (settingRow) {
       settingButton.setAttribute('aria-pressed', state.active ? 'true' : 'false');
       settingButton.classList.toggle('is-active', state.active);
-      settingButton.classList.toggle('is-near-break', !state.active && nearBreak);
       setText(settingState, state.active ? t('settingActive') : t('settingOff'));
       setText(settingMeta, state.active ? t('settingMetaActive', { time: formatClock(left) }) : playMeta);
-      if (settingMeter) {
-        const ratio = limitMs > 0 ? Math.max(0, Math.min(1, playMs / limitMs)) : 0;
-        settingMeter.hidden = state.active || !play || !play.enabled || ratio <= 0;
-        settingMeter.classList.toggle('is-near-break', nearBreak);
-        if (settingFill) settingFill.style.width = (ratio * 100).toFixed(2) + '%';
-      }
     }
   }
 
@@ -672,8 +629,6 @@
       settingButton = existing.querySelector('[data-focus-setting]');
       settingState = existing.querySelector('[data-focus-setting-state]');
       settingMeta = existing.querySelector('[data-focus-setting-meta]');
-      settingMeter = existing.querySelector('[data-focus-play-meter]');
-      settingFill = existing.querySelector('[data-focus-play-fill]');
       updateSettingsRow();
       return true;
     }
@@ -681,8 +636,6 @@
     settingButton = settingRow.querySelector('[data-focus-setting]');
     settingState = settingRow.querySelector('[data-focus-setting-state]');
     settingMeta = settingRow.querySelector('[data-focus-setting-meta]');
-    settingMeter = settingRow.querySelector('[data-focus-play-meter]');
-    settingFill = settingRow.querySelector('[data-focus-play-fill]');
     settingButton.addEventListener('click', function (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -745,16 +698,7 @@
     if (mpAttached || !window.__mp || typeof window.__mp.onMessage !== 'function') return;
     mpAttached = true;
     window.__mp.onMessage(function (msg) {
-      if (!msg) return;
-      if (msg.serverTime) syncServerTime(msg.serverTime, Date.now());
-      if (msg.type === 'focusWarning') {
-        toast(t('autoWarning', {
-          minutes: formatMinutes(msg.playMs),
-          remaining: String(Math.max(1, Math.ceil((Number(msg.remainingMs) || 0) / 60000)))
-        }));
-        return;
-      }
-      if (msg.type !== 'focusState') return;
+      if (!msg || msg.type !== 'focusState') return;
       if (msg.active) {
         activate({
           active: true,

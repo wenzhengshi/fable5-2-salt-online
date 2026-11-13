@@ -1,0 +1,134 @@
+/* mobile.css — final phone typography pass. Loaded after feature styles. */
+
+@media (max-width: 760px), (pointer: coarse) {
+  :root {
+    --mobile-text: 0.88;
+  }
+
+  .boot-mark { font-size: clamp(34px, 11vw, 58px) !important; }
+  .boot-sub { font-size: 10px !important; letter-spacing: 0.14em !important; }
+  .boot-hint { font-size: 9px !important; }
+  .boot-gate { gap: 8px !important; padding: 15px 16px 16px !important; border-radius: 10px !important; }
+  .boot-gate-title { font-size: 14px !important; }
+  .boot-gate-copy { font-size: 11px !important; line-height: 1.6 !important; }
+  .boot-gate-retry { min-height: 38px !important; padding: 0 16px !important; }
+
+  .m-word { font-size: clamp(38px, 16vw, 108px) !important; }
+  .m-h { font-size: clamp(32px, 9.6vw, 48px) !important; margin: 7px 0 9px !important; }
+  .m-debrief .m-h { font-size: clamp(24px, 7.2vw, 34px) !important; }
+  .m-eyebrow, .m-k { font-size: 10px !important; letter-spacing: 0.18em !important; }
+  .m-premise { font-size: 13px !important; line-height: 1.5 !important; }
+  .m-tag, .m-note, .m-line { font-size: 9.5px !important; }
+  .m-card { padding: 16px 18px !important; }
+  .m-stats dt, .m-rating span { font-size: 11px !important; }
+  .m-stats dd { font-size: 14px !important; }
+  .m-rating b { font-size: 34px !important; }
+  .btn { font-size: 13px !important; min-height: 42px !important; }
+  .btn.primary { font-size: 15px !important; letter-spacing: 0.2em !important; }
+  .btn.small { font-size: 10.5px !important; min-height: 32px !important; }
+  .keys dt, .keys dd, .m-legend > div { font-size: 10.5px !important; }
+
+  .h-k, .h-heading, .h-relays, .h-relays b, .h-tape b.ic { font-size: 9.5px !important; }
+  .h-obj-t { font-size: 14px !important; }
+  .h-plabel, .h-wm b { font-size: 10.5px !important; }
+  .h-ammo-n, .h-ammo.infinite .h-ammo-n::after { font-size: 40px !important; }
+  .h-ammo-r { font-size: 12px !important; }
+  .h-hp-n { font-size: 24px !important; }
+  .h-cue, .h-wname, .h-wm span { font-size: 9.5px !important; }
+  .h-key { font-size: 15px !important; }
+  .t-fire { font-size: 11px !important; }
+
+  .panel-h { padding-top: 6px !important; }
+  .tab { font-size: 12.5px !important; letter-spacing: 0.15em !important; }
+  .panel-b h3 { font-size: 9.5px !important; }
+  .panel-note { font-size: 9.5px !important; line-height: 1.5 !important; }
+  .row label, .seg button, .toggle, .slider output { font-size: 11px !important; }
+  .loc-card b { font-size: 16px !important; }
+  .loc-card span { font-size: 9.5px !important; }
+
+  .mp-chip { font-size: 9.5px !important; }
+  .mp-online b { font-size: 13px !important; }
+  .mp-online em, .mp-kd i, .mp-net { font-size: 8px !important; }
+  .mp-kd b { font-size: 10.5px !important; }
+  .mp-ping { font-size: 9px !important; }
+  .mp-roster-btn { font-size: 8.5px !important; }
+  .mp-fl { font-size: 10px !important; letter-spacing: 0.1em !important; }
+  .mp-unit, .mp-unit b { font-size: 9.5px !important; }
+  .mp-respawn-k { font-size: 8.5px !important; }
+  .mp-respawn-num { font-size: clamp(48px, 15vw, 72px) !important; }
+  .mp-respawn-line { font-size: 11px !important; }
+  .mp-respawn-unit, .mp-respawn-unit .mp-unit-tag { font-size: 8px !important; }
+  .mp-respawn-btn { font-size: 9.5px !important; padding: 9px 16px !important; }
+  .mp-deathcam-head b { font-size: 8.5px !important; }
+  .mp-deathcam-head span, .mp-deathcam-foot span { font-size: 7.5px !important; }
+  .mp-roster-head b { font-size: 10px !important; }
+  .mp-rr-name { font-size: 12px !important; }
+  .mp-rr-kd, .mp-roster-board li, .mp-roster-board li b { font-size: 10px !important; }
+  .mp-roster-name label { font-size: 8px !important; }
+  .mp-roster-name input { font-size: 12px !important; }
+  .mp-name-note, .mp-roster-hint { font-size: 8px !important; }
+  .mp-title-line { font-size: 10.5px !important; }
+
+  .party-head h2 { font-size: 24px !important; }
+  .party-kicker, .party-status { font-size: 8.5px !important; }
+  .party-intro { font-size: 11px !important; line-height: 1.5 !important; }
+  .party-home-card h3 { font-size: 18px !important; }
+  .party-home-card p { font-size: 10.5px !important; }
+  .party-note, .party-rules { font-size: 8px !important; line-height: 1.5 !important; }
+  .party-code-input input { font-size: 14px !important; }
+  .party-btn { font-size: 9px !important; }
+  .party-btn.small { font-size: 7.5px !important; }
+  .party-invite-code b { font-size: 25px !important; }
+  .party-matchbar > span, .party-matchbar time { font-size: 8px !important; }
+  .party-big-score b { font-size: 23px !important; }
+  .party-team h3 { font-size: 14px !important; }
+  .party-member b { font-size: 10.5px !important; }
+  .party-member em, .party-member small { font-size: 7.5px !important; }
+  .party-join-team, .party-start-hint { font-size: 7.5px !important; }
+  .party-match-k { font-size: 7px !important; }
+  .party-match-score b { font-size: 13px !important; }
+  .party-match-time { font-size: 9px !important; }
+
+  .vc-rail, .vc-panel, .vc-history { font-size: 10px !important; }
+  .vc-panel-head h2 { font-size: 24px !important; }
+  .vc-input-wrap input { font-size: 14px !important; }
+  .vc-history .vc-history-text { font-size: 10px !important; }
+  .vc-banner-text, .vc-banner[data-size="medium"] .vc-banner-text, .vc-banner[data-size="long"] .vc-banner-text {
+    font-size: clamp(20px, 7vw, 34px) !important;
+  }
+
+  .focus-brand b, .focus-brand em, .focus-foot p { font-size: 8px !important; }
+  .focus-time b { font-size: 20px !important; }
+  .focus-target-card b { font-size: 24px !important; }
+
+  .community-head h2 { font-size: clamp(25px, 8.6vw, 36px) !important; }
+  .community-desc { font-size: 10.5px !important; }
+  .community-launch-copy b { font-size: 8px !important; }
+  .community-launch-copy em { font-size: 9px !important; }
+
+  .sr-head h2 { font-size: 27px !important; }
+  .sr-intro { font-size: 9.5px !important; }
+  .sr-toolbar-copy b { font-size: 9.5px !important; }
+  .sr-toolbar-copy span, .sr-meta span, .sr-local-note { font-size: 8px !important; }
+  #sr-player-empty b { font-size: 10.5px !important; }
+
+  .ss-title { font-size: clamp(36px, 11.5vw, 54px) !important; }
+  .ss-kicker, .ss-brand b, .ss-stage-head { font-size: 8px !important; }
+  .ss-brand em, .ss-stage-meta i, .ss-stage-corner { font-size: 7px !important; }
+  .ss-intro { font-size: 10.5px !important; }
+  .ss-card-line b { font-size: 16px !important; }
+  .ss-card-copy em { font-size: 8px !important; }
+  .ss-card-copy small { font-size: 9px !important; }
+  .ss-tags u, .ss-note { font-size: 7.5px !important; }
+  .ss-stage-meta b { font-size: 18px !important; }
+  .ss-stage-hint { font-size: 8px !important; }
+  .ss-confirm span { font-size: 10.5px !important; }
+
+  .sail-title b { font-size: 14px !important; }
+  .sail-title span, .sail-map > div { font-size: 7.5px !important; }
+  .sail-bearing b { font-size: 19px !important; }
+  .sail-exit { font-size: 9px !important; }
+  .sail-speed b { font-size: 34px !important; }
+  .sail-speed > span, .sail-speed em { font-size: 8.5px !important; }
+  .sail-help, .sail-toast { font-size: 9px !important; }
+}

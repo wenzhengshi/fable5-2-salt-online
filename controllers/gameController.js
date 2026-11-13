@@ -2,16 +2,12 @@ const startedAt = Date.now();
 const {
   getLeaderboard,
   getOnlinePlayers,
-  getNetStats,
-  RESPAWN_MS,
-  TICK_MS
+  RESPAWN_MS
 } = require('../realtime/multiplayer');
 const contentFilter = require('../services/contentFilter');
 const chatHistoryStore = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
-const antiCheat = require('../services/antiCheat');
-const world = require('../realtime/world');
-const { version: APP_VERSION } = require('../package.json');
+const deathReplay = require('../services/deathReplay');
 
 module.exports = {
   health(req, res) {
@@ -30,12 +26,18 @@ module.exports = {
       lang: req.lang,
       title: req.t('game.title'),
       tagline: req.t('game.tagline'),
-      version: APP_VERSION,
+      version: '1.24.5',
       engine: 'WebGL2 / Three.js (bundled)',
       rendering: {
+        mode: '3d',
         primary: 'webgl2',
+        modes: ['webgl2'],
         fallback: null,
-        autoFallback: false
+        autoFallback: false,
+        requiresWebGL2: true,
+        coldStartRecovery: true,
+        contextReuse: true,
+        maxContextAttempts: 8
       },
       mode: 'free-for-all',
       respawnSeconds: Math.round(RESPAWN_MS / 1000),
@@ -43,30 +45,26 @@ module.exports = {
         { id: 'male', name: req.t('soldierSelect.maleName'), role: req.t('soldierSelect.maleRole') },
         { id: 'female', name: req.t('soldierSelect.femaleName'), role: req.t('soldierSelect.femaleRole') },
         { id: 'hound', name: req.t('soldierSelect.houndName'), role: req.t('soldierSelect.houndRole') },
-        { id: 'drone', name: req.t('soldierSelect.droneName'), role: req.t('soldierSelect.droneRole') }
+        { id: 'drone', name: req.t('soldierSelect.droneName'), role: req.t('soldierSelect.droneRole') },
+        { id: 'classic', name: req.t('soldierSelect.classicName'), role: req.t('soldierSelect.classicRole') }
       ],
+      defaultCharacter: 'classic',
+      features: {
+        community: true,
+        localReplay: true,
+        killStreak: true,
+        classicAvatar: true,
+        droneSearchlight: true,
+        machineWreck: true,
+        deathReplay: true,
+        deathReplay3d: true,
+        deathReplayAuthoritative: true,
+        deathReplayRateHz: 10,
+        deathReplayWindowMs: deathReplay.WINDOW_MS,
+        compactMobileType: true
+      },
       online: getOnlinePlayers().length,
       websocket: '/ws',
-      authority: 'server',
-      netcode: {
-        model: 'server-authoritative input simulation',
-        tickMs: TICK_MS,
-        tickHz: Math.round(1000 / TICK_MS),
-        snapshot: 'delta+aoi+adaptive',
-        snapshotHz: getNetStats().snapshotHz,
-        interpolationMs: getNetStats().interpMs,
-        clientPrediction: true,
-        reconciliation: 'soft-correct+hard-snap',
-        movementSpeedLimits: getNetStats().simulation.speedLimits,
-        fireCooldownMs: getNetStats().simulation.fireCooldownMs,
-        weaponRange: getNetStats().simulation.weaponRange,
-        damage: getNetStats().simulation.damage,
-        endpoint: '/api/game/netcode'
-      },
-      world: {
-        boxes: world.stats().boxes,
-        source: world.stats().file
-      },
       moderation: contentFilter.descriptor(),
       focusMode: {
         durationMinutes: 30,
@@ -74,7 +72,6 @@ module.exports = {
         autoDurationMinutes: 20,
         continuousPlayLimitMinutes: 240,
         continuousResetMinutes: 5,
-        warningMinutes: [5, 1],
         enforcement: 'server',
         autoSpectate: true,
         storage: 'focus-records.json',
@@ -145,26 +142,6 @@ module.exports = {
       total: page.total,
       limit: page.limit
     });
-  },
-
-  netcode(req, res) {
-    res.json({ ok: true, lang: req.lang, ...getNetStats() });
-  },
-
-  anticheat(req, res) {
-    const stats = antiCheat.stats();
-    res.json({
-      ok: true,
-      lang: req.lang,
-      limits: stats.limits,
-      weights: stats.weights,
-      totals: stats.totals,
-      recent: antiCheat.recentEvents(req.query && req.query.limit)
-    });
-  },
-
-  worldInfo(req, res) {
-    res.json({ ok: true, lang: req.lang, ...world.stats() });
   },
 
   leaderboard(req, res) {

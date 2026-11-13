@@ -9,7 +9,7 @@
 
   const STORAGE_NAME = 'saltline.multiplayer.name';
   const STORAGE_SOLDIER = 'saltline.multiplayer.soldier';
-  const UNIT_KINDS = ['male', 'female', 'hound', 'drone'];
+  const UNIT_KINDS = ['male', 'female', 'hound', 'drone', 'classic'];
   const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS'];
   const REPO_URL = 'https://github.com/wenzhengshi/fable5-2-salt-online';
   const REPO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>';
@@ -94,7 +94,7 @@
   }
 
   function normalizeSoldier(value) {
-    return UNIT_KINDS.includes(value) ? value : 'male';
+    return UNIT_KINDS.includes(value) ? value : 'classic';
   }
 
   function isMachine(value) {
@@ -102,7 +102,7 @@
   }
 
   function loadSoldier() {
-    try { return normalizeSoldier(localStorage.getItem(STORAGE_SOLDIER)); } catch (err) { return 'male'; }
+    try { return normalizeSoldier(localStorage.getItem(STORAGE_SOLDIER)); } catch (err) { return 'classic'; }
   }
 
   function saveSoldier(value) {
@@ -114,6 +114,7 @@
   let localUnit = null;
   let localUnitRequest = 0;
   let localUnitKind = null;
+  let localDroneLight = null;
   let unitFlightY = 0;
   let lastUnitBadgeAt = 0;
   const virtualUnitInput = {
@@ -150,29 +151,23 @@
   let serverDeathNotified = false;
   let pendingServerDeath = null;
   let pendingDeathBy = null;
+  let pendingDeathMeta = null;
+  let lastKillAt = 0;
+
+  const deathReplay = {
+    active: false,
+    data: null,
+    startedAt: 0,
+    raf: 0,
+    lastFrame: 0,
+    duration: 3800
+  };
+  const snapshotTrails = new Map();
 
   const avatars = new Map();
   const messageListeners = new Set();
   const binaryListeners = new Set();
   let lastFrame = 0;
-
-  /* ---- 服务端权威网络层：增量快照、插值缓冲、本地预测校正 ---- */
-  const net = {
-    entities: new Map(),
-    clockOffset: 0,
-    clockReady: false,
-    lastSnapshotAt: 0,
-    snapInterval: 100,
-    interpMs: 130,
-    inputSeq: 0,
-    lastInputAt: 0,
-    lastFire: null,
-    lastActive: null,
-    lastPos: { x: 0, y: 0, z: 0 },
-    lastPosAt: 0,
-    selfError: { x: 0, z: 0, since: 0 },
-    rate: 10
-  };
 
   /* ------------------------------------------------------------------- UI */
 
@@ -187,7 +182,6 @@
         <i>D</i><b id="mp-deaths">0</b>
       </span>
       <span class="mp-ping" id="mp-ping">—</span>
-      <span class="mp-net" id="mp-net" hidden></span>
       <button class="mp-roster-btn" id="mp-roster-btn" type="button"></button>
     </div>
     <div class="mp-unit" id="mp-unit" hidden>
@@ -202,6 +196,33 @@
         <div class="mp-respawn-num" id="mp-count">5</div>
         <div class="mp-respawn-line" id="mp-killer"></div>
         <div class="mp-respawn-unit" id="mp-killer-unit" hidden></div>
+        <div class="mp-deathcam" id="mp-deathcam" hidden>
+          <div class="mp-deathcam-head">
+            <div class="mp-deathcam-title">
+              <i class="mp-deathcam-led" aria-hidden="true"></i>
+              <b id="mp-deathcam-title"></b>
+              <span class="mp-deathcam-tag" id="mp-deathcam-tag"></span>
+            </div>
+            <span id="mp-deathcam-meta"></span>
+          </div>
+          <div class="mp-deathcam-view">
+            <canvas id="mp-deathcam-canvas" width="640" height="360"></canvas>
+            <div class="mp-deathcam-fallback" id="mp-deathcam-fallback" hidden></div>
+            <div class="mp-deathcam-overlay" aria-hidden="true">
+              <i class="mp-deathcam-corner tl"></i>
+              <i class="mp-deathcam-corner tr"></i>
+              <i class="mp-deathcam-corner bl"></i>
+              <i class="mp-deathcam-corner br"></i>
+              <span class="mp-deathcam-cam" id="mp-deathcam-cam"></span>
+              <div class="mp-deathcam-progress"><i id="mp-deathcam-progress"></i></div>
+            </div>
+          </div>
+          <div class="mp-deathcam-foot">
+            <span><i class="you"></i><em id="mp-deathcam-you"></em></span>
+            <span><i class="killer"></i><em id="mp-deathcam-killer"></em></span>
+            <span class="mp-deathcam-mode" id="mp-deathcam-mode"></span>
+          </div>
+        </div>
         <div class="mp-respawn-bar"><i id="mp-bar"></i></div>
         <button class="mp-respawn-btn" id="mp-respawn-btn" type="button" disabled></button>
       </div>
@@ -247,13 +268,23 @@
     kills: ui.querySelector('#mp-kills'),
     deaths: ui.querySelector('#mp-deaths'),
     ping: ui.querySelector('#mp-ping'),
-    net: ui.querySelector('#mp-net'),
     rosterBtn: ui.querySelector('#mp-roster-btn'),
     feed: ui.querySelector('#mp-feed'),
     respawn: ui.querySelector('#mp-respawn'),
     count: ui.querySelector('#mp-count'),
     killer: ui.querySelector('#mp-killer'),
     killerUnit: ui.querySelector('#mp-killer-unit'),
+    deathcam: ui.querySelector('#mp-deathcam'),
+    deathcamTitle: ui.querySelector('#mp-deathcam-title'),
+    deathcamTag: ui.querySelector('#mp-deathcam-tag'),
+    deathcamMeta: ui.querySelector('#mp-deathcam-meta'),
+    deathcamCanvas: ui.querySelector('#mp-deathcam-canvas'),
+    deathcamFallback: ui.querySelector('#mp-deathcam-fallback'),
+    deathcamCam: ui.querySelector('#mp-deathcam-cam'),
+    deathcamProgress: ui.querySelector('#mp-deathcam-progress'),
+    deathcamMode: ui.querySelector('#mp-deathcam-mode'),
+    deathcamYou: ui.querySelector('#mp-deathcam-you'),
+    deathcamKiller: ui.querySelector('#mp-deathcam-killer'),
     bar: ui.querySelector('#mp-bar'),
     respawnBtn: ui.querySelector('#mp-respawn-btn'),
     roster: ui.querySelector('#mp-roster'),
@@ -282,6 +313,13 @@
   });
   ui.querySelector('.mp-respawn-k').textContent = t('down');
   el.respawnBtn.textContent = t('respawnNow');
+  el.deathcamTitle.textContent = t('deathReplay');
+  el.deathcamTag.textContent = t('deathReplay3dTag');
+  el.deathcamFallback.textContent = t('deathReplayUnavailable');
+  el.deathcamCam.textContent = t('deathReplayCam');
+  el.deathcamMode.textContent = t('deathReplayMode');
+  el.deathcamYou.textContent = t('you');
+  el.deathcamCanvas.setAttribute('aria-label', t('deathReplay'));
   el.rosterBtn.textContent = t('roster');
   el.rosterBtn.setAttribute('aria-label', t('roster'));
   el.rosterClose.setAttribute('aria-label', t('close'));
@@ -322,13 +360,6 @@
     el.deaths.textContent = String(selfStats.deaths || 0);
     el.ping.textContent = pingMs == null ? '—' : Math.round(pingMs) + 'ms';
     el.ping.classList.toggle('bad', pingMs != null && pingMs > 160);
-    if (el.net) {
-      el.net.hidden = !net.clockReady;
-      if (net.clockReady) {
-        el.net.textContent = net.rate + 'Hz';
-        el.net.title = t('netHint', { ms: Math.round(net.interpMs) });
-      }
-    }
   }
 
   function updateTitleLine() {
@@ -384,6 +415,10 @@
     drone: {
       key: 'unitDrone',
       icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h5v2H5v3H3V4Zm13 0h5v5h-2V6h-3V4ZM3 15h2v3h3v2H3v-5Zm16 0h2v5h-5v-2h3v-3ZM9 9h6l2 3v4l-2 2H9l-2-2v-4l2-3Zm1 3v3l1 1h2l1-1v-3l-1-1h-2l-1 1Z"/></svg>'
+    },
+    classic: {
+      key: 'unitClassic',
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2h8v3h2v2h2v4h-2v2h-2v3h-2v6h-2v-6h-2v6H8v-6H6v-3H4v-2H2V7h2V5h2V2h2Zm2 3H8v5h2v2h4V9h-2V5Zm0 8v2h4v-2h-4Z"/></svg>'
     }
   };
 
@@ -639,7 +674,561 @@
     return { x: 0, y: 0, z: 4 };
   }
 
-  function showRespawnOverlay() {
+  function clampNum(value, min, max) {
+    return value < min ? min : (value > max ? max : value);
+  }
+
+  /* ------------------------------------------------------------ death cam */
+
+  function recordSnapshotTrails(players, at) {
+    const time = Number(at) || Date.now();
+    const seen = new Set();
+    for (const player of players || []) {
+      if (!player || player.id == null) continue;
+      const id = String(player.id);
+      if (!Number.isFinite(Number(player.x)) || !Number.isFinite(Number(player.z))) continue;
+      seen.add(id);
+      let trail = snapshotTrails.get(id);
+      if (!trail) {
+        trail = { samples: [], lastSeen: time };
+        snapshotTrails.set(id, trail);
+      }
+      const last = trail.samples[trail.samples.length - 1];
+      if (!last || last.t !== time) {
+        trail.samples.push({
+          x: Number(player.x),
+          y: Number(player.y) || 0,
+          z: Number(player.z),
+          yaw: Number(player.yaw) || 0,
+          t: time
+        });
+        if (trail.samples.length > 64) trail.samples.shift();
+      }
+      trail.lastSeen = time;
+    }
+    for (const [id, trail] of snapshotTrails) {
+      if (!seen.has(id) && time - trail.lastSeen > 15000) snapshotTrails.delete(id);
+    }
+  }
+
+  function lastTrailPoint(id) {
+    const trail = snapshotTrails.get(String(id));
+    const sample = trail && trail.samples.length ? trail.samples[trail.samples.length - 1] : null;
+    return sample ? { x: sample.x, y: sample.y, z: sample.z } : null;
+  }
+
+  function pointOrNull(value) {
+    if (!value) return null;
+    const x = Number(value.x);
+    const y = Number(value.y);
+    const z = Number(value.z);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+    return { x, y: Number.isFinite(y) ? y : 0, z };
+  }
+
+  function bearingTo(from, to) {
+    return (Math.atan2(to.x - from.x, -(to.z - from.z)) * 180 / Math.PI + 360) % 360;
+  }
+
+  function replayNumber(value, fallback) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function normalizeReplayTrack(rows, killAt) {
+    if (!Array.isArray(rows)) return [];
+    const samples = [];
+    for (const row of rows) {
+      if (!Array.isArray(row) || row.length < 4) continue;
+      const dt = replayNumber(row[0], NaN);
+      const x = replayNumber(row[1], NaN);
+      const y = replayNumber(row[2], 0);
+      const z = replayNumber(row[3], NaN);
+      if (!Number.isFinite(dt) || !Number.isFinite(x) || !Number.isFinite(z)) continue;
+      samples.push({
+        t: killAt + dt,
+        x,
+        y,
+        z,
+        yaw: replayNumber(row[4], 0),
+        pitch: replayNumber(row[5], 0)
+      });
+    }
+    samples.sort((a, b) => a.t - b.t);
+    return samples;
+  }
+
+  function normalizeServerReplay(raw, fallbackKiller) {
+    if (!raw || raw.source !== 'server' || raw.version !== 1) return null;
+    const killAt = replayNumber(raw.killAt, 0);
+    if (!killAt) return null;
+    const victimTrack = normalizeReplayTrack(raw.victimTrack, killAt);
+    const killerTrack = normalizeReplayTrack(raw.killerTrack, killAt);
+    if (victimTrack.length < 2 || killerTrack.length < 2) return null;
+    const victim = victimTrack[victimTrack.length - 1];
+    const killer = killerTrack[killerTrack.length - 1];
+    const windowMs = Math.max(1200, Math.min(6000, replayNumber(raw.windowMs, 4500)));
+    const startAt = killAt - windowMs;
+    const shots = [];
+    for (const row of Array.isArray(raw.shots) ? raw.shots : []) {
+      if (!Array.isArray(row) || row.length < 4) continue;
+      const dt = replayNumber(row[0], NaN);
+      const x = replayNumber(row[1], NaN);
+      const y = replayNumber(row[2], 0);
+      const z = replayNumber(row[3], NaN);
+      if (!Number.isFinite(dt) || !Number.isFinite(x) || !Number.isFinite(z)) continue;
+      shots.push({
+        t: killAt + dt,
+        origin: { x, y, z },
+        dir: {
+          x: replayNumber(row[4], 0),
+          y: replayNumber(row[5], 0),
+          z: replayNumber(row[6], 0)
+        }
+      });
+    }
+    const hits = [];
+    for (const row of Array.isArray(raw.hits) ? raw.hits : []) {
+      if (!Array.isArray(row) || row.length < 3) continue;
+      const dt = replayNumber(row[0], NaN);
+      if (!Number.isFinite(dt)) continue;
+      hits.push({
+        t: killAt + dt,
+        damage: replayNumber(row[1], 0),
+        hp: replayNumber(row[2], 0),
+        killed: row[3] === 1
+      });
+    }
+    const killerInfo = raw.killer && raw.killer.id != null ? raw.killer : fallbackKiller;
+    return {
+      id: String(raw.id || ''),
+      source: 'server',
+      victim,
+      killer,
+      victimTrack,
+      killerTrack,
+      shots,
+      hits,
+      startAt,
+      endAt: killAt,
+      killAt,
+      distance: Math.max(0, replayNumber(raw.distance, Math.hypot(killer.x - victim.x, killer.z - victim.z))),
+      bearing: replayNumber(raw.bearing, bearingTo(victim, killer)),
+      victimInfo: raw.victim || null,
+      killerInfo
+    };
+  }
+
+  function stopDeathReplay() {
+    deathReplay.active = false;
+    deathReplay.data = null;
+    deathReplay.startedAt = 0;
+    deathReplay.lastFrame = 0;
+    if (deathReplay.raf) {
+      window.cancelAnimationFrame(deathReplay.raf);
+      deathReplay.raf = 0;
+    }
+    try {
+      if (window.SaltDeathReplay3D) window.SaltDeathReplay3D.stop();
+    } catch (err) { /* ignore */ }
+    if (el.deathcamProgress) el.deathcamProgress.style.width = '0%';
+    if (el.deathcam) el.deathcam.hidden = true;
+  }
+
+  function prepareDeathReplay(by, meta) {
+    if (!el.deathcam) {
+      stopDeathReplay();
+      return;
+    }
+    const info = meta || {};
+    const replay = normalizeServerReplay(info.replay, by);
+    if (!replay || (!replay.killerInfo && !by)) {
+      stopDeathReplay();
+      return;
+    }
+    const killerInfo = replay.killerInfo || by;
+    const victim = pointOrNull(replay.victim) || pointOrNull(info.victimPos) || pointOrNull(G && G.player && G.player.pos);
+    if (!victim) {
+      stopDeathReplay();
+      return;
+    }
+    const replayGroundY = groundHeightAt(victim.x, victim.z, victim.y + 1.6);
+    deathReplay.data = {
+      victim,
+      killer: { ...killerInfo, x: replay.killer.x, y: replay.killer.y, z: replay.killer.z },
+      points: replay.killerTrack,
+      victimPoints: replay.victimTrack,
+      shots: replay.shots,
+      hits: replay.hits,
+      startAt: replay.startAt,
+      endAt: replay.endAt,
+      distance: replay.distance,
+      bearing: replay.bearing,
+      authoritative: true,
+      replayId: replay.id
+    };
+    deathReplay.active = true;
+    deathReplay.duration = clampNum(replay.endAt - replay.startAt, 1800, 5000);
+    deathReplay.startedAt = performance.now();
+    deathReplay.lastFrame = 0;
+    el.deathcam.hidden = false;
+    el.deathcamTitle.textContent = t('deathReplay');
+    el.deathcamTag.textContent = t('deathReplay3dTag');
+    el.deathcamCam.textContent = t('deathReplayCam');
+    el.deathcamMode.textContent = t('deathReplayMode');
+    el.deathcamYou.textContent = t('you');
+    el.deathcamKiller.textContent = killerInfo.name || t('killer');
+    el.deathcamMeta.textContent = t('deathReplayMeta', {
+      distance: Math.round(replay.distance),
+      deg: String(Math.round(deathReplay.data.bearing)).padStart(3, '0')
+    });
+    const killerKind = UNIT_KINDS.includes(replay.killerInfo && replay.killerInfo.soldier)
+      ? replay.killerInfo.soldier
+      : (resolveUnitKind(killerInfo) || 'classic');
+    const victimKind = UNIT_KINDS.includes(replay.victimInfo && replay.victimInfo.soldier)
+      ? replay.victimInfo.soldier
+      : normalizeSoldier(mySoldier);
+    const killerAvatar = avatars.get(String(killerInfo.id));
+    const replayApi = window.SaltDeathReplay3D;
+    let ready = false;
+    el.deathcamCanvas.hidden = false;
+    el.deathcamFallback.hidden = true;
+    if (replayApi && typeof replayApi.play === 'function') {
+      try {
+        ready = replayApi.play(el.deathcamCanvas, THREE, {
+          victim: deathReplay.data.victim,
+          killer: deathReplay.data.killer,
+          points: deathReplay.data.points,
+          victimPoints: deathReplay.data.victimPoints,
+          shots: deathReplay.data.shots,
+          hits: deathReplay.data.hits,
+          startAt: replay.startAt,
+          endAt: replay.endAt,
+          victimYaw: replay.victimTrack[0].yaw,
+          groundY: Number.isFinite(replayGroundY) ? replayGroundY : (Number(victim.y) || 0),
+          victimKind,
+          killerKind,
+          victimColor: myColor || '#9fe8ff',
+          killerColor: (killerAvatar && killerAvatar.data && killerAvatar.data.color) || killerInfo.color || '#ff5a40',
+          victimLabel: t('you'),
+          killerLabel: killerInfo.name || t('killer'),
+          victimRole: unitLabel(victimKind),
+          killerRole: unitLabel(killerKind)
+        });
+      } catch (err) {
+        console.error('[mp] 3D death replay failed', err);
+        ready = false;
+      }
+    }
+    if (ready && replayApi && typeof replayApi.resize === 'function') {
+      try { replayApi.resize(); } catch (err) { /* ignore */ }
+    }
+    el.deathcamCanvas.hidden = !ready;
+    el.deathcamFallback.hidden = !!ready;
+    el.deathcamFallback.textContent = t('deathReplayUnavailable');
+    el.deathcamMode.textContent = ready ? t('deathReplayMode') : t('deathReplayModeOffline');
+    startDeathReplayLoop();
+  }
+
+  function startDeathReplayLoop() {
+    if (deathReplay.raf) return;
+    const reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const draw = (now) => {
+      if (!deathReplay.active || !deathReplay.data) {
+        deathReplay.raf = 0;
+        return;
+      }
+      const previous = deathReplay.lastFrame || now;
+      deathReplay.lastFrame = now;
+      const dt = Math.min(0.08, Math.max(0.001, (now - previous) / 1000));
+      const elapsed = Math.max(0, now - deathReplay.startedAt);
+      const progress = reduce ? 1 : clampNum(elapsed / deathReplay.duration, 0, 1);
+      if (el.deathcamProgress) {
+        el.deathcamProgress.style.width = (progress * 100).toFixed(1) + '%';
+      }
+      const replayApi = window.SaltDeathReplay3D;
+      let rendered = false;
+      if (replayApi && typeof replayApi.render === 'function') {
+        try { rendered = replayApi.render(progress, dt); } catch (err) { rendered = false; }
+      }
+      if (!rendered) {
+        el.deathcamCanvas.hidden = true;
+        el.deathcamFallback.hidden = false;
+        el.deathcamFallback.textContent = t('deathReplayUnavailable');
+        el.deathcamMode.textContent = t('deathReplayModeOffline');
+      }
+      deathReplay.raf = window.requestAnimationFrame(draw);
+    };
+    deathReplay.raf = window.requestAnimationFrame(draw);
+  }
+
+  /* --------------------------------------------------- drone searchlights */
+
+  function groundHeightAt(x, z, probeY) {
+    try {
+      const value = Number(G && G.physics && G.physics.groundHeight(x, z, probeY));
+      if (Number.isFinite(value)) return value;
+    } catch (err) { /* fall back to sea level */ }
+    return 0;
+  }
+
+  function createSearchLight() {
+    const light = new THREE.SpotLight(0xd8f4ff, 0, 34, 0.34, 0.62, 1.15);
+    light.castShadow = false;
+    light.position.set(0, 0, 0);
+    const target = new THREE.Object3D();
+    target.position.set(0, 0, 1);
+    light.target = target;
+    const beam = new THREE.Mesh(
+      new THREE.ConeGeometry(1, 1, 20, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xccefff,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    beam.frustumCulled = false;
+    beam.renderOrder = 3;
+    beam.visible = false;
+    scene.add(light, target, beam);
+    return {
+      light,
+      target,
+      beam,
+      origin: new THREE.Vector3(),
+      aim: new THREE.Vector3(),
+      dir: new THREE.Vector3(),
+      down: new THREE.Vector3(0, -1, 0),
+      intensity: 0
+    };
+  }
+
+  function disposeSearchLight(rec) {
+    if (!rec) return;
+    rec.light.intensity = 0;
+    rec.light.visible = false;
+    rec.target.visible = false;
+    rec.beam.visible = false;
+    rec.beam.material.opacity = 0;
+    if (rec.light.parent) rec.light.parent.remove(rec.light);
+    if (rec.target.parent) rec.target.parent.remove(rec.target);
+    if (rec.beam.parent) rec.beam.parent.remove(rec.beam);
+    if (rec.beam.geometry) rec.beam.geometry.dispose();
+    if (rec.beam.material) rec.beam.material.dispose();
+  }
+
+  function disposeLocalDroneLight() {
+    if (!localDroneLight) return;
+    disposeSearchLight(localDroneLight);
+    localDroneLight = null;
+  }
+
+  function chaseLightCleanup(avatar) {
+    if (!avatar || !avatar.droneLight) return;
+    disposeSearchLight(avatar.droneLight);
+    avatar.droneLight = null;
+  }
+
+  function aimSearchLight(rec, origin, target, altitude, active) {
+    if (!rec) return;
+    const near = clampNum(1 - (altitude - 1.2) / 7.2, 0, 1);
+    const power = active ? near : 0;
+    rec.intensity = power;
+    rec.light.intensity = power * 24;
+    rec.light.visible = power > 0.015;
+    rec.target.visible = rec.light.visible;
+    rec.beam.visible = power > 0.02;
+    if (!rec.light.visible) return;
+    rec.origin.copy(origin);
+    rec.aim.copy(target);
+    rec.light.position.copy(rec.origin);
+    rec.target.position.copy(rec.aim);
+    rec.dir.copy(rec.aim).sub(rec.origin);
+    const length = rec.dir.length();
+    if (length < 0.25) return;
+    rec.dir.multiplyScalar(1 / length);
+    rec.beam.position.copy(rec.origin).addScaledVector(rec.dir, length * 0.5);
+    rec.beam.quaternion.setFromUnitVectors(rec.down, rec.dir);
+    rec.beam.scale.set(
+      Math.max(0.12, Math.tan(rec.light.angle) * length * 0.78),
+      length,
+      Math.max(0.12, Math.tan(rec.light.angle) * length * 0.78)
+    );
+    rec.beam.material.opacity = 0.018 + power * 0.052;
+  }
+
+  function updateLocalDroneLight(kind, ground, cameraDir) {
+    if (!G || !G.player) return;
+    if (kind !== 'drone') {
+      disposeLocalDroneLight();
+      return;
+    }
+    if (!localDroneLight) localDroneLight = createSearchLight();
+    const player = G.player;
+    const active = player.alive && G.game && G.game.state === 'playing' && !respawn.active;
+    const altitude = Math.max(0, player.pos.y - ground);
+    const forward = localDroneLight.dir;
+    if (cameraDir) forward.set(cameraDir.x, 0, cameraDir.z);
+    if (forward.lengthSq() < 1e-5) forward.set(Math.sin(player.yaw || 0), 0, Math.cos(player.yaw || 0));
+    forward.normalize();
+    const target = localDroneLight.aim.copy(player.pos).addScaledVector(forward, 8.5);
+    target.y = ground + 0.06;
+    aimSearchLight(
+      localDroneLight,
+      localDroneLight.origin.copy(player.pos).setY(player.pos.y + 0.08),
+      target,
+      altitude,
+      active
+    );
+  }
+
+  function updateAvatarDroneLight(avatar, kind) {
+    if (!avatar) return;
+    if (kind !== 'drone' || !avatar.group.visible || avatar.wreck) {
+      chaseLightCleanup(avatar);
+      return;
+    }
+    if (!avatar.droneLight) avatar.droneLight = createSearchLight();
+    const pos = avatar.group.position;
+    const ground = groundHeightAt(pos.x, pos.z, pos.y + 2.5);
+    const altitude = Math.max(0, pos.y - ground);
+    const yaw = avatar.group.rotation.y;
+    const target = avatar.droneLight.aim.set(
+      pos.x + Math.sin(yaw) * 3.8,
+      ground + 0.06,
+      pos.z + Math.cos(yaw) * 3.8
+    );
+    aimSearchLight(
+      avatar.droneLight,
+      avatar.droneLight.origin.copy(pos).setY(pos.y + 0.06),
+      target,
+      altitude,
+      true
+    );
+  }
+
+  /* ------------------------------------------------------ machine wrecks */
+
+  function machineBurst(pos, scale) {
+    if (!pos || !G) return;
+    try {
+      if (G.fx && G.fx.explosion) G.fx.explosion(pos, scale || 1);
+      if (G.fx && G.fx.sparks) G.fx.sparks(pos, new THREE.Vector3(0, 1, 0), 26);
+      if (G.fx && G.fx.debris) G.fx.debris(pos, { count: 9 });
+      if (G.fx && G.fx.smoke) G.fx.smoke(pos, { size: 1.1, life: 2.4, color: 0x353b3f, rise: 1.5 });
+    } catch (err) { /* visuals are best-effort */ }
+    try {
+      if (G.audio && typeof G.audio.play === 'function') {
+        G.audio.play('explosion', { pos, gain: 1, jitter: 0.05 });
+      }
+    } catch (err) { /* ignore */ }
+  }
+
+  function machineWreckPosition(victim, avatar) {
+    if (avatar && avatar.group) return avatar.group.position.clone();
+    const trail = victim && victim.id ? lastTrailPoint(victim.id) : null;
+    return trail ? new THREE.Vector3(trail.x, trail.y || 0, trail.z) : null;
+  }
+
+  function startMachineWreck(victim) {
+    if (!victim || !THREE) return;
+    const kind = normalizeSoldier(victim.soldier);
+    if (!isMachine(kind)) return;
+    const avatar = avatars.get(String(victim.id));
+    const pos = machineWreckPosition(victim, avatar);
+    if (!pos) return;
+    if (!avatar) {
+      if (G && G.player && G.player.pos && G.player.pos.distanceTo(pos) < 45) {
+        machineBurst(pos, kind === 'drone' ? 1.25 : 1.05);
+      }
+      return;
+    }
+    if (avatar.wreck) return;
+    chaseLightCleanup(avatar);
+    const trail = snapshotTrails.get(String(victim.id));
+    const samples = trail && trail.samples ? trail.samples : [];
+    const last = samples[samples.length - 1];
+    const prev = samples[samples.length - 2];
+    let vx = 0;
+    let vz = 0;
+    if (last && prev && last.t > prev.t) {
+      vx = clampNum((last.x - prev.x) / ((last.t - prev.t) / 1000), -12, 12);
+      vz = clampNum((last.z - prev.z) / ((last.t - prev.t) / 1000), -12, 12);
+    }
+    avatar.group.visible = true;
+    avatar.hiddenAt = 0;
+    avatar.label.visible = false;
+    avatar.group.position.copy(pos);
+    avatar.wreck = {
+      kind,
+      t: 0,
+      smokeAt: 0,
+      exploded: false,
+      done: false,
+      vel: new THREE.Vector3(vx * 0.55, kind === 'drone' ? -0.8 : -0.2, vz * 0.55),
+      spin: (Math.random() < 0.5 ? -1 : 1) * (kind === 'drone' ? 6.5 : 3.2)
+    };
+    try {
+      if (G.fx && G.fx.sparks) G.fx.sparks(pos, new THREE.Vector3(0, 1, 0), 16);
+      if (G.fx && G.fx.smoke) G.fx.smoke(pos, { size: 0.45, life: 1.2, color: 0x24292c, rise: 0.9 });
+      if (G.fx && G.fx.debris) G.fx.debris(pos, { count: 4 });
+    } catch (err) { /* ignore */ }
+  }
+
+  function updateMachineWreck(avatar, dt) {
+    const w = avatar && avatar.wreck;
+    if (!w) return false;
+    w.t += dt;
+    const pos = avatar.group.position;
+    if (!w.exploded) {
+      w.vel.y -= (w.kind === 'drone' ? 15 : 19) * dt;
+      pos.addScaledVector(w.vel, dt);
+      avatar.group.rotation.x += w.spin * 0.19 * dt;
+      avatar.group.rotation.z += w.spin * 0.34 * dt;
+      avatar.group.rotation.y += w.spin * 0.52 * dt;
+      const ground = groundHeightAt(pos.x, pos.z, pos.y + 1.5);
+      const floor = ground + (w.kind === 'drone' ? 0.18 : 0.12);
+      if (pos.y <= floor) {
+        pos.y = floor;
+        w.exploded = true;
+        w.explodeAt = w.t;
+        w.vel.set(0, 0, 0);
+        machineBurst(pos, w.kind === 'drone' ? 1.3 : 1.05);
+        try {
+          if (G.fx && G.fx.dust) G.fx.dust(pos, new THREE.Vector3(0.8, 1.8, 0.8));
+        } catch (err) { /* ignore */ }
+      }
+      w.smokeAt -= dt;
+      if (w.smokeAt <= 0 && G && G.fx && G.fx.smoke) {
+        w.smokeAt = w.kind === 'drone' ? 0.055 : 0.09;
+        try {
+          G.fx.smoke(pos, {
+            size: w.kind === 'drone' ? 0.48 : 0.34,
+            life: 1.4,
+            color: 0x2a3033,
+            rise: 0.9
+          });
+        } catch (err) { /* ignore */ }
+      }
+    } else {
+      const age = w.t - (w.explodeAt || w.t);
+      pos.y -= dt * 0.16;
+      avatar.group.rotation.z += dt * 0.12;
+      if (age > 1.4) {
+        w.done = true;
+        avatar.group.visible = false;
+        avatar.hiddenAt = Date.now();
+        chaseLightCleanup(avatar);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function showRespawnOverlay(meta) {
     el.respawn.hidden = false;
     document.body.classList.add('mp-respawning');
     el.killer.textContent = respawn.by ? t('downBy', { name: respawn.by.name }) : '';
@@ -659,6 +1248,7 @@
     } else {
       el.killerUnit.hidden = true;
     }
+    try { prepareDeathReplay(respawn.by, meta || pendingDeathMeta); } catch (err) { stopDeathReplay(); }
     el.respawnBtn.disabled = true;
     updateRespawnOverlay();
   }
@@ -666,6 +1256,7 @@
   function hideRespawnOverlay() {
     el.respawn.hidden = true;
     document.body.classList.remove('mp-respawning');
+    stopDeathReplay();
   }
 
   function updateRespawnOverlay() {
@@ -680,15 +1271,16 @@
     }
   }
 
-  function startRespawn(delayMs, by) {
+  function startRespawn(delayMs, by, meta) {
     respawn.active = true;
     respawn.by = by || null;
     respawn.until = Date.now() + Math.max(600, Number(delayMs) || 5000);
     respawn.requestedAt = 0;
     respawn.fallbackAt = Date.now() + Math.max(4000, Number(delayMs) || 5000) + 3500;
     respawn.lastRequestAt = 0;
+    pendingDeathMeta = meta || null;
     pendingDeathBy = null;
-    showRespawnOverlay();
+    showRespawnOverlay(meta || pendingDeathMeta);
   }
 
   function requestRespawn() {
@@ -709,13 +1301,23 @@
     const state = G.game && G.game.state;
     if (state !== 'playing' && state !== 'paused' && state !== 'dead') return;
     if (respawn.active) return;
+    disposeLocalDroneLight();
 
     const by = serverDeathNotified ? pendingDeathBy : null;
+    const meta = pendingDeathMeta ? { ...pendingDeathMeta } : {};
+    if (!meta.victimPos && G.player && G.player.pos) {
+      meta.victimPos = { x: G.player.pos.x, y: G.player.pos.y, z: G.player.pos.z };
+    }
+    if (!Number.isFinite(Number(meta.victimYaw)) && G.player && Number.isFinite(Number(G.player.yaw))) {
+      meta.victimYaw = Number(G.player.yaw);
+    }
+    if (!meta.at) meta.at = lastKillAt || Date.now();
     if (!serverDeathNotified) {
       send({ type: 'died' });
     }
     serverDeathNotified = false;
     pendingDeathBy = null;
+    pendingDeathMeta = null;
 
     try {
       G.game.state = 'respawning';
@@ -726,11 +1328,12 @@
       G.input.exitLock();
     } catch (err) { /* ignore */ }
 
-    startRespawn(5000, by);
+    startRespawn(5000, by, meta);
   }
 
   function revive(spawn, protectedUntil) {
     if (!G) return;
+    disposeLocalDroneLight();
     const point = spawn || defaultSpawn();
     const yaw = typeof point.yaw === 'number' ? point.yaw : Math.random() * Math.PI * 2;
     try {
@@ -764,6 +1367,7 @@
     respawn.requestedAt = 0;
     serverDeathNotified = false;
     pendingDeathBy = null;
+    pendingDeathMeta = null;
     pendingServerDeath = null;
     hideRespawnOverlay();
     toast(t('respawned'));
@@ -849,26 +1453,34 @@
     avatar.texture.needsUpdate = true;
   }
 
+  function clearAvatarFallback(avatar) {
+    if (!avatar || !avatar.body) return;
+    for (const child of avatar.body.children.slice()) {
+      if (!child.userData || !child.userData.mpHunterFallback) continue;
+      avatar.body.remove(child);
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) child.material.forEach((mat) => mat.dispose());
+        else child.material.dispose();
+      }
+    }
+    avatar.fallbackBuilt = false;
+  }
+
   function resetAvatarModel(avatar) {
     if (!avatar || !avatar.body) return;
+    chaseLightCleanup(avatar);
+    if (avatar.machineUpgradeTimer) {
+      window.clearTimeout(avatar.machineUpgradeTimer);
+      avatar.machineUpgradeTimer = 0;
+    }
     if (avatar.hunter) {
       avatar.body.remove(avatar.hunter);
       avatar.hunter = null;
       avatar.rig = null;
       avatar.weapon = null;
     }
-    if (avatar.fallbackBuilt) {
-      for (const child of avatar.body.children.slice()) {
-        if (!child.userData || !child.userData.mpHunterFallback) continue;
-        avatar.body.remove(child);
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-          if (Array.isArray(child.material)) child.material.forEach((mat) => mat.dispose());
-          else child.material.dispose();
-        }
-      }
-      avatar.fallbackBuilt = false;
-    }
+    clearAvatarFallback(avatar);
     avatar.legs = [];
     avatar.arms = [];
     avatar.soldierKind = null;
@@ -1000,18 +1612,17 @@
       mesh.userData.mpHunterFallback = true;
       avatar.body.add(mesh);
     }
+    scheduleMachineFallbackUpgrade(avatar, kind);
   }
 
   function mountMachineAvatar(avatar, kind) {
-    if (!avatar || avatar.disposed || avatar.hunter) return;
+    if (!avatar || avatar.disposed || avatar.hunter) return true;
     const api = window.SaltUnitModels;
-    if (!api || typeof api.create !== 'function') {
-      buildMachineFallbackAvatar(avatar, kind);
-      return;
-    }
+    if (!api || typeof api.create !== 'function') return false;
     try {
       const made = api.create(kind);
       if (!made || !made.model) throw new Error('machine unit clone unavailable');
+      clearAvatarFallback(avatar);
       made.model.name = `mp-${kind}-model`;
       avatar.body.add(made.model);
       avatar.hunter = made.model;
@@ -1021,21 +1632,78 @@
       avatar.machine = true;
       avatar.legs = [];
       avatar.arms = [];
+      return true;
     } catch (err) {
       console.error('[mp] machine avatar mount failed', err);
       buildMachineFallbackAvatar(avatar, kind);
+      return false;
     }
+  }
+
+  function scheduleMachineFallbackUpgrade(avatar, kind) {
+    if (!avatar || avatar.disposed || !isMachine(kind)) return;
+    if (avatar.machineUpgradeTimer) return;
+    if ((avatar.machineUpgradeTries || 0) >= 20) return;
+    avatar.machineUpgradeTries = (avatar.machineUpgradeTries || 0) + 1;
+    avatar.machineUpgradeTimer = window.setTimeout(() => {
+      avatar.machineUpgradeTimer = 0;
+      if (!avatar || avatar.disposed || avatar.hunter) return;
+      const api = window.SaltUnitModels;
+      if (api && typeof api.isReady === 'function' && api.isReady(kind)) {
+        if (mountMachineAvatar(avatar, kind)) return;
+      }
+      scheduleMachineFallbackUpgrade(avatar, kind);
+    }, 1200);
+  }
+
+  function requestMachineAvatar(avatar, kind, requestId) {
+    const startedAt = performance.now();
+    const wait = () => {
+      if (!avatar || avatar.disposed || avatar.soldierRequest !== requestId) return;
+      const api = window.SaltUnitModels;
+      if (!api || typeof api.create !== 'function') {
+        if (performance.now() - startedAt < 30000) window.setTimeout(wait, 120);
+        else buildMachineFallbackAvatar(avatar, kind);
+        return;
+      }
+      if (typeof api.isReady !== 'function' || api.isReady(kind)) {
+        mountMachineAvatar(avatar, kind);
+        return;
+      }
+      if (typeof api.whenReady === 'function') {
+        api.whenReady(kind).then((ready) => {
+          if (!avatar || avatar.disposed || avatar.soldierRequest !== requestId) return;
+          if (ready) {
+            mountMachineAvatar(avatar, kind);
+            return;
+          }
+          if (performance.now() - startedAt < 30000) window.setTimeout(wait, 200);
+          else buildMachineFallbackAvatar(avatar, kind);
+        }).catch(() => {
+          if (!avatar || avatar.disposed || avatar.soldierRequest !== requestId) return;
+          if (performance.now() - startedAt < 30000) window.setTimeout(wait, 200);
+          else buildMachineFallbackAvatar(avatar, kind);
+        });
+        return;
+      }
+      if (performance.now() - startedAt < 30000) window.setTimeout(wait, 120);
+      else buildMachineFallbackAvatar(avatar, kind);
+    };
+    wait();
   }
 
   function mountHunterAvatar(avatar, kind) {
     if (!avatar || avatar.disposed || avatar.hunter) return;
-    const api = window.HunterAvatar;
-    if (!api || !api.ready || typeof api.create !== 'function') {
+    const classic = kind === 'classic';
+    const api = classic ? window.ClassicAvatar : window.HunterAvatar;
+    if (!api || (!classic && !api.ready) || typeof api.create !== 'function') {
       buildFallbackAvatar(avatar, kind);
       return;
     }
     try {
-      const hunter = api.create(kind);
+      const hunter = api.create(kind, {
+        color: avatar.data && avatar.data.color
+      });
       if (!hunter || !hunter.model) throw new Error('hunter clone unavailable');
       hunter.model.name = 'soldier-avatar-model';
       avatar.body.add(hunter.model);
@@ -1056,39 +1724,29 @@
     const soldier = normalizeSoldier(kind);
     const requestId = (avatar.soldierRequest = (avatar.soldierRequest || 0) + 1);
     if (isMachine(soldier)) {
-      const api = window.SaltUnitModels;
-      const attachMachine = (ok) => {
-        if (!avatar || avatar.disposed || avatar.soldierRequest !== requestId) return;
-        if (!ok || !api || !api.isReady(soldier)) buildMachineFallbackAvatar(avatar, soldier);
-        else mountMachineAvatar(avatar, soldier);
-      };
-      if (api && typeof api.whenReady === 'function') {
-        api.whenReady(soldier).then(attachMachine).catch(() => attachMachine(false));
-      } else {
-        window.setTimeout(() => {
-          const loaded = window.SaltUnitModels && window.SaltUnitModels.isReady(soldier);
-          attachMachine(!!loaded);
-        }, 150);
-      }
+      requestMachineAvatar(avatar, soldier, requestId);
       return;
     }
     const attach = (ok) => {
       if (!avatar || avatar.disposed || avatar.soldierRequest !== requestId) return;
-      if (!ok || !window.HunterAvatar || !window.HunterAvatar.isReady(soldier)) {
+      const readyApi = soldier === 'classic' ? window.ClassicAvatar : window.HunterAvatar;
+      if (!ok || !readyApi || !readyApi.isReady(soldier)) {
         buildFallbackAvatar(avatar, soldier);
         return;
       }
       mountHunterAvatar(avatar, soldier);
     };
-    if (window.HunterAvatar) {
-      window.HunterAvatar.whenReady(soldier).then(attach).catch(() => attach(false));
+    const api = soldier === 'classic' ? window.ClassicAvatar : window.HunterAvatar;
+    if (api) {
+      api.whenReady(soldier).then(attach).catch(() => attach(false));
       return;
     }
     let attempts = 0;
     const wait = () => {
       if (!avatar || avatar.disposed || avatar.soldierRequest !== requestId) return;
-      if (window.HunterAvatar) {
-        window.HunterAvatar.whenReady(soldier).then(attach).catch(() => attach(false));
+      const currentApi = soldier === 'classic' ? window.ClassicAvatar : window.HunterAvatar;
+      if (currentApi) {
+        currentApi.whenReady(soldier).then(attach).catch(() => attach(false));
         return;
       }
       attempts += 1;
@@ -1163,9 +1821,13 @@
       rig: null,
       weapon: null,
       machine: false,
+      droneLight: null,
+      wreck: null,
       soldierKind: null,
       soldierRequest: 0,
       fallbackBuilt: false,
+      machineUpgradeTimer: 0,
+      machineUpgradeTries: 0,
       disposed: false,
       walk: Math.random() * 10,
       hiddenAt: 0,
@@ -1180,6 +1842,11 @@
 
   function disposeAvatar(avatar) {
     avatar.disposed = true;
+    if (avatar.machineUpgradeTimer) {
+      window.clearTimeout(avatar.machineUpgradeTimer);
+      avatar.machineUpgradeTimer = 0;
+    }
+    chaseLightCleanup(avatar);
     scene.remove(avatar.group);
     avatar.texture.dispose();
     try { avatar.label.material.dispose(); } catch (err) { /* ignore */ }
@@ -1191,213 +1858,6 @@
         else child.material.dispose();
       }
     });
-  }
-
-  function clampNum(value, min, max) {
-    return value < min ? min : (value > max ? max : value);
-  }
-
-  function serverNow() {
-    return Date.now() + net.clockOffset;
-  }
-
-  function upsertEntity(entry, t) {
-    if (!Array.isArray(entry) || entry.length < 8) return null;
-    const id = String(entry[0]);
-    const x = Number(entry[1]);
-    const y = Number(entry[2]);
-    const z = Number(entry[3]);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
-    let entity = net.entities.get(id);
-    if (!entity) {
-      entity = { id, samples: [] };
-      net.entities.set(id, entity);
-    }
-    const yaw = Number(entry[4]) || 0;
-    const pitch = Number(entry[5]) || 0;
-    const hp = Number(entry[6]);
-    const flags = Number(entry[7]) || 0;
-    entity.x = x;
-    entity.y = y;
-    entity.z = z;
-    entity.yaw = yaw;
-    entity.pitch = pitch;
-    entity.hp = Number.isFinite(hp) ? hp : 100;
-    entity.moving = !!(flags & 1);
-    entity.sprint = !!(flags & 2);
-    entity.shield = !!(flags & 4);
-    if (typeof entry[8] === 'string') entity.soldier = entry[8];
-    if (typeof entry[9] === 'string') entity.name = entry[9];
-    if (typeof entry[10] === 'string') entity.color = entry[10];
-    const last = entity.samples[entity.samples.length - 1];
-    if (!last || last.t !== t) {
-      entity.samples.push({ t, x, y, z, yaw });
-      if (entity.samples.length > 12) entity.samples.shift();
-    }
-    return entity;
-  }
-
-  function entityView(entity) {
-    return {
-      id: entity.id,
-      name: entity.name || '',
-      color: entity.color || '#ffb347',
-      soldier: normalizeSoldier(entity.soldier),
-      x: entity.x,
-      y: entity.y,
-      z: entity.z,
-      yaw: entity.yaw,
-      pitch: entity.pitch,
-      hp: entity.hp,
-      moving: !!entity.moving,
-      sprint: !!entity.sprint,
-      shield: !!entity.shield
-    };
-  }
-
-  /**
-   * 把服务端增量快照合成为完整实体列表，旧版消费者（Canvas 兜底）继续读 msg.players。
-   */
-  function prepareSnapshot(msg) {
-    const t = Number(msg.t) || Date.now();
-    const now = Date.now();
-    const rawOffset = t - now;
-    if (!net.clockReady) {
-      net.clockOffset = rawOffset;
-      net.clockReady = true;
-    } else {
-      const delta = rawOffset - net.clockOffset;
-      if (delta < -90 || delta > 300) net.clockOffset = rawOffset;
-      else net.clockOffset += clampNum(delta * 0.1, -20, 20);
-    }
-
-    if (Number.isFinite(Number(msg.interp))) {
-      net.interpMs = clampNum(net.interpMs * 0.88 + Number(msg.interp) * 0.12, 70, 420);
-    }
-    if (Number.isFinite(Number(msg.rate)) && Number(msg.rate) > 0) net.rate = Number(msg.rate);
-    if (net.lastSnapshotAt) {
-      const gap = clampNum(now - net.lastSnapshotAt, 30, 600);
-      net.snapInterval = net.snapInterval * 0.85 + gap * 0.15;
-      net.interpMs = clampNum(Math.max(net.interpMs, net.snapInterval * 1.12), 70, 420);
-    }
-    net.lastSnapshotAt = now;
-
-    if (msg.full) {
-      const keep = new Set();
-      for (const entry of msg.add || []) {
-        const entity = upsertEntity(entry, t);
-        if (entity) keep.add(entity.id);
-      }
-      for (const id of [...net.entities.keys()]) {
-        if (!keep.has(id)) net.entities.delete(id);
-      }
-    } else {
-      for (const id of msg.rm || []) net.entities.delete(String(id));
-      for (const entry of msg.add || []) upsertEntity(entry, t);
-      for (const entry of msg.upd || []) upsertEntity(entry, t);
-    }
-
-    msg.players = [];
-    for (const entity of net.entities.values()) msg.players.push(entityView(entity));
-    return msg;
-  }
-
-  function lerpAngle(from, to, amount) {
-    let delta = to - from;
-    delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-    return from + delta * amount;
-  }
-
-  /**
-   * 在快照缓冲里按“服务端渲染时间”采样，短距离外推最多 140ms。
-   */
-  function sampleEntity(entity, time) {
-    const samples = entity && entity.samples;
-    if (!samples || !samples.length) return null;
-    if (samples.length === 1) return samples[0];
-    if (time <= samples[0].t) return samples[0];
-    for (let i = samples.length - 1; i > 0; i -= 1) {
-      const a = samples[i - 1];
-      const b = samples[i];
-      if (a.t > time) continue;
-      const span = b.t - a.t;
-      if (span <= 0) return b;
-      let k = (time - a.t) / span;
-      if (k < 1) {
-        return {
-          x: a.x + (b.x - a.x) * k,
-          y: a.y + (b.y - a.y) * k,
-          z: a.z + (b.z - a.z) * k,
-          yaw: lerpAngle(a.yaw, b.yaw, k)
-        };
-      }
-      const overshoot = Math.min(140, time - b.t);
-      const vx = (b.x - a.x) / span;
-      const vz = (b.z - a.z) / span;
-      return {
-        x: b.x + (vx * overshoot) / 1000,
-        y: b.y,
-        z: b.z + (vz * overshoot) / 1000,
-        yaw: b.yaw
-      };
-    }
-    return samples[samples.length - 1];
-  }
-
-  /**
-   * 服务端位置与本地预测的误差：小误差软收敛，大误差直接回拉。
-   */
-  function reconcileSelf(you) {
-    if (!G || !G.player || !you) return;
-    if (typeof you.x !== 'number' || typeof you.z !== 'number') return;
-    if (!you.alive || respawn.active || !G.player.alive) {
-      net.selfError.x = 0;
-      net.selfError.z = 0;
-      net.selfError.since = 0;
-      return;
-    }
-    const dx = you.x - G.player.pos.x;
-    const dz = you.z - G.player.pos.z;
-    const dy = (Number(you.y) || 0) - G.player.pos.y;
-    const dist = Math.hypot(dx, dz);
-    if (dist > 7 || Math.abs(dy) > 5) {
-      G.player.pos.x = you.x;
-      G.player.pos.z = you.z;
-      if (Math.abs(dy) <= 5) G.player.pos.y = you.y;
-      net.selfError.x = 0;
-      net.selfError.z = 0;
-      net.selfError.since = 0;
-      return;
-    }
-    net.selfError.x = dx;
-    net.selfError.z = dz;
-  }
-
-  function applySelfCorrection(dt) {
-    if (!G || !G.player || !G.player.alive || respawn.active) return;
-    const err = net.selfError;
-    const dist = Math.hypot(err.x, err.z);
-    if (dist < 0.02) {
-      err.x = 0;
-      err.z = 0;
-      err.since = 0;
-      return;
-    }
-    if (!err.since) err.since = Date.now();
-    if (Date.now() - err.since > 4500) {
-      G.player.pos.x += err.x;
-      G.player.pos.z += err.z;
-      err.x = 0;
-      err.z = 0;
-      err.since = 0;
-      return;
-    }
-    const step = Math.min(dist, Math.max(0.004, dist * (1 - Math.exp(-dt * 9))), 0.16);
-    const k = step / dist;
-    G.player.pos.x += err.x * k;
-    G.player.pos.z += err.z * k;
-    err.x -= err.x * k;
-    err.z -= err.z * k;
   }
 
   function reconcileAvatars(list) {
@@ -1413,10 +1873,16 @@
         scene.add(avatar.group);
       }
       avatar.data = item;
-      avatar.entity = net.entities.get(item.id) || null;
       avatar.group.visible = true;
       avatar.hiddenAt = 0;
+      avatar.target.set(item.x, item.y, item.z);
       avatar.targetYaw = item.yaw || 0;
+      if (avatar.wreck) {
+        avatar.wreck = null;
+        avatar.label.visible = true;
+        avatar.group.rotation.x = 0;
+        avatar.group.rotation.z = 0;
+      }
       const soldier = normalizeSoldier(item.soldier);
       if (avatar.soldierKind && avatar.soldierKind !== soldier) {
         resetAvatarModel(avatar);
@@ -1430,6 +1896,11 @@
     }
     for (const [id, avatar] of avatars) {
       if (seen.has(id)) continue;
+      if (avatar.wreck && !avatar.wreck.done) {
+        avatar.group.visible = true;
+        continue;
+      }
+      chaseLightCleanup(avatar);
       avatar.group.visible = false;
       if (!avatar.hiddenAt) avatar.hiddenAt = Date.now();
       if (Date.now() - avatar.hiddenAt > 20000) {
@@ -1440,31 +1911,23 @@
   }
 
   function updateAvatars(dt) {
-    const renderTime = serverNow() - net.interpMs;
     for (const avatar of avatars.values()) {
       if (!avatar.group.visible) continue;
-      const entity = avatar.entity || net.entities.get(avatar.id);
-      const sample = entity ? sampleEntity(entity, renderTime) : null;
-      if (sample) {
-        avatar.target.set(sample.x, sample.y, sample.z);
-        const dx = avatar.target.x - avatar.group.position.x;
-        const dy = avatar.target.y - avatar.group.position.y;
-        const dz = avatar.target.z - avatar.group.position.z;
-        if (dx * dx + dy * dy + dz * dz > 36) {
-          avatar.group.position.copy(avatar.target);
-        } else {
-          const alpha = 1 - Math.exp(-dt * 26);
-          avatar.group.position.x += dx * alpha;
-          avatar.group.position.y += dy * alpha;
-          avatar.group.position.z += dz * alpha;
-        }
-        avatar.targetYaw = sample.yaw;
+      if (avatar.wreck && !avatar.wreck.done) {
+        try {
+          updateMachineWreck(avatar, dt);
+        } catch (err) { /* ignore */ }
+        continue;
       }
-      const yawDelta = Math.atan2(
-        Math.sin(avatar.targetYaw - avatar.group.rotation.y),
-        Math.cos(avatar.targetYaw - avatar.group.rotation.y)
-      );
-      avatar.group.rotation.y += yawDelta * Math.min(1, dt * 14);
+      const distanceSq = avatar.group.position.distanceToSquared(avatar.target);
+      if (distanceSq > 64) avatar.group.position.copy(avatar.target);
+      else {
+        const alpha = 1 - Math.exp(-dt * 16);
+        avatar.group.position.lerp(avatar.target, alpha);
+      }
+      let delta = avatar.targetYaw - avatar.group.rotation.y;
+      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+      avatar.group.rotation.y += delta * Math.min(1, dt * 14);
 
       const moving = !!(avatar.data && avatar.data.moving);
       if (avatar.rig) {
@@ -1485,6 +1948,7 @@
       }
       const pose = Math.min(1, dt * 10);
       const kind = avatar.soldierKind || normalizeSoldier(avatar.data && avatar.data.soldier);
+      try { updateAvatarDroneLight(avatar, kind); } catch (err) { /* ignore */ }
       const targetLabelY = isMachine(kind) ? (kind === 'drone' ? 1.35 : 1.05) : 2.28;
       if (avatar.body) {
         avatar.body.rotation.y += (0 - avatar.body.rotation.y) * pose;
@@ -1546,8 +2010,11 @@
       const result = original.call(this, origin, dir, opts);
       try {
         if (origin && dir && G.game && G.game.state === 'playing' && !respawn.active) {
-          /* 开火意图立即上报：服务端按自己的冷却与命中盒裁决伤害。 */
-          sendInput(true);
+          send({
+            type: 'shot',
+            origin: { x: origin.x, y: origin.y, z: origin.z },
+            dir: { x: dir.x, y: dir.y, z: dir.z }
+          });
         }
       } catch (err) { /* ignore */ }
       try {
@@ -1563,6 +2030,7 @@
         }
         if (!best) return result;
         const point = origin.clone().addScaledVector(dir, best.dist);
+        send({ type: 'hit', targetId: best.avatar.id });
         best.avatar.hitAt = performance.now();
         try { G.fx && G.fx.sparks && G.fx.sparks(point, dir, 6); } catch (err) { /* ignore */ }
         return {
@@ -1646,104 +2114,24 @@
     }
   }
 
-  function buildInputPayload() {
-    if (!G || !G.player || !THREE) return null;
-    const player = G.player;
-    const input = G.input || {};
-    const move = input.move || { x: 0, y: 0 };
-    const f = clampNum(Number(move.y) || 0, -1, 1);
-    const s = clampNum(Number(move.x) || 0, -1, 1);
-    const yaw = Number(player.yaw) || 0;
-    let mvx = s * Math.cos(yaw) - f * Math.sin(yaw);
-    let mvz = -s * Math.sin(yaw) - f * Math.cos(yaw);
-    const mag = Math.hypot(mvx, mvz);
-    if (mag > 1) {
-      mvx /= mag;
-      mvz /= mag;
-    }
-
-    let aim = null;
-    try {
-      if (G.camera) {
-        const dir = new THREE.Vector3();
-        G.camera.getWorldDirection(dir);
-        if (dir.lengthSq() > 1e-6) {
-          dir.normalize();
-          aim = { x: dir.x, y: dir.y, z: dir.z };
-        }
-      }
-    } catch (err) { /* ignore */ }
-
-    /*
-     * spd 取本地实际位移速度而不是输入速度：撞墙滑行时服务端不会继续推墙，
-     * 这也让服务端的位移上限校验更有意义（真实速度不可能超过上限）。
-     */
+  function sendState(force) {
+    if (!G || !G.player || !send) return;
     const now = performance.now();
-    const pos = player.pos || { x: 0, y: 0, z: 0 };
-    let speed = 0;
-    if (net.lastPosAt && now > net.lastPosAt) {
-      const dtPos = (now - net.lastPosAt) / 1000;
-      const disp = Math.hypot(pos.x - net.lastPos.x, pos.z - net.lastPos.z);
-      const dispSpeed = dtPos > 0.004 ? disp / dtPos : 0;
-      const vel = player.vel || { x: 0, z: 0 };
-      const velSpeed = Math.hypot(Number(vel.x) || 0, Number(vel.z) || 0);
-      if (dispSpeed < 22 && (dispSpeed > 1.2 || velSpeed > 0.6)) {
-        speed = Math.min(dispSpeed, velSpeed + 1.2, 20);
-      }
-    }
-    net.lastPos.x = pos.x;
-    net.lastPos.y = pos.y;
-    net.lastPos.z = pos.z;
-    net.lastPosAt = now;
-
-    const active = !!(G.game && G.game.state === 'playing' && !respawn.active);
-    const kind = normalizeSoldier(mySoldier);
-    const down = typeof input.down === 'function' ? input.down.bind(input) : () => false;
-    const jump = kind === 'drone'
-      ? false
-      : !!(input.jump || down('jump'));
-    const ascend = kind === 'drone' && !!(virtualUnitInput.ascend || down('jump'));
-    const descend = kind === 'drone' && !!(virtualUnitInput.descend || down('sprint'));
-    const fire = !!(active && input.fire);
-
-    return {
-      type: 'input',
-      seq: ++net.inputSeq,
-      f,
-      s,
-      mv: { x: mvx, z: mvz },
-      spd: Math.round(speed * 100) / 100,
-      sprint: !!player.sprinting,
-      yaw: Math.round(yaw * 1000) / 1000,
-      pitch: Math.round((Number(player.pitch) || 0) * 1000) / 1000,
-      aim,
-      jump,
-      up: ascend,
-      down: descend,
-      fire,
-      ads: !!(input.ads || player.ads),
+    if (!force && now - lastStateAt < 90) return;
+    lastStateAt = now;
+    const state = G.game && G.game.state;
+    const active = state === 'playing' && !respawn.active;
+    const player = G.player;
+    send({
+      type: 'state',
+      pos: { x: player.pos.x, y: player.pos.y, z: player.pos.z },
+      yaw: player.yaw,
+      pitch: player.pitch,
       active,
       visible: !document.hidden,
-      engine: 'webgl'
-    };
-  }
-
-  function sendInput(force) {
-    if (!G || !G.player) return false;
-    const now = performance.now();
-    if (!force && now - net.lastInputAt < 30) return false;
-    const payload = buildInputPayload();
-    if (!payload) return false;
-    const changed = payload.fire !== net.lastFire || payload.active !== net.lastActive;
-    if (!force && !changed && now - net.lastInputAt < 30) return false;
-    net.lastInputAt = now;
-    net.lastFire = payload.fire;
-    net.lastActive = payload.active;
-    return send(payload);
-  }
-
-  function sendState(force) {
-    return sendInput(force !== false);
+      moving: !!(player.vel && Math.hypot(player.vel.x, player.vel.z) > 0.6),
+      sprint: !!player.sprinting
+    });
   }
 
   function unitName(kind) {
@@ -1752,6 +2140,7 @@
   }
 
   function removeLocalUnit() {
+    disposeLocalDroneLight();
     if (localUnit && localUnit.model && localUnit.model.parent) {
       localUnit.model.parent.remove(localUnit.model);
     }
@@ -1876,7 +2265,10 @@
     const player = G.player;
     const input = G.input;
     const kind = normalizeSoldier(mySoldier);
-    if (!isMachine(kind)) return;
+    if (!isMachine(kind)) {
+      disposeLocalDroneLight();
+      return;
+    }
 
     if (kind === 'drone') {
       let ground = 0;
@@ -1906,6 +2298,15 @@
     }
 
     G.camera.position.copy(player.eye);
+    try {
+      if (kind === 'drone') {
+        if (!G.__saltCameraDir) G.__saltCameraDir = new THREE.Vector3();
+        const cameraDir = G.camera.getWorldDirection(G.__saltCameraDir);
+        updateLocalDroneLight(kind, ground, cameraDir);
+      } else {
+        updateLocalDroneLight(kind, ground, null);
+      }
+    } catch (err) { /* ignore */ }
     if (localUnit && localUnit.model) {
       localUnit.model.position.copy(player.pos);
       localUnit.model.rotation.set(
@@ -1970,12 +2371,7 @@
       reconnectDelay = 1200;
       setConnection('online');
       everJoined = false;
-      net.entities.clear();
-      net.clockReady = false;
-      net.selfError.x = 0;
-      net.selfError.z = 0;
-      net.selfError.since = 0;
-      send({ type: 'join', name: myName, soldier: mySoldier, engine: 'webgl', spawns: spawnsFromLevel() });
+      send({ type: 'join', name: myName, soldier: mySoldier, spawns: spawnsFromLevel() });
       window.clearInterval(pingTimer);
       pingTimer = window.setInterval(() => {
         if (ws && ws.readyState === 1) send({ type: 'ping', t: performance.now() });
@@ -1995,12 +2391,6 @@
       }
       let msg;
       try { msg = JSON.parse(event.data); } catch (err) { return; }
-      if (msg && msg.type === 'snapshot') {
-        try { prepareSnapshot(msg); } catch (err) {
-          console.error('[mp] snapshot prepare failed', err);
-          return;
-        }
-      }
       handleMessage(msg);
     });
 
@@ -2013,7 +2403,12 @@
       rosterData = [];
       updateChip();
       setConnection('offline');
-      for (const avatar of avatars.values()) avatar.group.visible = false;
+      disposeLocalDroneLight();
+      for (const avatar of avatars.values()) {
+        chaseLightCleanup(avatar);
+        avatar.group.visible = false;
+      }
+      snapshotTrails.clear();
       if (everJoined) toast(t('disconnected'));
       scheduleReconnect();
     });
@@ -2113,12 +2508,12 @@
             respawn.until = Math.min(respawn.until, Date.now());
           }
         }
-        if (Array.isArray(msg.roster)) rosterData = msg.roster;
+        rosterData = Array.isArray(msg.roster) ? msg.roster : [];
         updateChip();
         if (!el.roster.hidden) renderRoster();
         updateTitleLine();
+        recordSnapshotTrails(msg.players, msg.t);
         reconcileAvatars(Array.isArray(msg.players) ? msg.players : []);
-        reconcileSelf(msg.you);
         break;
       }
       case 'hitConfirm': {
@@ -2152,13 +2547,22 @@
       }
       case 'youDied': {
         const by = msg.by || null;
+        const replay = msg.replay && msg.replay.source === 'server' ? msg.replay : null;
+        const replayAt = replay ? Number(replay.killAt) : 0;
         pendingDeathBy = by;
+        pendingDeathMeta = {
+          at: replayAt || lastKillAt || Date.now(),
+          replay,
+          victimPos: G && G.player && G.player.pos
+            ? { x: G.player.pos.x, y: G.player.pos.y, z: G.player.pos.z }
+            : null
+        };
         serverDeathNotified = true;
         const respawnIn = Math.max(0, Number(msg.respawnIn) || 5000);
         if (respawn.active) {
           respawn.by = by || respawn.by;
           respawn.until = Math.max(respawn.until, Date.now() + Math.max(0, respawnIn - 500));
-          showRespawnOverlay();
+          showRespawnOverlay(pendingDeathMeta);
           break;
         }
         const state = G && G.game ? G.game.state : '';
@@ -2168,9 +2572,9 @@
             G.player.damage(9999, undefined);
           } catch (err) { /* ignore */ }
         } else if (state === 'playing' || state === 'paused' || state === 'dead') {
-          startRespawn(respawnIn, by);
+          startRespawn(respawnIn, by, pendingDeathMeta);
         } else {
-          pendingServerDeath = { by, respawnIn };
+          pendingServerDeath = { by, respawnIn, meta: pendingDeathMeta };
         }
         break;
       }
@@ -2207,7 +2611,9 @@
         break;
       }
       case 'kill': {
+        lastKillAt = Number(msg.at) || Date.now();
         feedKill(msg);
+        try { startMachineWreck(msg.victim); } catch (err) { /* ignore */ }
         if (msg.victim && msg.victim.id === myId) {
           // local death handler will take care of the overlay
         } else if (msg.killer && msg.killer.id === myId) {
@@ -2233,35 +2639,6 @@
         } catch (err) { /* ignore */ }
         break;
       }
-      case 'correction': {
-        if (!G || !G.player || !msg.pos) break;
-        const dx = (Number(msg.pos.x) || 0) - G.player.pos.x;
-        const dz = (Number(msg.pos.z) || 0) - G.player.pos.z;
-        if (!G.player.alive || respawn.active) break;
-        if (Math.hypot(dx, dz) > 2.2) {
-          G.player.pos.x = Number(msg.pos.x) || G.player.pos.x;
-          G.player.pos.z = Number(msg.pos.z) || G.player.pos.z;
-          net.selfError.x = 0;
-          net.selfError.z = 0;
-        } else {
-          net.selfError.x = dx;
-          net.selfError.z = dz;
-        }
-        break;
-      }
-      case 'antiCheat': {
-        console.warn('[mp] anti-cheat', msg.kind, msg.action, msg.score);
-        if (msg.action === 'kick') toast(t('antiCheatKick'));
-        else if (msg.action === 'lock_move' || msg.action === 'lock_fire') toast(t('antiCheatLock'));
-        else toast(t('antiCheatWarn'));
-        break;
-      }
-      case 'idle': {
-        if (respawn.active && Number(msg.respawnAt)) {
-          respawn.until = Math.min(respawn.until, Number(msg.respawnAt));
-        }
-        break;
-      }
       case 'pong': {
         if (typeof msg.t === 'number') pingMs = performance.now() - msg.t;
         break;
@@ -2284,6 +2661,13 @@
     } catch (err) {
       console.error('[mp] failed to hook player:dead', err);
     }
+    try {
+      game.events.on('game:state', (event) => {
+        if (!event || event.state !== 'playing') disposeLocalDroneLight();
+      });
+    } catch (err) {
+      console.error('[mp] failed to hook game:state', err);
+    }
 
     patchCombat();
     patchPlayerForUnits();
@@ -2291,15 +2675,7 @@
     updateUnitBadge();
 
     window.clearInterval(stateTimer);
-    stateTimer = window.setInterval(() => sendInput(false), 33);
-    try {
-      if (G.player && G.player.pos) {
-        net.lastPos.x = G.player.pos.x;
-        net.lastPos.y = G.player.pos.y;
-        net.lastPos.z = G.player.pos.z;
-        net.lastPosAt = performance.now();
-      }
-    } catch (err) { /* ignore */ }
+    stateTimer = window.setInterval(() => sendState(false), 100);
 
     // Watch for pending server deaths (player was in the intro / menu when hit).
     window.setInterval(() => {
@@ -2309,6 +2685,7 @@
       const pending = pendingServerDeath;
       pendingServerDeath = null;
       pendingDeathBy = pending.by;
+      pendingDeathMeta = pending.meta || pendingDeathMeta;
       serverDeathNotified = true;
       try {
         G.player.invulnerable = false;
@@ -2327,10 +2704,7 @@
     const frame = (now) => {
       const dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0.016;
       lastFrame = now;
-      try {
-        updateAvatars(dt);
-        applySelfCorrection(dt);
-      } catch (err) { /* ignore */ }
+      try { updateAvatars(dt); } catch (err) { /* ignore */ }
       if (isMachine(mySoldier) && now - lastUnitBadgeAt > 180) {
         lastUnitBadgeAt = now;
         try { updateUnitBadge(); } catch (err) { /* ignore */ }

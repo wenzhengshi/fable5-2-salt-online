@@ -1,4 +1,4 @@
-/* Manual focus mode: a read-only spectator layer over the 3D renderer. */
+/* Manual focus mode: a read-only spectator layer for the 3D battlefield. */
 .focus-setting-row { align-items: stretch; }
 
 .focus-setting-button {
@@ -37,37 +37,10 @@
   color: rgba(232, 228, 218, 0.5);
 }
 
-.focus-play-meter {
-  grid-column: 1 / -1;
-  display: block;
-  height: 3px;
-  overflow: hidden;
-  background: rgba(232, 228, 218, 0.12);
-}
-
-.focus-play-meter[hidden] { display: none; }
-
-.focus-play-meter i {
-  display: block;
-  width: 0;
-  height: 100%;
-  background: linear-gradient(90deg, #ffb347, #ffe066);
-  transition: width 0.55s linear;
-}
-
-.focus-play-meter.is-near-break i {
-  background: linear-gradient(90deg, #ff7a55, #ffb347);
-}
-
 .focus-setting-button.is-active {
   border-color: rgba(255, 179, 71, 0.7);
   background: rgba(255, 179, 71, 0.12);
   box-shadow: inset 3px 0 0 var(--signal, #ffb347);
-}
-
-.focus-setting-button.is-near-break {
-  border-color: rgba(255, 122, 85, 0.64);
-  background: rgba(255, 122, 85, 0.08);
 }
 
 #focus-mode {

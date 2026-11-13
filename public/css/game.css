@@ -29,6 +29,39 @@ body { background: var(--ink); color: var(--bone); overflow: hidden; font-family
 .boot-sub { font-family: var(--f-mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--steel); text-align: center; }
 .boot-bar { width: min(320px, 70vw); height: 2px; background: #23282c; }
 .boot-bar i { display: block; height: 100%; width: 0%; background: var(--signal); transition: width .25s ease; }
+.boot-gate {
+  display: grid;
+  gap: 10px;
+  width: min(520px, calc(100vw - 32px));
+  margin-top: 2px;
+  padding: 18px 20px 20px;
+  border: 1px solid rgba(255, 174, 189, .34);
+  border-radius: 12px;
+  background: #0c0d0f;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, .62), inset 0 1px 0 rgba(255, 255, 255, .045);
+  text-align: left;
+}
+.boot-gate[hidden] { display: none; }
+.boot-gate-title { color: #ffffff; font: 600 16px/1.3 var(--f-mono); letter-spacing: .04em; }
+.boot-gate-copy { margin: 0; color: rgba(255, 255, 255, .7); font: 400 12px/1.65 var(--f-mono); overflow-wrap: anywhere; }
+.boot-gate-retry {
+  justify-self: start;
+  min-height: 40px;
+  margin-top: 4px;
+  padding: 0 18px;
+  border: 1px solid #ffaebd;
+  border-radius: 999px;
+  background: rgba(255, 174, 189, .12);
+  color: #ffaebd;
+  font: 600 11px/1 var(--f-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+.boot-gate-retry:hover,
+.boot-gate-retry:focus-visible { background: #ffaebd; color: #0c0d0f; outline: 0; }
+.boot-gate-retry:active { transform: scale(.97); }
 .boot-fallback {
   display: inline-flex;
   min-height: 38px;

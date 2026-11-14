@@ -8,6 +8,8 @@ const focusMode = require('../services/focusMode');
 const deathReplay = require('../services/deathReplay');
 const playerAuthority = require('../services/playerAuthority');
 const qingyun = require('../public/js/qingyun-zone');
+const expeditions = require('../public/js/expedition-zones');
+const sameMap = (a, b) => a.mapId === b.mapId && a.inQingyun === b.inQingyun;
 
 const TICK_MS = 100;
 const RESPAWN_MS = 5000;
@@ -42,7 +44,7 @@ const EXTERNAL_PLATFORM = { x0: 82, x1: 126, z0: -12, z1: 28, top: 0.22 };
 const FOCUS_BLOCKED_TYPES = new Set([
   'state', 'soldier', 'spawns', 'chat', 'voiceState', 'rename',
   'shot', 'hit', 'died', 'respawn', 'boatBoard', 'boatLeave',
-  'boatPose', 'boatInvite', 'qingyunEnter', 'qingyunLeave', 'qingyunReturn'
+  'boatPose', 'boatInvite', 'mapEnter', 'mapReturn', 'mapLeave', 'qingyunEnter', 'qingyunLeave', 'qingyunReturn'
 ]);
 
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
@@ -330,9 +332,9 @@ function pickSpawn(player) {
   const spawns = player.spawns && player.spawns.length ? player.spawns : [{ x: 0, y: 0, z: 4 }];
   const external = player.pos && Number(player.pos.x) > 65;
   const zoneSpawns = spawns.filter((spawn) => (Number(spawn.x) > 65) === external);
-  const candidates = player.inQingyun ? qingyun.spawns : zoneSpawns.length ? zoneSpawns : spawns;
+  const candidates = player.mapId ? [expeditions.maps[player.mapId].landing] : player.inQingyun ? qingyun.spawns : zoneSpawns.length ? zoneSpawns : spawns;
   const enemies = [...players.values()].filter((item) => item !== player && item.active && item.alive &&
-    item.inQingyun === player.inQingyun);
+    sameMap(item, player));
   let best = null;
   let bestScore = -Infinity;
   for (const spawn of candidates) {
@@ -777,7 +779,7 @@ function handleMessage(player, raw) {
       break;
     }
     case 'boatBoard': {
-      if (!player.joined || !player.alive || player.inQingyun) {
+      if (!player.joined || !player.alive || (player.inQingyun || player.mapId)) {
         send(player.ws, { type: 'boatDenied', reason: 'unavailable' });
         break;
       }
@@ -889,7 +891,7 @@ function handleMessage(player, raw) {
     }
     case 'qingyunEnter': {
       if (!player.joined || !player.alive || !player.active || player.boatSeat != null ||
-          player.inQingyun || !qingyun.atGate(player.pos, 1.25)) break;
+          player.inQingyun || player.mapId || !qingyun.atGate(player.pos, 1.25)) break;
       player.inQingyun = true;
       player.pos = { ...qingyun.landing };
       player.yaw = 0;
@@ -921,10 +923,48 @@ function handleMessage(player, raw) {
       player.shotCredits = 0;
       break;
     }
+    case 'mapEnter': {
+      const map = Object.hasOwn(expeditions.maps, msg.map) ? expeditions.maps[msg.map] : null;
+      if (!map || !player.joined || !player.alive || !player.active || player.boatSeat != null ||
+          player.inQingyun || player.mapId || !expeditions.near(player.pos, map.gate, .9)) break;
+      player.mapId = map.id;
+      player.pos = { ...map.landing };
+      player.yaw = 0;
+      player.pitch = 0;
+      player.moving = player.sprint = false;
+      player.shotCredits = 0;
+      send(player.ws, { type: 'mapEntered', map: map.id, pos: player.pos });
+      break;
+    }
+    case 'mapReturn':
+    case 'mapLeave': {
+      const map = expeditions.maps[player.mapId];
+      if (!map) break;
+      if (msg.type === 'mapReturn' && (!player.active || !player.alive || !expeditions.near(player.pos, map.exit, .9))) break;
+      player.mapId = null;
+      player.pos = { ...(msg.type === 'mapReturn' ? map.port : player.spawns[0]) };
+      player.yaw = Math.PI;
+      player.pitch = 0;
+      player.moving = player.sprint = false;
+      player.shotCredits = 0;
+      send(player.ws, { type: 'mapReturned', pos: player.pos });
+      break;
+    }
     case 'state': {
       if (player.boatSeat == null) {
+        const map = expeditions.maps[player.mapId];
+        const rawZ = Number(msg.pos?.z);
+        const rawX = Number(msg.pos?.x);
+        const rawY = Number(msg.pos?.y);
         const pos = safeVec(msg.pos, player.pos);
-        if (pos && (player.inQingyun ? qingyun.contains(pos) : !qingyun.contains(pos))) {
+        if (map && [rawX, rawY, rawZ].every(Number.isFinite) &&
+            rawZ >= map.minZ - 2 && rawZ <= map.maxZ + 2) {
+          player.pos = {
+            x: clamp(rawX, map.minX, map.maxX),
+            y: clamp(rawY, -80, 240),
+            z: clamp(rawZ, map.minZ, map.maxZ)
+          };
+        } else if (!map && pos && (player.inQingyun ? qingyun.contains(pos) : !qingyun.contains(pos))) {
           if (player.inQingyun) {
             const { minX, maxX, minZ, maxZ } = qingyun.bounds;
             player.pos = { x: clamp(pos.x, minX, maxX), y: pos.y, z: clamp(pos.z, minZ, maxZ) };
@@ -954,6 +994,10 @@ function handleMessage(player, raw) {
       if (now - player.lastShotAt < 55) break;
       player.lastShotAt = now;
       const origin = safeVec(msg.origin);
+      if (player.mapId && origin && Number.isFinite(msg.origin.z) && Number.isFinite(msg.origin.x)) {
+        origin.z = msg.origin.z;
+        origin.x = msg.origin.x;
+      }
       const dir = safeVec(msg.dir);
       if (!origin || !dir) break;
       if (Math.hypot(origin.x - player.pos.x, origin.z - player.pos.z) > 2.5 ||
@@ -965,13 +1009,13 @@ function handleMessage(player, raw) {
       playerAuthority.acceptShotCredit(player, now);
       broadcast(
         { type: 'shot', id: player.id, origin, dir },
-        (other) => other !== player && other.active && other.inQingyun === player.inQingyun
+        (other) => other !== player && other.active && sameMap(other, player)
       );
       break;
     }
     case 'hit': {
       const target = players.get(String(msg.targetId));
-      if (!target || target === player || target.inQingyun !== player.inQingyun) break;
+      if (!target || target === player || !sameMap(target, player)) break;
       if (!player.active || !player.alive || !target.active || !target.alive) break;
       if (now - player.lastHitAt < 25) break;
       player.lastHitAt = now;
@@ -1160,6 +1204,7 @@ function addPlayer(ws, req) {
     msgCount: 0,
     boatSeat: null,
     inQingyun: false,
+    mapId: null,
     lastBoatInviteAt: 0,
     isAlive: true
   };
@@ -1264,7 +1309,7 @@ function tick() {
       type: 'snapshot',
       t: now,
       online: players.size,
-      players: visible.filter(item => players.get(item.id).inQingyun === player.inQingyun),
+      players: visible.filter(item => sameMap(players.get(item.id), player)),
       roster,
       voice: voicePayload(),
       boat: publicBoat(),

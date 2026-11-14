@@ -82,7 +82,18 @@ assert.equal(en.mp.appMarket, 'Android app market', '英文应用市场入口文
 assert.match(mobileCss, /Compact phone type pass/, '手机端必须有紧凑字号规则');
 assert.match(mobileCss, /\.m-word \{ font-size: clamp\(34px, 12\.8vw, 86px\)/, '手机端主标题必须缩小');
 const compactMarker = mobileCss.lastIndexOf('/*', mobileCss.indexOf('Compact phone type pass'));
-const compactType = mobileCss.slice(compactMarker);
+let compactDepth = 0;
+let compactEnd = mobileCss.length;
+for (let index = compactMarker; index < mobileCss.length; index += 1) {
+  if (mobileCss[index] === '{') compactDepth += 1;
+  if (mobileCss[index] !== '}') continue;
+  compactDepth -= 1;
+  if (compactDepth === 0) {
+    compactEnd = index + 1;
+    break;
+  }
+}
+const compactType = mobileCss.slice(compactMarker, compactEnd);
 const compactRules = compactType.replace(/\/\*[\s\S]*?\*\//g, '');
 assert.doesNotMatch(compactRules, /\.btn|\.tab|button|\.seg/, '手机端字号压缩不得改动按钮');
 assert.doesNotMatch(client, /mp-deathcam-map/, '死亡回放不得继续使用 2D 俯视地图');

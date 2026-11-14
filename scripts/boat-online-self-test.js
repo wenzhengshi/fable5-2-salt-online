@@ -126,6 +126,8 @@ async function main() {
   const movingDenied = await first.waitFor('boatDenied', (message) => message.reason === 'moving');
   assert.ok(movingDenied, '行驶中应拒绝下船');
 
+  // Give the server pose throttle a fresh window before the first stop update.
+  await new Promise((resolve) => setTimeout(resolve, 100));
   for (let step = 1; step <= 15; step += 1) {
     first.send({
       type: 'boatPose',

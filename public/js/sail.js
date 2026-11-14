@@ -971,9 +971,24 @@
 
   function patchGame(game) {
     buildExternalZone();
+    if (!game.backdrop.root.getObjectByName('saltline-moored-boats')) {
+      const moored = new THREE.Group();
+      moored.name = 'saltline-moored-boats';
+      for (const dock of [{ x: 45, z: 22 }, { x: 58, z: 22 }]) {
+        const boat = game.backdrop.boat.clone();
+        boat.position.set(dock.x, seaHeightAt(dock.x, dock.z) + .04, dock.z);
+        boat.rotation.y = BOAT_DOCK.heading;
+        moored.add(boat);
+      }
+      game.backdrop.root.add(moored);
+    }
     const baseGameUpdate = game.game.update;
     if (!baseGameUpdate.__saltBoatGamePatch) {
       const wrappedGameUpdate = function wrappedBoatGameUpdate(dt) {
+        if (game.expedition?.active) {
+          state.interactable = false;
+          return baseGameUpdate.call(this, dt);
+        }
         if (state.aboard) {
           maybeUnlockExternal();
           return true;

@@ -2,7 +2,7 @@
   'use strict';
   const definitions = [
     ['bayhaven', '湾城', -8000, [-3200, 3200, -3520, 1279], [-24, 40.5], [17, 25], 0xff78a4],
-    ['dustfall', '西部荒原', -16000, [-695, 695, -695, 695], [0, 0], [-18, 25], 0xffae52],
+    ['dustfall', '西部荒原', -16000, [-695, 695, -695, 695], [0, 0], [24, 25], 0xffae52],
     ['mothlight', '霓虹雨城', -20000, [-340, 340, -340, 340], [0, 38], [7, 25], 0x56e5ff]
   ];
   const maps = Object.fromEntries(definitions.map(([id, title, offset, edges, start, port, color]) => {
@@ -12,7 +12,7 @@
       gate: { x: port[0], z: port[1], y: 0, sideways: true },
       landing: { x: start[0], z: start[1] + offset, y: id === 'dustfall' ? 16 : 0 },
       exit: { x: start[0], z: start[1] + offset + 4 },
-      port: { x: port[0] + 3, z: port[1], y: 0 }
+      port: { x: port[0] + (id === 'dustfall' ? 2.2 : 3), z: port[1], y: 0 }
     }];
   }));
   function near(position, gate, margin = 0) {

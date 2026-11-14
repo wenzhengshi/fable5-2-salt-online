@@ -13,6 +13,9 @@ const bootGate = read('public/js/boot-gate.js');
 const client = read('public/js/multiplayer.js');
 const server = read('realtime/multiplayer.js');
 const select = read('public/js/soldier-select.js');
+const mobileCss = read('public/css/mobile.css');
+const zh = JSON.parse(read('locales/zh-CN.json'));
+const en = JSON.parse(read('locales/en-US.json'));
 
 for (const file of [
   'public/js/classic-avatar.js',
@@ -52,6 +55,17 @@ assert.match(client, /SaltDeathReplay3D/, '死亡回放必须接入 Three.js 渲
 assert.match(client, /chaseLightCleanup/, '搜索灯必须有离场清理路径');
 assert.match(client, /recordSnapshotTrails/, '死亡回放必须使用老版快照数据');
 assert.match(client, /snapshotTrails\.clear\(\)/, '断线时必须清空快照轨迹');
+assert.match(client, /tulingai\.com\/app-market\.html\?id=49/, '标题页必须提供安卓应用市场入口');
+assert.match(client, /createMarketLink\('title'\)/, '标题页必须挂载安卓应用市场入口');
+assert.match(client, /createMarketLink\('paused'\)/, '暂停菜单必须挂载安卓应用市场入口');
+assert.equal(zh.mp.appMarket, '安卓应用市场', '中文应用市场入口文案必须存在');
+assert.equal(en.mp.appMarket, 'Android app market', '英文应用市场入口文案必须存在');
+assert.match(mobileCss, /Compact phone type pass/, '手机端必须有紧凑字号规则');
+assert.match(mobileCss, /\.m-word \{ font-size: clamp\(34px, 12\.8vw, 86px\)/, '手机端主标题必须缩小');
+const compactMarker = mobileCss.lastIndexOf('/*', mobileCss.indexOf('Compact phone type pass'));
+const compactType = mobileCss.slice(compactMarker);
+const compactRules = compactType.replace(/\/\*[\s\S]*?\*\//g, '');
+assert.doesNotMatch(compactRules, /\.btn|\.tab|button|\.seg/, '手机端字号压缩不得改动按钮');
 assert.doesNotMatch(client, /mp-deathcam-map/, '死亡回放不得继续使用 2D 俯视地图');
 assert.doesNotMatch(client, /drawDeathReplay/, '死亡回放不得保留 Canvas 2D 绘制函数');
 const replay3d = read('public/js/death-replay-3d.js');
@@ -71,6 +85,7 @@ console.log(JSON.stringify({
     'community',
     'kill-streak',
     'local-replay',
+    'android-market',
     'death-replay',
     'death-replay-3d',
     'drone-searchlight',

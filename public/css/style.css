@@ -270,9 +270,34 @@ body.is-touch .lang-switch:focus-within {
   transform: translate(1px, -1px);
 }
 
+.mp-title-repo,
+.mp-paused-repo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
 .mp-title-repo { margin-top: clamp(12px, 2.2vh, 20px); }
 .mp-paused-repo { margin-top: 18px; }
 .mp-roster-repo { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+
+.salt-market {
+  border-color: rgba(255, 179, 71, 0.42);
+  background:
+    linear-gradient(115deg, rgba(255, 179, 71, 0.22), transparent 58%),
+    rgba(11, 13, 15, 0.78);
+}
+
+.salt-market .salt-repo-glyph {
+  border-color: var(--shell-signal);
+  background: var(--shell-signal);
+  color: var(--shell-ink);
+  box-shadow: 0 0 18px rgba(255, 179, 71, 0.18);
+}
+
+.salt-market .salt-repo-copy b { color: var(--shell-signal-hot); }
+.salt-market .salt-repo-copy em { color: rgba(232, 228, 218, 0.84); }
+.salt-market:hover { border-color: var(--shell-signal-hot); }
 
 .salt-repo-compact {
   width: 100%;
@@ -293,6 +318,8 @@ body.is-touch .lang-switch:focus-within {
   .salt-repo-arrow { margin-left: 2px; }
   .mp-title-repo { margin-top: 12px; }
   .mp-paused-repo { margin-top: 14px; }
+  .mp-title-repo,
+  .mp-paused-repo { gap: 6px; }
 }
 
 @media (max-height: 520px) {

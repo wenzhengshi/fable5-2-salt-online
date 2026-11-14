@@ -4,6 +4,10 @@
 
 项目基于 Node.js、Express、WebSocket 与 Three.js 构建，无需数据库。排行榜保存在本地 `data/` 目录中。
 
+## v1.25.3 安卓应用市场入口
+
+游戏标题页与暂停菜单新增“安卓应用市场”入口，点击后在新标签页打开盐线行动应用市场下载页。入口支持中英文界面，并沿用现有深色战术风格。手机端同步收紧标题、说明、状态和信息文本字号，所有按钮的尺寸与位置保持不变。静态资源版本同步更新，避免浏览器继续使用旧缓存。
+
 ## v1.25.2 本地回放录制游戏音效
 
 本地回放现在同时录制战场画面和游戏音效。新增的 WebAudio 分流层会从游戏主输出复制一份音轨给本机 `MediaRecorder`，枪声、爆炸、载具和背景音乐都会进入回放文件；停止录制不会影响游戏继续发声。音轨优先封装为 MP4/AAC，不支持时自动回退到 WebM/Opus。录像仍只保存在当前浏览器的 IndexedDB，不上传服务器，也不调用麦克风。
@@ -49,6 +53,8 @@
 [立即进入盐线行动在线版 →](https://web-jjuuxm.tulingai.com/)
 
 ## Android 客户端
+
+[前往安卓应用市场下载盐线行动](https://tulingai.com/app-market.html?id=49)
 
 [下载盐线行动 Android v1.0 APK（支持应用内连麦）](https://github.com/wenzhengshi/fable5-2-salt-online/releases/download/android-v1.0-voice/saltline-android-v1.0-voice.apk)
 

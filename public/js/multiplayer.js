@@ -12,7 +12,9 @@
   const UNIT_KINDS = ['male', 'female', 'hound', 'drone', 'classic'];
   const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS'];
   const REPO_URL = 'https://github.com/wenzhengshi/fable5-2-salt-online';
+  const ANDROID_MARKET_URL = 'https://tulingai.com/app-market.html?id=49';
   const REPO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>';
+  const MARKET_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11 3h2v9.17l3.59-3.58L18 10l-6 6-6-6 1.41-1.41L11 12.17V3Zm-6 15h14v3H5v-3Z"/></svg>';
 
   function t(key, vars) {
     const raw = MP[key];
@@ -53,13 +55,44 @@
     return link;
   }
 
+  function createMarketLink(variant) {
+    const link = document.createElement('a');
+    link.className = 'salt-repo salt-market' + (variant ? ' salt-repo-' + variant : '');
+    link.href = ANDROID_MARKET_URL;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.title = t('appMarketHint');
+    link.setAttribute('data-mp-market', variant || 'default');
+    link.setAttribute('aria-label', t('appMarket') + ' — ' + t('appMarketHint') + ': ' + ANDROID_MARKET_URL);
+
+    const glyph = document.createElement('span');
+    glyph.className = 'salt-repo-glyph';
+    glyph.innerHTML = MARKET_ICON;
+
+    const copy = document.createElement('span');
+    copy.className = 'salt-repo-copy';
+    const label = document.createElement('b');
+    label.textContent = t('appMarket');
+    const meta = document.createElement('em');
+    meta.textContent = t('appMarketMeta');
+    copy.append(label, meta);
+
+    const arrow = document.createElement('span');
+    arrow.className = 'salt-repo-arrow';
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.textContent = '↗';
+
+    link.append(glyph, copy, arrow);
+    return link;
+  }
+
   function decorateRepoLinks() {
     const titleMain = document.querySelector('.m-screen[data-s="title"] .m-title-main');
     if (titleMain && !titleMain.querySelector('[data-mp-repo="title"]')) {
       const mount = document.createElement('div');
       mount.className = 'mp-title-repo';
       mount.setAttribute('data-mp-repo', 'title');
-      mount.appendChild(createRepoLink('title'));
+      mount.append(createRepoLink('title'), createMarketLink('title'));
       titleMain.appendChild(mount);
     }
 
@@ -68,7 +101,7 @@
       const mount = document.createElement('div');
       mount.className = 'mp-paused-repo';
       mount.setAttribute('data-mp-repo', 'paused');
-      mount.appendChild(createRepoLink('paused'));
+      mount.append(createRepoLink('paused'), createMarketLink('paused'));
       paused.appendChild(mount);
     }
   }

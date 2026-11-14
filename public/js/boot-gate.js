@@ -13,6 +13,7 @@
     'expedition-portals.js',
     'rifle-scope.js',
     'qingyun-audio.js',
+    'expedition-music.js',
     'qingyun-collision.js',
     'qingyun-portal.js',
     'game.bundle.js',

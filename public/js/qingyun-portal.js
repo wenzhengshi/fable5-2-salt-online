@@ -98,9 +98,9 @@
     const returnLabel = label.material.clone();
     returnLabel.map = signTexture('返回港口', 'RETURN TO PORT');
 
-    const returnGates = [zone.returnGate, zone.mainReturnGate].map((point, index) => {
+    const returnGates = [zone.returnGate, zone.mainReturnGate, zone.hubReturnGate].map((point, index) => {
       const portal = gate.clone();
-      portal.name = index === 0 ? 'qingyun-return-tunnel' : 'qingyun-main-return-tunnel';
+      portal.name = ['qingyun-return-tunnel', 'qingyun-main-return-tunnel', 'qingyun-hub-return-tunnel'][index];
       portal.position.set(point.x, point.y + 1.45, point.z);
       portal.children.find(child => child.isSprite).material = returnLabel;
       scene.add(portal);
@@ -137,10 +137,11 @@
       player.lastSafe.copy(player.pos);
       player.vel.set(0, 0, 0);
       player.onGround = true;
-      player.yaw = zone.contains(pos) ? 0 : Math.PI;
+      player.yaw = Math.PI;
       player.pitch = 0;
       crossing = false;
       inQingyun = zone.contains(pos);
+      lastRequest = game.time.t;
       if (inQingyun) map?.resetFrameHistory();
       player.syncView();
     }
@@ -261,6 +262,10 @@
       get active() { return inQingyun; },
       get collision() { return collision; },
       land,
+      suspend() {
+        inQingyun = false;
+        gate.visible = false;
+      },
       update(dt) {
         const active = this.active;
         gate.visible = !active && game.game.state === 'playing';

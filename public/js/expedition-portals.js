@@ -20,26 +20,6 @@
     status.setAttribute('role', 'status');
     status.style.cssText = 'display:none;position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:12;padding:9px 16px;background:#101d27dc;color:#fff;font:600 14px sans-serif;pointer-events:none';
     document.body.append(status);
-    const guide = document.createElement('div');
-    guide.style.cssText = 'display:none;position:fixed;right:12px;top:21%;z-index:9;padding:6px 10px;border-left:2px solid #ffab53;background:#101d27dd;color:#ffca91;font:600 13px sans-serif;pointer-events:none';
-    document.body.append(guide);
-    const dustfallName = document.documentElement.lang === 'en-US' ? 'DUSTFALL' : '西部荒原';
-    const dustfallBearing = new THREE.Vector3();
-    const inverseView = new THREE.Quaternion();
-    const arrows = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
-
-    function updateGuide(visible) {
-      guide.style.display = visible ? 'block' : 'none';
-      if (!visible) return;
-      const gate = maps.dustfall.gate;
-      const dx = gate.x - player.pos.x;
-      const dz = gate.z - player.pos.z;
-      inverseView.copy(camera.quaternion).invert();
-      dustfallBearing.set(dx, 0, dz).applyQuaternion(inverseView);
-      const index = Math.round(Math.atan2(dustfallBearing.x, -dustfallBearing.z) / (Math.PI / 4));
-      guide.textContent = arrows[(index + 8) % 8] + ' ' + dustfallName + ' · ' + Math.round(Math.hypot(dx, dz)) + ' m';
-    }
-
     function label(zh, en, color) {
       const canvas = document.createElement('canvas');
       canvas.width = 512;
@@ -64,11 +44,6 @@
         color, opacity: .38, transparent: true, side: THREE.DoubleSide, depthWrite: false
       }));
       disc.scale.y = 1.13;
-      if (point.sideways) {
-        ring.rotation.y = Math.PI / 2;
-        disc.rotation.y = Math.PI / 2;
-        ring.scale.y = 1.13;
-      }
       group.add(ring, disc, label(name, en, color));
       group.visible = false;
       scene.add(group);
@@ -76,7 +51,7 @@
     }
 
     for (const zone of Object.values(maps)) gates.set(zone.id, portal(zone.title, zone.id.toUpperCase(), zone.gate, zone.color));
-    const exitGate = portal('返回港口', 'RETURN TO PORT', { x: 0, y: 0, z: 0 }, 0x87eeff);
+    const exitGate = portal('返回青云宗', 'RETURN TO QINGYUN', { x: 0, y: 0, z: 0 }, 0x87eeff);
 
     function load(zone) {
       if (!loads.has(zone.id)) {
@@ -109,11 +84,13 @@
 
     function leave(position) {
       if (!active) return;
-      const target = position || active.port;
+      const target = position || active.hub;
       active = null;
       environment = null;
       exitGate.visible = false;
-      land(target, -Math.PI / 2);
+      game.qingyun.land(target);
+      status.style.display = 'none';
+      lastRequest = game.time.t;
     }
 
     function ground(x, z, maxY = 240) {
@@ -221,7 +198,7 @@
     };
 
     function enter(zone, world, position) {
-      updateGuide(false);
+      game.qingyun.suspend();
       active = zone;
       environment = world;
       for (const gate of gates.values()) gate.visible = false;
@@ -235,7 +212,6 @@
 
     let pending = null;
     game.events.on('game:state', event => {
-      if (event.state !== 'playing') updateGuide(false);
       if (event.state === 'title' || event.state === 'intro') {
         active = environment = pending = null;
         exitGate.visible = false;
@@ -269,10 +245,10 @@
       },
       update(dt) {
         const playing = game.game.state === 'playing' && player.alive;
-        const canUse = playing && !window.__saltBoat?.riding && !game.qingyun?.active;
-        updateGuide(canUse && !active);
+        const inHub = !!game.qingyun?.active;
+        const canUse = playing && !window.__saltBoat?.riding && (inHub || active);
         for (const [id, gate] of gates) {
-          gate.visible = playing && !active && !game.qingyun?.active;
+          gate.visible = playing && !active && inHub;
           gate.children[1].material.opacity = .29 + .12 * Math.sin(game.time.t * 5 + id.length);
         }
         exitGate.visible = !!active;

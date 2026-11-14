@@ -2582,7 +2582,7 @@
       reconnectDelay = 1200;
       setConnection('online');
       everJoined = false;
-      if (G?.expedition?.active) G.expedition.leave();
+      if (G?.expedition?.active) G.expedition.leave(G.level.playerStart.pos);
       if (G?.qingyun?.active) {
         const start = G.level.playerStart.pos;
         G.qingyun.land(start);

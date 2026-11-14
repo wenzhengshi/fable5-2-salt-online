@@ -8,6 +8,7 @@
     bounds: { minX: -175, maxX: 175, minZ: offsetZ - 120, maxZ: offsetZ + 228 },
     gate: { x: 28.1, y: 1.45, z: 24.7 },
     landing: { x: 0, y: 7.1, z: offsetZ - 35.05 },
+    hubReturnGate: { x: 0, y: 7.1, z: offsetZ - 36.3 },
     returnGate: { x: -12, y: 3.37, z: offsetZ - 14 },
     mainReturnGate: { x: 0, y: 1.5, z: offsetZ - 1.8 },
     returnLanding: { x: 28.1, y: 0, z: 27.1 },
@@ -21,7 +22,7 @@
       return !!pos && pos.z < -300;
     },
     atReturnGate(pos, margin = 0) {
-      return [zone.returnGate, zone.mainReturnGate].some(gate =>
+      return [zone.returnGate, zone.mainReturnGate, zone.hubReturnGate].some(gate =>
         Math.abs(pos.x - gate.x) < 1.16 + margin &&
         Math.abs(pos.z - gate.z) < .6 + margin &&
         pos.y >= gate.y - .6 - margin && pos.y < gate.y + 2.8 + margin);

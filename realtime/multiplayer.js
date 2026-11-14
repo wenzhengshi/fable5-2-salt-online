@@ -926,7 +926,8 @@ function handleMessage(player, raw) {
     case 'mapEnter': {
       const map = Object.hasOwn(expeditions.maps, msg.map) ? expeditions.maps[msg.map] : null;
       if (!map || !player.joined || !player.alive || !player.active || player.boatSeat != null ||
-          player.inQingyun || player.mapId || !expeditions.near(player.pos, map.gate, .9)) break;
+          !player.inQingyun || player.mapId || !expeditions.near(player.pos, map.gate, .9)) break;
+      player.inQingyun = false;
       player.mapId = map.id;
       player.pos = { ...map.landing };
       player.yaw = 0;
@@ -942,8 +943,9 @@ function handleMessage(player, raw) {
       if (!map) break;
       if (msg.type === 'mapReturn' && (!player.active || !player.alive || !expeditions.near(player.pos, map.exit, .9))) break;
       player.mapId = null;
-      player.pos = { ...(msg.type === 'mapReturn' ? map.port : player.spawns[0]) };
-      player.yaw = Math.PI;
+      player.inQingyun = msg.type === 'mapReturn';
+      player.pos = { ...(player.inQingyun ? map.hub : player.spawns[0]) };
+      player.yaw = player.inQingyun ? 0 : Math.PI;
       player.pitch = 0;
       player.moving = player.sprint = false;
       player.shotCredits = 0;

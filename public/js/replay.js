@@ -12,10 +12,21 @@
   const MAX_DURATION_SECONDS = MAX_DURATION_MS / 1000;
   const FPS = 30;
   const BITRATE = 4_000_000;
+  const AUDIO_BITRATE = 128_000;
+  const MP4_AUDIO_TYPES = [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4;codecs=avc1.42001f,mp4a.40.2',
+    'video/mp4'
+  ];
   const MP4_TYPES = [
     'video/mp4;codecs=avc1.42E01E',
     'video/mp4;codecs=avc1.42001f',
     'video/mp4'
+  ];
+  const FALLBACK_AUDIO_TYPES = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm'
   ];
   const FALLBACK_TYPES = [
     'video/webm;codecs=vp9',
@@ -31,14 +42,16 @@
     ));
   }
 
-  function chooseMimeType() {
+  function chooseMimeType(withAudio) {
     if (typeof MediaRecorder === 'undefined') return '';
-    for (const type of MP4_TYPES) {
+    const preferred = withAudio ? MP4_AUDIO_TYPES.concat(MP4_TYPES) : MP4_TYPES;
+    for (const type of preferred) {
       try {
         if (MediaRecorder.isTypeSupported(type)) return type;
       } catch (err) { /* ignore */ }
     }
-    for (const type of FALLBACK_TYPES) {
+    const fallback = withAudio ? FALLBACK_AUDIO_TYPES.concat(FALLBACK_TYPES) : FALLBACK_TYPES;
+    for (const type of fallback) {
       try {
         if (MediaRecorder.isTypeSupported(type)) return type;
       } catch (err) { /* ignore */ }
@@ -65,7 +78,8 @@
     stopPromise: null,
     stopResolve: null,
     memoryOnly: false,
-    downloadReadyAt: 0
+    downloadReadyAt: 0,
+    hasAudio: false
   };
 
   function formatTime(ms) {
@@ -123,6 +137,31 @@
   function canRecordCanvas() {
     const canvas = gameCanvas();
     return !!(mimeType && canvas && typeof canvas.captureStream === 'function' && typeof MediaRecorder !== 'undefined');
+  }
+
+  function gameAudioStream() {
+    try {
+      const tap = window.SaltAudioTap;
+      if (!tap || !tap.supported || typeof tap.streamForGame !== 'function') return null;
+      const stream = tap.streamForGame(window.__G);
+      return stream && stream.getAudioTracks().length ? stream : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function addAudioTracks(stream) {
+    const source = gameAudioStream();
+    if (!source) return 0;
+    let added = 0;
+    for (const track of source.getAudioTracks()) {
+      if (track.readyState !== 'live') continue;
+      try {
+        stream.addTrack(track.clone());
+        added += 1;
+      } catch (err) { /* continue with video only */ }
+    }
+    return added;
   }
 
   function openDb() {
@@ -361,7 +400,7 @@
     download.hidden = false;
     ui.modal.querySelector('.sr-delete').hidden = false;
     ui.modal.querySelector('#sr-clip-name').textContent = clip.fileName;
-    ui.modal.querySelector('#sr-clip-details').textContent = t('clipDetails', {
+    ui.modal.querySelector('#sr-clip-details').textContent = t(clip.hasAudio ? 'clipDetailsAudio' : 'clipDetails', {
       duration: formatTime(clip.durationMs),
       size: formatBytes(clip.size),
       date: formatDate(clip.createdAt)
@@ -436,13 +475,19 @@
       setButtonState();
       return Promise.resolve(null);
     }
-    const stream = gameCanvas().captureStream(FPS);
-    const options = { mimeType, videoBitsPerSecond: BITRATE };
+    const videoStream = gameCanvas().captureStream(FPS);
+    const stream = new MediaStream(videoStream.getVideoTracks());
+    const audioTracks = addAudioTracks(stream);
+    const selectedMimeType = chooseMimeType(audioTracks > 0) || mimeType;
+    const options = { mimeType: selectedMimeType, videoBitsPerSecond: BITRATE };
+    if (audioTracks > 0) options.audioBitsPerSecond = AUDIO_BITRATE;
     let recorder;
     try {
       recorder = new MediaRecorder(stream, options);
     } catch (err) {
-      try { recorder = new MediaRecorder(stream); } catch (fallbackErr) {
+      const fallbackOptions = { videoBitsPerSecond: BITRATE };
+      if (audioTracks > 0) fallbackOptions.audioBitsPerSecond = AUDIO_BITRATE;
+      try { recorder = new MediaRecorder(stream, fallbackOptions); } catch (fallbackErr) {
         stream.getTracks().forEach((track) => track.stop());
         toast(t('startFailed'));
         return Promise.resolve(null);
@@ -450,6 +495,7 @@
     }
     state.stream = stream;
     state.recorder = recorder;
+    state.hasAudio = audioTracks > 0;
     state.chunks = [];
     state.startedAt = Date.now();
     state.endedAt = 0;
@@ -501,6 +547,7 @@
 
   async function finalizeRecording() {
     const recorder = state.recorder;
+    const hasAudio = state.hasAudio;
     const durationMs = Math.max(1000, Math.min(MAX_DURATION_MS, (state.endedAt || Date.now()) - state.startedAt));
     state.endedAt = Date.now();
     state.recorder = null;
@@ -514,6 +561,7 @@
     const blob = new Blob(state.chunks, { type: actualType });
     state.chunks = [];
     if (blob.size < 512) {
+      state.hasAudio = false;
       toast(t('emptyRecording'));
       if (state.stopResolve) state.stopResolve(null);
       state.stopResolve = null;
@@ -536,6 +584,7 @@
       size: blob.size,
       mimeType: actualType,
       blob,
+      hasAudio,
       unit: recordingUnit(),
       fileName: 'saltline-replay-' + stamp + '.' + extension
     };
@@ -544,6 +593,7 @@
     if (state.stopResolve) state.stopResolve(clip);
     state.stopResolve = null;
     state.stopPromise = null;
+    state.hasAudio = false;
     setButtonState();
   }
 

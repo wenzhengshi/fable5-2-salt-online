@@ -7,6 +7,7 @@
   const messages = i18n.messages || {};
   const RECOVERY_KEY = 'saltline.webgl.recovery.v1';
   const CORE_SCRIPTS = [
+    'audio-tap.js',
     'game.bundle.js',
     'ammo.js',
     'sail.js',

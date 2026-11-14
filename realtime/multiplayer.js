@@ -23,14 +23,42 @@ const MAX_AUDIO_BYTES_PER_SEC = 96 * 1024;
 const VOICE_MAGIC = 0x56;
 const COLORS = ['#ffb347', '#5fd0ff', '#8affc1', '#ff7a90', '#c39bff', '#ffe066', '#7ef0e2', '#ff9f5a'];
 const SOLDIERS = ['male', 'female', 'hound', 'drone', 'classic'];
+const BOAT_ID = 'extraction-boat';
+const BOAT_SEATS = 4;
+const BOAT_DOCK = { x: 31.5, y: -1.565, z: 21, heading: -Math.PI / 2 };
+const BOAT_BOARD_RADIUS = 8;
+const BOAT_WORLD_RADIUS = 715;
+const BOAT_MAX_SPEED = 29;
+const BOAT_EMPTY_RETURN_MS = 45000;
+const BOAT_SEAT_OFFSETS = [
+  { x: -1.1, z: 0, y: 0.46 },
+  { x: 0.15, z: -1.02, y: 0.38 },
+  { x: 0.15, z: 1.02, y: 0.38 },
+  { x: 1.15, z: 0, y: 0.4 }
+];
+const EXTERNAL_PLATFORM = { x0: 82, x1: 126, z0: -12, z1: 28, top: 0.22 };
 const FOCUS_BLOCKED_TYPES = new Set([
   'state', 'soldier', 'spawns', 'chat', 'voiceState', 'rename',
-  'shot', 'hit', 'died', 'respawn'
+  'shot', 'hit', 'died', 'respawn', 'boatBoard', 'boatLeave',
+  'boatPose', 'boatInvite'
 ]);
 
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
 
 const players = new Map();
+const boat = {
+  id: BOAT_ID,
+  x: BOAT_DOCK.x,
+  y: BOAT_DOCK.y,
+  z: BOAT_DOCK.z,
+  heading: BOAT_DOCK.heading,
+  speed: 0,
+  driverId: null,
+  seats: new Array(BOAT_SEATS).fill(null),
+  updatedAt: Date.now(),
+  emptySince: Date.now(),
+  lastPoseAt: 0
+};
 let nextId = 1;
 let wss = null;
 let timer = null;
@@ -59,6 +87,122 @@ function safeVec(input, fallback) {
     y: clamp(y, -80, 240),
     z: clamp(z, -WORLD_LIMIT, WORLD_LIMIT)
   };
+}
+
+function normalizeHeading(value, fallback = 0) {
+  const heading = Number(value);
+  if (!Number.isFinite(heading)) return fallback;
+  return Math.atan2(Math.sin(heading), Math.cos(heading));
+}
+
+function boatOccupantCount() {
+  return boat.seats.reduce((count, id) => count + (id ? 1 : 0), 0);
+}
+
+function boatDistanceTo(x, z) {
+  return Math.hypot(Number(x) - boat.x, Number(z) - boat.z);
+}
+
+function boatSeatPosition(seat) {
+  const offset = BOAT_SEAT_OFFSETS[clamp(Number(seat) || 0, 0, BOAT_SEATS - 1)] || BOAT_SEAT_OFFSETS[0];
+  const cos = Math.cos(boat.heading);
+  const sin = Math.sin(boat.heading);
+  return {
+    x: boat.x + cos * offset.x + sin * offset.z,
+    y: boat.y + offset.y,
+    z: boat.z - sin * offset.x + cos * offset.z
+  };
+}
+
+function publicBoat() {
+  return {
+    id: boat.id,
+    x: round(boat.x),
+    y: round(boat.y),
+    z: round(boat.z),
+    heading: round(boat.heading),
+    speed: round(boat.speed),
+    driverId: boat.driverId,
+    seats: boat.seats.slice(),
+    occupied: boatOccupantCount(),
+    capacity: BOAT_SEATS,
+    updatedAt: boat.updatedAt
+  };
+}
+
+function broadcastBoat() {
+  broadcast({ type: 'boatState', boat: publicBoat() });
+}
+
+function removeFromBoat(player, announce = false) {
+  if (!player || player.boatSeat == null) return false;
+  const seat = Number(player.boatSeat);
+  if (Number.isInteger(seat) && seat >= 0 && seat < BOAT_SEATS && boat.seats[seat] === player.id) {
+    boat.seats[seat] = null;
+  }
+  player.boatSeat = null;
+  if (boat.driverId === player.id) {
+    boat.driverId = null;
+    boat.speed = 0;
+  }
+  boat.updatedAt = Date.now();
+  if (!boatOccupantCount()) boat.emptySince = Date.now();
+  if (announce) broadcastBoat();
+  return true;
+}
+
+function resetBoat(force = false) {
+  if (!force && boatOccupantCount()) return false;
+  boat.x = BOAT_DOCK.x;
+  boat.y = BOAT_DOCK.y;
+  boat.z = BOAT_DOCK.z;
+  boat.heading = BOAT_DOCK.heading;
+  boat.speed = 0;
+  boat.driverId = null;
+  boat.seats.fill(null);
+  boat.updatedAt = Date.now();
+  boat.emptySince = 0;
+  broadcastBoat();
+  return true;
+}
+
+function boatExitPoint() {
+  if (boat.x > 24 && boat.x < 40 && boat.z > 13 && boat.z < 29) {
+    return { x: 29.1, y: 0.05, z: clamp(boat.z, 18.2, 23.8) };
+  }
+  if (boat.x > 70 && boat.x < EXTERNAL_PLATFORM.x0 + 12 &&
+      boat.z > EXTERNAL_PLATFORM.z0 - 10 && boat.z < EXTERNAL_PLATFORM.z1 + 10) {
+    return {
+      x: EXTERNAL_PLATFORM.x0 + 2.2,
+      y: EXTERNAL_PLATFORM.top + 0.06,
+      z: clamp(boat.z, EXTERNAL_PLATFORM.z0 + 3, EXTERNAL_PLATFORM.z1 - 3)
+    };
+  }
+  return null;
+}
+
+function syncBoatOccupants() {
+  for (let seat = 0; seat < BOAT_SEATS; seat += 1) {
+    const id = boat.seats[seat];
+    if (!id) continue;
+    const player = players.get(String(id));
+    if (!player || player.boatSeat !== seat) {
+      boat.seats[seat] = null;
+      continue;
+    }
+    const pos = boatSeatPosition(seat);
+    player.pos = pos;
+    player.moving = Math.abs(boat.speed) > 0.5;
+    player.sprint = false;
+  }
+  if (boat.driverId && !boat.seats.includes(boat.driverId)) {
+    boat.driverId = null;
+    boat.speed = 0;
+  }
+  if (!boat.driverId && boat.seats[0]) {
+    const driver = players.get(String(boat.seats[0]));
+    if (driver && driver.alive && driver.active) boat.driverId = driver.id;
+  }
 }
 
 function sanitizeName(raw) {
@@ -182,10 +326,13 @@ function sanitizeSpawns(raw) {
 
 function pickSpawn(player) {
   const spawns = player.spawns && player.spawns.length ? player.spawns : [{ x: 0, y: 0, z: 4 }];
+  const external = player.pos && Number(player.pos.x) > 65;
+  const zoneSpawns = spawns.filter((spawn) => (Number(spawn.x) > 65) === external);
+  const candidates = zoneSpawns.length ? zoneSpawns : spawns;
   const enemies = [...players.values()].filter((item) => item !== player && item.active && item.alive);
   let best = null;
   let bestScore = -Infinity;
-  for (const spawn of spawns) {
+  for (const spawn of candidates) {
     let minDist = Infinity;
     for (const enemy of enemies) {
       const dist = Math.hypot(spawn.x - enemy.pos.x, spawn.z - enemy.pos.z);
@@ -198,7 +345,7 @@ function pickSpawn(player) {
       best = spawn;
     }
   }
-  return best || spawns[0];
+  return best || candidates[0];
 }
 
 /* -------------------------------------------------------------- leaderboard */
@@ -320,6 +467,7 @@ function publicFighter(player) {
 
 function killPlayer(victim, killer, now) {
   const replay = killer ? deathReplay.build(victim, killer, now) : null;
+  removeFromBoat(victim, true);
   victim.alive = false;
   victim.hp = 0;
   victim.streak = 0;
@@ -388,6 +536,7 @@ function setFocusLock(player, until, recordId, options) {
     ? focusMode.AUTO_DURATION_MS
     : focusMode.MANUAL_DURATION_MS);
   player.focusTrigger = String(meta.trigger || (player.focusKind === 'auto' ? 'continuous_play' : 'manual')).slice(0, 40);
+  removeFromBoat(player, true);
   player.active = false;
   player.alive = false;
   player.hp = 0;
@@ -622,10 +771,123 @@ function handleMessage(player, raw) {
       }
       break;
     }
+    case 'boatBoard': {
+      if (!player.joined || !player.alive) {
+        send(player.ws, { type: 'boatDenied', reason: 'unavailable' });
+        break;
+      }
+      const alreadyAboard = player.boatSeat != null;
+      if (!alreadyAboard && boatDistanceTo(player.pos.x, player.pos.z) > BOAT_BOARD_RADIUS) {
+        send(player.ws, { type: 'boatDenied', reason: 'range' });
+        break;
+      }
+      const requestedSeat = Number.isInteger(Number(msg.seat)) ? Number(msg.seat) : -1;
+      const wantsHelm = requestedSeat === 0;
+      if (wantsHelm && boat.seats[0] && boat.seats[0] !== player.id) {
+        send(player.ws, { type: 'boatDenied', reason: 'helm' });
+        break;
+      }
+      let seat = requestedSeat >= 0 && requestedSeat < BOAT_SEATS ? requestedSeat : -1;
+      if (seat < 0 || (boat.seats[seat] && boat.seats[seat] !== player.id)) {
+        seat = boat.seats.findIndex((id) => !id || id === player.id);
+      }
+      if (seat < 0) {
+        send(player.ws, { type: 'boatDenied', reason: 'full' });
+        break;
+      }
+      if (alreadyAboard) removeFromBoat(player, false);
+      boat.seats[seat] = player.id;
+      player.boatSeat = seat;
+      if (seat === 0) boat.driverId = player.id;
+      if (player.focusUntil <= now) player.active = true;
+      boat.updatedAt = now;
+      boat.emptySince = 0;
+      syncBoatOccupants();
+      send(player.ws, {
+        type: 'boatAck',
+        aboard: true,
+        seat,
+        boat: publicBoat()
+      });
+      broadcastBoat();
+      break;
+    }
+    case 'boatLeave': {
+      if (player.boatSeat == null) {
+        send(player.ws, { type: 'boatDenied', reason: 'notAboard' });
+        break;
+      }
+      if (Math.abs(boat.speed) > 2.4) {
+        send(player.ws, { type: 'boatDenied', reason: 'moving' });
+        break;
+      }
+      const exit = boatExitPoint();
+      if (!exit) {
+        send(player.ws, { type: 'boatDenied', reason: 'landing' });
+        break;
+      }
+      removeFromBoat(player, false);
+      player.pos = exit;
+      player.active = player.alive && player.focusUntil <= now;
+      send(player.ws, {
+        type: 'boatAck',
+        aboard: false,
+        pos: exit,
+        boat: publicBoat()
+      });
+      broadcastBoat();
+      break;
+    }
+    case 'boatPose': {
+      if (player.boatSeat !== 0 || boat.driverId !== player.id || !player.alive) break;
+      if (now - boat.lastPoseAt < 42) break;
+      const pos = safeVec(msg.pos);
+      const speed = Number(msg.speed);
+      const heading = Number(msg.heading);
+      if (!pos || !Number.isFinite(speed) || !Number.isFinite(heading)) break;
+      if (pos.x * pos.x + pos.z * pos.z > BOAT_WORLD_RADIUS * BOAT_WORLD_RADIUS) break;
+      const maxStep = Math.max(4.2, Math.abs(boat.speed) * 0.4);
+      if (Math.hypot(pos.x - boat.x, pos.z - boat.z) > maxStep) break;
+      boat.x = pos.x;
+      boat.y = clamp(pos.y, -3.2, 5.5);
+      boat.z = pos.z;
+      boat.heading = normalizeHeading(heading, boat.heading);
+      boat.speed = clamp(speed, -8, BOAT_MAX_SPEED);
+      boat.updatedAt = now;
+      boat.lastPoseAt = now;
+      syncBoatOccupants();
+      break;
+    }
+    case 'boatInvite': {
+      if (!player.joined || player.boatSeat == null || boat.driverId !== player.id) {
+        send(player.ws, { type: 'boatDenied', reason: 'helmOnly' });
+        break;
+      }
+      if (now - (player.lastBoatInviteAt || 0) < 2200) {
+        send(player.ws, { type: 'boatDenied', reason: 'rate' });
+        break;
+      }
+      player.lastBoatInviteAt = now;
+      broadcast({
+        type: 'boatInvite',
+        from: publicFighter(player),
+        boat: {
+          x: round(boat.x),
+          z: round(boat.z),
+          occupied: boatOccupantCount(),
+          capacity: BOAT_SEATS
+        },
+        at: now
+      }, (other) => other.joined && other.alive && other !== player && other.focusUntil <= now);
+      send(player.ws, { type: 'boatInviteSent', boat: publicBoat() });
+      break;
+    }
     case 'state': {
-      const pos = safeVec(msg.pos, player.pos);
-      if (pos) {
-        player.pos = pos;
+      if (player.boatSeat == null) {
+        const pos = safeVec(msg.pos, player.pos);
+        if (pos) {
+          player.pos = pos;
+        }
       }
       if (Number.isFinite(Number(msg.yaw))) player.yaw = Number(msg.yaw);
       if (Number.isFinite(Number(msg.pitch))) player.pitch = clamp(Number(msg.pitch), -1.6, 1.6);
@@ -700,6 +962,7 @@ function handleMessage(player, raw) {
     }
     case 'died': {
       if (!player.alive) break;
+      removeFromBoat(player, true);
       player.alive = false;
       player.hp = 0;
       player.streak = 0;
@@ -843,6 +1106,8 @@ function addPlayer(ws, req) {
     focusTrigger: focusRecord ? String(focusRecord.trigger || (focusKind === 'auto' ? 'continuous_play' : 'manual')).slice(0, 40) : '',
     msgWindow: Math.floor(Date.now() / 1000),
     msgCount: 0,
+    boatSeat: null,
+    lastBoatInviteAt: 0,
     isAlive: true
   };
   players.set(id, player);
@@ -873,6 +1138,7 @@ function addPlayer(ws, req) {
 
 function removePlayer(player, reason) {
   if (!players.has(player.id)) return;
+  removeFromBoat(player, true);
   const hadVoice = player.voice.enabled;
   players.delete(player.id);
   if (hadVoice) {
@@ -890,10 +1156,14 @@ function removePlayer(player, reason) {
     touchBoard(player.name, 0, 0, player.bestStreak);
   }
   broadcast({ type: 'notice', kind: 'leave', name: player.name, id: player.id, reason: reason || '' });
+  if (!players.size) resetBoat(true);
 }
 
 function tick() {
   const now = Date.now();
+  if (!boatOccupantCount() && boat.emptySince && now - boat.emptySince > BOAT_EMPTY_RETURN_MS) {
+    resetBoat();
+  }
   for (const player of players.values()) {
     if (!player.focusUntil || player.focusUntil > now) continue;
     const expiredKind = player.focusKind || 'manual';
@@ -912,6 +1182,7 @@ function tick() {
       serverTime: now
       });
   }
+  syncBoatOccupants();
   deathReplay.recordPlayers(players.values(), now);
   deathReplay.prune(now);
   const roster = rosterPayload();
@@ -943,6 +1214,7 @@ function tick() {
       players: visible,
       roster,
       voice: voicePayload(),
+      boat: publicBoat(),
       you: {
         id: player.id,
         name: player.name,

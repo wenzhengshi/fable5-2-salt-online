@@ -4,6 +4,10 @@
   const messages = config.messages || {};
   const gameText = messages.gameText || {};
   const gamePatterns = messages.gamePatterns || {};
+  document.documentElement.style.setProperty(
+    '--h-ammo-infinite-label',
+    JSON.stringify(gameText['无限'] || '无限')
+  );
   const toastEl = document.getElementById('app-toast');
   const langSwitch = document.querySelector('.lang-switch');
   let toastTimer = 0;
@@ -112,6 +116,46 @@
     match = value.match(/^(\d+)\s*处中继器$/);
     if (match) return interpolate(gamePatterns.relayCount, { n: match[1] });
 
+    match = value.match(/^(.+?) 呼叫撤离船集合 · 请尽快上船$/);
+    if (match) return interpolate(gamePatterns.boatInviteToast, { name: match[1] });
+
+    match = value.match(/^(.+?) 呼叫集合 · 撤离船 (\d+) 米 · (.+)$/);
+    if (match) {
+      return interpolate(gamePatterns.boatInviteBanner, {
+        name: match[1],
+        n: match[2],
+        direction: translateToken(match[3])
+      });
+    }
+
+    match = value.match(/^E · 登船 · (\d+) \/ (\d+)$/);
+    if (match) {
+      return interpolate(gamePatterns.boatBoardPrompt, {
+        occupied: match[1],
+        capacity: match[2]
+      });
+    }
+
+    match = value.match(/^撤离船 · 座位 (\d+) · (\d+) \/ (\d+)$/);
+    if (match) {
+      return interpolate(gamePatterns.boatSeatsAboard, {
+        seat: match[1],
+        occupied: match[2],
+        capacity: match[3]
+      });
+    }
+
+    match = value.match(/^撤离船 · (\d+) \/ (\d+) 人$/);
+    if (match) {
+      return interpolate(gamePatterns.boatSeatsIdle, {
+        occupied: match[1],
+        capacity: match[2]
+      });
+    }
+
+    match = value.match(/^已登船 · 座位 (\d+)$/);
+    if (match) return interpolate(gamePatterns.boatBoarded, { seat: match[1] });
+
     return null;
   }
 
@@ -124,6 +168,25 @@
     const trailing = value.match(/\s*$/)[0];
     return leading + translated + trailing;
   }
+
+  function installBootMessageTranslator() {
+    const bootMessage = document.getElementById('boot-msg');
+    const descriptor = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
+    if (!bootMessage || !descriptor || !descriptor.get || !descriptor.set) return;
+    Object.defineProperty(bootMessage, 'textContent', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return descriptor.get.call(bootMessage);
+      },
+      set(value) {
+        descriptor.set.call(bootMessage, translateValue(String(value)));
+      }
+    });
+    descriptor.set.call(bootMessage, translateValue(descriptor.get.call(bootMessage)));
+  }
+
+  installBootMessageTranslator();
 
   const textNodeFilter = {
     acceptNode(node) {

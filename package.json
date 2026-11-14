@@ -1,6 +1,6 @@
 {
   "name": "fable5-2-salt-online",
-  "version": "1.24.5",
+  "version": "1.25.2",
   "description": "浏览器中的多人在线 3D 港口枪战游戏",
   "main": "index.js",
   "private": true,
@@ -8,7 +8,9 @@
     "start": "node index.js",
     "test:legacy-port": "node scripts/legacy-port-self-test.js",
     "test:legacy-ws": "node scripts/legacy-ws-test.js",
-    "check": "node --check index.js && node --check routes/api.js && node --check controllers/gameController.js && node --check controllers/userController.js && node --check services/contentFilter.js && node --check services/chatHistory.js && node --check services/focusMode.js && node --check services/deathReplay.js && node --check config/storage.js && node --check realtime/multiplayer.js && node --check scripts/legacy-port-self-test.js && node --check scripts/legacy-ws-test.js && node --check public/js/multiplayer.js && node --check public/js/death-replay-3d.js && node --check public/js/focus-mode.js && node --check public/js/comms.js && node --check public/js/i18n.js && node --check public/js/controls.js && node --check public/js/hunter-avatar.js && node --check public/js/classic-avatar.js && node --check public/js/community.js && node --check public/js/kill-streak.js && node --check public/js/replay.js && node --check public/js/soldier-select.js && node --check public/js/unit-models.js && node --check public/js/webgl-guard.js && node --check public/js/boot-gate.js"
+    "test:boat-ws": "node scripts/boat-online-self-test.js",
+    "check": "node --check index.js && node --check routes/api.js && node --check controllers/gameController.js && node --check controllers/userController.js && node --check services/contentFilter.js && node --check services/chatHistory.js && node --check services/focusMode.js && node --check services/deathReplay.js && node --check config/storage.js && node --check realtime/multiplayer.js && node --check scripts/release-check.js && node --check scripts/legacy-port-self-test.js && node --check scripts/legacy-ws-test.js && node --check scripts/boat-online-self-test.js && node --check public/js/audio-tap.js && node --check public/js/multiplayer.js && node --check public/js/sail.js && node --check public/js/death-replay-3d.js && node --check public/js/focus-mode.js && node --check public/js/comms.js && node --check public/js/i18n.js && node --check public/js/controls.js && node --check public/js/hunter-avatar.js && node --check public/js/classic-avatar.js && node --check public/js/community.js && node --check public/js/kill-streak.js && node --check public/js/replay.js && node --check public/js/soldier-select.js && node --check public/js/unit-models.js && node --check public/js/webgl-guard.js && node --check public/js/boot-gate.js",
+    "release:check": "node scripts/release-check.js"
   },
   "engines": {
     "node": ">=18"

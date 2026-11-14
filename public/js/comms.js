@@ -186,6 +186,7 @@
     { key: 'quickHelp', tone: 'alarm' },
     { key: 'quickPush', tone: 'signal' },
     { key: 'quickEnemy', tone: 'alarm' },
+    { key: 'quickBoat', tone: 'signal' },
     { key: 'quickNice', tone: 'cool' },
     { key: 'quickThanks', tone: 'cool' }
   ];

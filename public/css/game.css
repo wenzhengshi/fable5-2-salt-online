@@ -192,7 +192,7 @@ body { background: var(--ink); color: var(--bone); overflow: hidden; font-family
 .h-ammo.infinite .h-ammo-n::after { content: '∞'; font-size: 76px; }
 .h-ammo.infinite .h-ammo-r { font-size: 0; }
 .h-ammo.infinite .h-ammo-r::before { content: ''; }
-.h-ammo.infinite .h-ammo-r::after { content: '无限'; font-size: 15px; }
+.h-ammo.infinite .h-ammo-r::after { content: var(--h-ammo-infinite-label, '无限'); font-size: 15px; }
 .h-ammo.infinite .h-cue { display: none; }
 .h-pips { display: flex; justify-content: flex-end; gap: 2px; margin: 9px 0 7px; }
 .h-pips i { width: 3px; height: 11px; background: var(--bone); box-shadow: 0 0 2px rgba(0, 0, 0, .5); }
@@ -402,7 +402,7 @@ kbd { display: inline-block; font: 500 10px/1 var(--f-mono); color: var(--bone);
 }
 
 /* =====================================================================  free sail  */
-#sail-ui { position: absolute; inset: 0; z-index: 26; pointer-events: none; opacity: 0; visibility: hidden; color: var(--bone); text-shadow: var(--shadow); transition: opacity .32s ease, visibility .32s; }
+#sail-ui { position: absolute; inset: 0; z-index: 34; pointer-events: none; opacity: 0; visibility: hidden; color: var(--bone); text-shadow: var(--shadow); transition: opacity .32s ease, visibility .32s; }
 #sail-ui.on { opacity: 1; visibility: visible; }
 .sail-top { position: absolute; left: var(--gl); right: var(--gr); top: calc(13px + var(--sat)); display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .sail-title { display: flex; align-items: center; gap: 11px; min-width: 150px; }
@@ -460,4 +460,49 @@ kbd { display: inline-block; font: 500 10px/1 var(--f-mono); color: var(--bone);
   .sail-map { width: 118px; } .sail-map canvas { width: 118px; height: 118px; }
   .sail-speed { bottom: calc(18px + var(--sab)); }
   .is-touch .sail-speed { bottom: calc(18px + var(--sab)); left: 50%; transform: translateX(-50%); }
+}
+
+/* multiplayer extraction boat: interaction and rally notices remain visible outside sail mode */
+#sail-ui.interact-only,
+#sail-ui.has-invite { opacity: 1; visibility: visible; }
+#sail-ui.interact-only:not(.has-invite) > :not(.sail-interact),
+#sail-ui.has-invite:not(.interact-only) > :not(.sail-invite),
+#sail-ui.interact-only.has-invite > :not(.sail-interact):not(.sail-invite) {
+  opacity: 0; visibility: hidden; pointer-events: none;
+}
+.sail-actions { position: absolute; right: 0; top: calc(74px + var(--sat)); pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.sail-actions .sail-exit[hidden],
+.sail-interact[hidden] { display: none !important; }
+.sail-seats {
+  position: absolute; left: var(--gl); top: calc(62px + var(--sat)); padding: 5px 9px;
+  border-left: 2px solid rgba(255, 179, 71, .72); background: rgba(11, 13, 15, .5);
+  color: var(--bone-dim); font: 600 10px/1 var(--f-mono); letter-spacing: .1em;
+}
+.sail-interact {
+  position: absolute; left: 50%; top: 61%; transform: translate(-50%, 0);
+  pointer-events: auto; min-height: 44px; padding: 2px 20px 0;
+  border: 1px solid rgba(255, 179, 71, .76); border-radius: 0;
+  background: rgba(11, 13, 15, .82); color: var(--bone);
+  font: 700 13px/1 var(--f-label); letter-spacing: .16em; cursor: pointer;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .42), inset 0 0 0 1px rgba(255, 179, 71, .08);
+}
+.sail-interact::before { content: var(--sail-interact-label, ''); display: block; margin-bottom: 5px; color: var(--signal); font: 600 9px/1 var(--f-mono); letter-spacing: .22em; }
+.sail-interact:hover { background: rgba(255, 179, 71, .2); border-color: var(--signal); color: var(--signal); }
+.sail-invite {
+  position: absolute; left: 50%; top: calc(118px + var(--sat)); transform: translateX(-50%);
+  max-width: min(520px, calc(100vw - 32px)); padding: 9px 14px;
+  border: 1px solid rgba(255, 179, 71, .55); border-left-width: 3px;
+  background: rgba(11, 13, 15, .82); color: var(--bone);
+  font: 600 11px/1.35 var(--f-mono); letter-spacing: .05em; text-align: center;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, .4);
+}
+.sail-invite[hidden] { display: none !important; }
+body.sail-active .h-obj,
+body.sail-active .h-heading { opacity: 0 !important; visibility: hidden !important; }
+@media (max-width: 760px) {
+  .sail-actions { gap: 5px; }
+  .sail-actions .sail-exit { max-width: 84px; line-height: 1.25; }
+  .sail-seats { top: calc(56px + var(--sat)); }
+  .sail-interact { top: auto; bottom: calc(176px + var(--sab)); min-height: 42px; }
+  .sail-invite { top: calc(136px + var(--sat)); font-size: 10px; }
 }

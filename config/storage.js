@@ -9,6 +9,8 @@ const LOCK_RETRY_MS = 8;
 const LOCK_TIMEOUT_MS = 2500;
 const LOCK_STALE_MS = 15000;
 const PROBE_TTL_MS = 2000;
+const PROJECT_DATA_MODE = 0o2777;
+const DATA_FILE_MODE = 0o664;
 const lockSleep = new Int32Array(new SharedArrayBuffer(4));
 let tempCounter = 0;
 let lastProbeAt = 0;
@@ -27,6 +29,31 @@ const selected = envDataDir();
 const DATA_DIR = selected ? selected.dir : PROJECT_DATA_DIR;
 const DATA_SOURCE = selected ? selected.source : 'project';
 
+function isProjectDataDir(dir) {
+  return path.resolve(dir || DATA_DIR) === path.resolve(PROJECT_DATA_DIR);
+}
+
+function relaxProjectDataDir(dir) {
+  if (!isProjectDataDir(dir)) return;
+  try {
+    const stat = fs.statSync(dir || DATA_DIR);
+    if (stat.isDirectory() && (stat.mode & 0o7777) !== PROJECT_DATA_MODE) {
+      fs.chmodSync(dir || DATA_DIR, PROJECT_DATA_MODE);
+    }
+  } catch (err) {
+    // 非目录所有者时无法修改；保留平台注入的 ACL 权限。
+  }
+}
+
+function relaxProjectDataFile(fd) {
+  if (!isProjectDataDir(DATA_DIR)) return;
+  try {
+    fs.fchmodSync(fd, DATA_FILE_MODE);
+  } catch (err) {
+    // 文件属于旧运行用户时，写入逻辑会通过安全替换恢复权限。
+  }
+}
+
 function errorText(err) {
   if (!err) return 'unknown storage error';
   return String(err.message || err);
@@ -43,8 +70,9 @@ function ensureDir(dir) {
     }
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
-    fs.mkdirSync(target, { recursive: true, mode: 0o2775 });
+    fs.mkdirSync(target, { recursive: true, mode: isProjectDataDir(target) ? PROJECT_DATA_MODE : 0o2775 });
   }
+  relaxProjectDataDir(target);
   return target;
 }
 
@@ -74,8 +102,9 @@ function probeWritable(force) {
   try {
     ensureDir(DATA_DIR);
     probe = path.join(DATA_DIR, '.write-probe-' + process.pid + '-' + (++tempCounter));
-    const fd = fs.openSync(probe, 'wx', 0o660);
+    const fd = fs.openSync(probe, 'wx', DATA_FILE_MODE);
     try {
+      relaxProjectDataFile(fd);
       fs.writeSync(fd, 'ok');
       fs.fsyncSync(fd);
     } finally {
@@ -99,8 +128,9 @@ function acquireFileLock(full) {
   const startedAt = Date.now();
   for (;;) {
     try {
-      const fd = fs.openSync(lock, 'wx', 0o660);
+      const fd = fs.openSync(lock, 'wx', DATA_FILE_MODE);
       try {
+        relaxProjectDataFile(fd);
         fs.writeSync(fd, String(process.pid));
         fs.fsyncSync(fd);
       } finally {
@@ -139,7 +169,9 @@ function writeAll(fd, buffer) {
 
 function openAppendFile(full) {
   try {
-    return fs.openSync(full, 'a', 0o660);
+    const fd = fs.openSync(full, 'a', DATA_FILE_MODE);
+    relaxProjectDataFile(fd);
+    return fd;
   } catch (err) {
     if (err.code !== 'EACCES' && err.code !== 'EPERM') throw err;
     if (!probeWritable(true)) throw err;
@@ -148,7 +180,8 @@ function openAppendFile(full) {
     try { previous = fs.readFileSync(full); } catch (readErr) { /* ignore */ }
     const backup = full + '.previous-' + Date.now();
     fs.renameSync(full, backup);
-    const fd = fs.openSync(full, 'a', 0o660);
+    const fd = fs.openSync(full, 'a', DATA_FILE_MODE);
+    relaxProjectDataFile(fd);
     try {
       if (previous && previous.length) writeAll(fd, previous);
     } catch (writeErr) {
@@ -163,8 +196,9 @@ function ensureFile(file) {
   ensureDir(DATA_DIR);
   const full = path.join(DATA_DIR, file);
   if (fs.existsSync(full)) return full;
-  const fd = fs.openSync(full, 'a', 0o660);
+  const fd = fs.openSync(full, 'a', DATA_FILE_MODE);
   try {
+    relaxProjectDataFile(fd);
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -194,7 +228,8 @@ function writeJson(file, data) {
   const tmp = full + '.' + process.pid + '.' + Date.now() + '.' + (++tempCounter) + '.tmp';
   let fd;
   try {
-    fd = fs.openSync(tmp, 'wx', 0o660);
+    fd = fs.openSync(tmp, 'wx', DATA_FILE_MODE);
+    relaxProjectDataFile(fd);
     writeAll(fd, Buffer.from(JSON.stringify(data, null, 2), 'utf8'));
     fs.fsyncSync(fd);
     fs.closeSync(fd);

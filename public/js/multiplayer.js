@@ -660,6 +660,17 @@
         if (list.length >= 26) break;
       }
     } catch (err) { /* ignore */ }
+    const boat = window.__saltBoat;
+    if (boat && boat.externalUnlocked) {
+      const external = Array.isArray(window.__SALT_EXTERNAL_SPAWNS)
+        ? window.__SALT_EXTERNAL_SPAWNS
+        : [];
+      for (const spawn of external) {
+        if (!spawn || !Number.isFinite(Number(spawn.x)) || !Number.isFinite(Number(spawn.z))) continue;
+        list.push({ x: Number(spawn.x), y: Number(spawn.y) || 0, z: Number(spawn.z) });
+        if (list.length >= 32) break;
+      }
+    }
     return list;
   }
 
@@ -2262,6 +2273,7 @@
 
   function applyLocalUnitFrame(dt) {
     if (!G || !G.player || !G.camera) return;
+    if (window.__saltBoat && window.__saltBoat.riding) return;
     const player = G.player;
     const input = G.input;
     const kind = normalizeSoldier(mySoldier);
@@ -2795,6 +2807,9 @@
     onBinary,
     send,
     sendBinary,
+    refreshSpawns() {
+      return send({ type: 'spawns', spawns: spawnsFromLevel() });
+    },
     focusDeploy(spawn, protectedUntil) {
       if (!G || !G.player) return false;
       revive(spawn, protectedUntil);

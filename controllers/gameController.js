@@ -8,6 +8,7 @@ const contentFilter = require('../services/contentFilter');
 const chatHistoryStore = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
 const deathReplay = require('../services/deathReplay');
+const { version: RELEASE_VERSION } = require('../package.json');
 
 module.exports = {
   health(req, res) {
@@ -26,7 +27,7 @@ module.exports = {
       lang: req.lang,
       title: req.t('game.title'),
       tagline: req.t('game.tagline'),
-      version: '1.24.5',
+      version: RELEASE_VERSION,
       engine: 'WebGL2 / Three.js (bundled)',
       rendering: {
         mode: '3d',
@@ -52,6 +53,7 @@ module.exports = {
       features: {
         community: true,
         localReplay: true,
+        localReplayAudio: true,
         killStreak: true,
         classicAvatar: true,
         droneSearchlight: true,
@@ -61,6 +63,10 @@ module.exports = {
         deathReplayAuthoritative: true,
         deathReplayRateHz: 10,
         deathReplayWindowMs: deathReplay.WINDOW_MS,
+        multiplayerBoat: true,
+        boatSeats: 4,
+        boatMissionRequired: false,
+        externalCombatZone: true,
         compactMobileType: true
       },
       online: getOnlinePlayers().length,

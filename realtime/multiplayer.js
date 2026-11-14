@@ -7,6 +7,7 @@ const chatHistory = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
 const deathReplay = require('../services/deathReplay');
 const playerAuthority = require('../services/playerAuthority');
+const qingyun = require('../public/js/qingyun-zone');
 
 const TICK_MS = 100;
 const RESPAWN_MS = 5000;
@@ -41,7 +42,7 @@ const EXTERNAL_PLATFORM = { x0: 82, x1: 126, z0: -12, z1: 28, top: 0.22 };
 const FOCUS_BLOCKED_TYPES = new Set([
   'state', 'soldier', 'spawns', 'chat', 'voiceState', 'rename',
   'shot', 'hit', 'died', 'respawn', 'boatBoard', 'boatLeave',
-  'boatPose', 'boatInvite'
+  'boatPose', 'boatInvite', 'qingyunEnter', 'qingyunLeave', 'qingyunReturn'
 ]);
 
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
@@ -318,7 +319,7 @@ function sanitizeSpawns(raw) {
   if (Array.isArray(raw)) {
     for (const item of raw) {
       const pos = safeVec(item);
-      if (pos && list.length < MAX_SPAWNS) list.push(pos);
+      if (pos && !qingyun.contains(pos) && list.length < MAX_SPAWNS) list.push(pos);
     }
   }
   if (!list.length) list.push({ x: 0, y: 0, z: 4 });
@@ -329,8 +330,9 @@ function pickSpawn(player) {
   const spawns = player.spawns && player.spawns.length ? player.spawns : [{ x: 0, y: 0, z: 4 }];
   const external = player.pos && Number(player.pos.x) > 65;
   const zoneSpawns = spawns.filter((spawn) => (Number(spawn.x) > 65) === external);
-  const candidates = zoneSpawns.length ? zoneSpawns : spawns;
-  const enemies = [...players.values()].filter((item) => item !== player && item.active && item.alive);
+  const candidates = player.inQingyun ? qingyun.spawns : zoneSpawns.length ? zoneSpawns : spawns;
+  const enemies = [...players.values()].filter((item) => item !== player && item.active && item.alive &&
+    item.inQingyun === player.inQingyun);
   let best = null;
   let bestScore = -Infinity;
   for (const spawn of candidates) {
@@ -775,7 +777,7 @@ function handleMessage(player, raw) {
       break;
     }
     case 'boatBoard': {
-      if (!player.joined || !player.alive) {
+      if (!player.joined || !player.alive || player.inQingyun) {
         send(player.ws, { type: 'boatDenied', reason: 'unavailable' });
         break;
       }
@@ -885,11 +887,50 @@ function handleMessage(player, raw) {
       send(player.ws, { type: 'boatInviteSent', boat: publicBoat() });
       break;
     }
+    case 'qingyunEnter': {
+      if (!player.joined || !player.alive || !player.active || player.boatSeat != null ||
+          player.inQingyun || !qingyun.atGate(player.pos, 1.25)) break;
+      player.inQingyun = true;
+      player.pos = { ...qingyun.landing };
+      player.yaw = 0;
+      player.pitch = 0;
+      player.moving = false;
+      player.sprint = false;
+      player.shotCredits = 0;
+      send(player.ws, { type: 'qingyunEntered', pos: player.pos });
+      break;
+    }
+    case 'qingyunReturn': {
+      if (!player.joined || !player.alive || !player.active || !player.inQingyun ||
+          !qingyun.atReturnGate(player.pos, .1)) break;
+      player.inQingyun = false;
+      player.pos = { ...qingyun.returnLanding };
+      player.yaw = Math.PI;
+      player.pitch = 0;
+      player.moving = false;
+      player.sprint = false;
+      player.shotCredits = 0;
+      send(player.ws, { type: 'qingyunReturned', pos: player.pos });
+      break;
+    }
+    case 'qingyunLeave': {
+      // The normal redeploy/reconnect flow can bring a player back to the port.
+      if (!player.inQingyun) break;
+      player.inQingyun = false;
+      player.pos = { ...player.spawns[0] };
+      player.shotCredits = 0;
+      break;
+    }
     case 'state': {
       if (player.boatSeat == null) {
         const pos = safeVec(msg.pos, player.pos);
-        if (pos) {
-          player.pos = playerAuthority.clampDronePosition(pos, player.soldier, player.boatSeat) || player.pos;
+        if (pos && (player.inQingyun ? qingyun.contains(pos) : !qingyun.contains(pos))) {
+          if (player.inQingyun) {
+            const { minX, maxX, minZ, maxZ } = qingyun.bounds;
+            player.pos = { x: clamp(pos.x, minX, maxX), y: pos.y, z: clamp(pos.z, minZ, maxZ) };
+          } else {
+            player.pos = playerAuthority.clampDronePosition(pos, player.soldier, player.boatSeat) || player.pos;
+          }
         }
       }
       if (Number.isFinite(Number(msg.yaw))) player.yaw = Number(msg.yaw);
@@ -924,13 +965,13 @@ function handleMessage(player, raw) {
       playerAuthority.acceptShotCredit(player, now);
       broadcast(
         { type: 'shot', id: player.id, origin, dir },
-        (other) => other !== player && other.active
+        (other) => other !== player && other.active && other.inQingyun === player.inQingyun
       );
       break;
     }
     case 'hit': {
       const target = players.get(String(msg.targetId));
-      if (!target || target === player) break;
+      if (!target || target === player || target.inQingyun !== player.inQingyun) break;
       if (!player.active || !player.alive || !target.active || !target.alive) break;
       if (now - player.lastHitAt < 25) break;
       player.lastHitAt = now;
@@ -1118,6 +1159,7 @@ function addPlayer(ws, req) {
     msgWindow: Math.floor(Date.now() / 1000),
     msgCount: 0,
     boatSeat: null,
+    inQingyun: false,
     lastBoatInviteAt: 0,
     isAlive: true
   };
@@ -1222,7 +1264,7 @@ function tick() {
       type: 'snapshot',
       t: now,
       online: players.size,
-      players: visible,
+      players: visible.filter(item => players.get(item.id).inQingyun === player.inQingyun),
       roster,
       voice: voicePayload(),
       boat: publicBoat(),

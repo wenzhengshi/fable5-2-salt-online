@@ -148,6 +148,7 @@
   let localUnitRequest = 0;
   let localUnitKind = null;
   let localDroneLight = null;
+  const qingyun = window.SaltQingyunZone;
   let unitFlightY = 0;
   let unitFlightPrev = null;
   let flightGuardBoxes = [];
@@ -727,6 +728,7 @@
   }
 
   function randomGroundSpawn() {
+    if (G?.qingyun?.active) return qingyun.spawns[0];
     const list = [];
     try {
       const start = G && G.level && G.level.playerStart;
@@ -764,6 +766,7 @@
   }
 
   function defaultSpawn() {
+    if (G?.qingyun?.active) return qingyun.landing;
     try {
       const start = G && G.level && G.level.playerStart;
       if (start && start.pos) return { x: start.pos.x, y: start.pos.y, z: start.pos.z };
@@ -2425,14 +2428,20 @@
       if (!unitFlightY || unitFlightY < minY) unitFlightY = minY;
       if (ascend) unitFlightY += 4.6 * dt;
       if (descend) unitFlightY -= 4.6 * dt;
-      unitFlightY = Math.max(minY, Math.min(22, unitFlightY));
+      unitFlightY = Math.max(minY, Math.min(G.qingyun?.active ? 110 : 22, unitFlightY));
       const candidate = {
         x: player.pos.x,
         y: unitFlightY,
         z: player.pos.z
       };
+      const mapCollision = G.qingyun?.active && G.qingyun.collision;
       const collision = window.SaltFlightCollision;
-      if (collision && G.physics && Array.isArray(G.physics.boxes)) {
+      if (mapCollision) {
+        const previous = unitFlightPrev && qingyun.contains(unitFlightPrev) ? unitFlightPrev : player.pos;
+        const resolved = mapCollision.moveDrone(previous, candidate, .42);
+        player.pos.copy(resolved);
+        unitFlightY = player.pos.y = Math.max(minY, resolved.y);
+      } else if (collision && G.physics && Array.isArray(G.physics.boxes)) {
         const resolved = collision.resolve(candidate, getFlightCollisionBoxes(), {
           ...FLIGHT_COLLISION,
           previous: unitFlightPrev
@@ -2469,10 +2478,13 @@
     } else {
       unitFlightY = 0;
       unitFlightPrev = null;
-      try {
-        ground = Number(G.physics.groundHeight(player.pos.x, player.pos.z, player.pos.y + 2));
-        if (Number.isFinite(ground)) player.pos.y = ground;
-      } catch (err) { /* ignore */ }
+      // Qingyun uses the FPS capsule to preserve vertical velocity during jumps.
+      if (!G.qingyun?.active) {
+        try {
+          ground = Number(G.physics.groundHeight(player.pos.x, player.pos.z, player.pos.y + 2));
+          if (Number.isFinite(ground)) player.pos.y = ground;
+        } catch (err) { /* ignore */ }
+      }
       player.eye.set(player.pos.x, player.pos.y + 0.68, player.pos.z);
     }
 
@@ -2550,6 +2562,12 @@
       reconnectDelay = 1200;
       setConnection('online');
       everJoined = false;
+      if (G?.qingyun?.active) {
+        const start = G.level.playerStart.pos;
+        G.qingyun.land(start);
+        unitFlightY = 0;
+        unitFlightPrev = null;
+      }
       send({ type: 'join', name: myName, soldier: mySoldier, spawns: spawnsFromLevel() });
       window.clearInterval(pingTimer);
       pingTimer = window.setInterval(() => {
@@ -2635,6 +2653,17 @@
         applyUnitSelection();
         if (filtered) toast(t('nameFiltered'));
         else if (acceptedRename) toast(t('nameSaved'));
+        break;
+      }
+      case 'qingyunEntered':
+      case 'qingyunReturned': {
+        if (G?.qingyun?.collision && G.game.state === 'playing' && G.player.alive && msg.pos) {
+          G.qingyun.land(msg.pos);
+          unitFlightY = 0;
+          unitFlightPrev = null;
+          reconcileAvatars([]);
+          sendState(true);
+        }
         break;
       }
       case 'soldierAck': {
@@ -2843,6 +2872,9 @@
     try {
       game.events.on('game:state', (event) => {
         if (!event || event.state !== 'playing') disposeLocalDroneLight();
+        if (event && (event.state === 'title' || event.state === 'intro')) {
+          send({ type: 'qingyunLeave' });
+        }
       });
     } catch (err) {
       console.error('[mp] failed to hook game:state', err);
@@ -2973,6 +3005,7 @@
     toast,
     onMessage,
     onBinary,
+    syncState: () => sendState(true),
     send,
     sendBinary,
     refreshSpawns() {

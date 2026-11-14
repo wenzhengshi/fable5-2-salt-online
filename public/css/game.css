@@ -286,6 +286,14 @@ body { background: var(--ink); color: var(--bone); overflow: hidden; font-family
 .m-actions.col { flex-direction: column; align-items: stretch; margin-top: 22px; }
 .m-note { margin-top: clamp(14px, 2.6vh, 26px) !important; font: 400 11px/1.5 var(--f-mono); letter-spacing: .04em; color: var(--steel); max-width: 52ch; }
 
+.m-host-link {
+  display: inline-flex; align-items: center; min-height: 32px; color: var(--signal);
+  font: 600 13px/1.4 var(--f-label); text-decoration: underline; text-underline-offset: .25em;
+}
+.m-host-help { display: block; color: var(--bone-dim); font: 400 12px/1.4 var(--f-label); }
+.m-host-link:hover { color: var(--signal-hot); }
+.m-host-link:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+
 .btn { font: 600 15px/1 var(--f-label); letter-spacing: .22em; text-transform: uppercase; color: var(--bone); background: rgba(11, 13, 15, .55); border: 1px solid rgba(232, 228, 218, .42);
   border-radius: 0; min-height: 46px; padding: 2px 22px 0; cursor: pointer; text-align: center; -webkit-appearance: none; appearance: none; transition: background .12s, border-color .12s, color .12s; }
 .btn:hover { border-color: var(--bone); background: rgba(232, 228, 218, .12); }

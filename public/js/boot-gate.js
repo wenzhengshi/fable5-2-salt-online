@@ -8,6 +8,10 @@
   const RECOVERY_KEY = 'saltline.webgl.recovery.v1';
   const CORE_SCRIPTS = [
     'audio-tap.js',
+    'qingyun-zone.js',
+    'qingyun-audio.js',
+    'qingyun-collision.js',
+    'qingyun-portal.js',
     'game.bundle.js',
     'flight-collision.js',
     'ammo.js',

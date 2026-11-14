@@ -812,7 +812,8 @@
       ui.classList.remove('interact-only');
       return;
     }
-    if (state.aboard || G.game.state !== 'playing') {
+    if (state.aboard || G.game.state !== 'playing' || G.qingyun?.active) {
+      state.interactable = false;
       els.interact.hidden = true;
       ui.classList.remove('interact-only');
       setPrompt(null);

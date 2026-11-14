@@ -4,6 +4,12 @@
 
 项目基于 Node.js、Express、WebSocket 与 Three.js 构建，无需数据库。排行榜保存在本地 `data/` 目录中。
 
+<p align="center">
+  <img src="docs/media/screenshots/qingyun-mountains.jpg" width="920" alt="盐线行动青云地图的群峰、桃林与湖面倒影">
+</p>
+
+<p align="center"><sub>在港口集装箱与吊机之间交火，穿过时空隧道进入云海、桃林与石峰环绕的青云地图。</sub></p>
+
 ## v1.25.7 服务端约束旧客户端
 
 服务端现在直接约束无人机空气墙、弹夹容量、空弹换弹和命中次数。未刷新缓存的旧客户端即使继续发送墙外坐标、无限连发或重复命中包，也会被服务器拉回墙内、强制在 30 发后换弹，并且每发确认射击只能兑现一次伤害。
@@ -81,7 +87,7 @@
 
 版本说明与后续构建见 [Android v1.0（应用内连麦）发布页](https://github.com/wenzhengshi/fable5-2-salt-online/releases/tag/android-v1.0-voice)。
 
-## 游戏预览
+## 游戏画面
 
 <p align="center">
   <a href="docs/media/multiplayer-demo.mp4">
@@ -91,19 +97,51 @@
 
 <p align="center"><sub>多人联机实机演示 · 点击预览图查看视频</sub></p>
 
-| 移动端任务界面 | 移动端多人对战 |
-| --- | --- |
-| ![移动端任务界面](docs/media/mobile-mission.jpg) | ![移动端多人对战](docs/media/mobile-multiplayer.jpg) |
+### 港口行动
 
-| 仓库室内场景 | 仓库高台场景 |
-| --- | --- |
-| ![仓库室内场景](docs/media/warehouse-interior.jpg) | ![仓库高台场景](docs/media/warehouse-catwalk.jpg) |
+<p align="center">
+  <img src="docs/media/screenshots/port-action.jpg" width="900" alt="盐线行动港口码头交火">
+</p>
 
-| 码头交火 | 集装箱通道 |
-| --- | --- |
-| ![码头交火](docs/media/pier-firefight.jpg) | ![集装箱通道](docs/media/container-yard.jpg) |
+<p align="center"><sub>码头交火 · 集装箱、仓库与吊机组成多条进攻路线</sub></p>
 
-更多截图与视频素材位于 [`docs/media/`](docs/media/)。
+| 集装箱区 | 仓库内部 |
+| --- | --- |
+| ![集装箱区](docs/media/screenshots/port-containers.jpg) | ![仓库内部](docs/media/screenshots/port-warehouse.jpg) |
+
+| 时空隧道 | 港口吊机 |
+| --- | --- |
+| ![港口时空隧道](docs/media/screenshots/port-tunnel.jpg) | ![港口吊机与货船](docs/media/screenshots/port-crane.jpg) |
+
+<p align="center">
+  <img src="docs/media/screenshots/extraction-boat.jpg" width="900" alt="盐线行动撤离码头与船只">
+</p>
+
+<p align="center"><sub>撤离码头 · 登船离港后仍可在外海继续交战</sub></p>
+
+### 青云地图
+
+<p align="center">
+  <img src="docs/media/screenshots/qingyun-overlook.jpg" width="900" alt="盐线行动青云地图俯瞰岩台、石阶与殿宇">
+</p>
+
+<p align="center"><sub>青云俯瞰 · 岩台与石阶连接悬空据点，时空隧道散布在主要路线上</sub></p>
+
+| 青云主殿 | 返回港口 |
+| --- | --- |
+| ![青云主殿](docs/media/screenshots/qingyun-hall.jpg) | ![青云地图返回港口入口](docs/media/screenshots/qingyun-return-gate.jpg) |
+
+| 湖面倒影 | 山道入口 |
+| --- | --- |
+| ![青云湖面与群峰倒影](docs/media/screenshots/qingyun-lake.jpg) | ![青云山道入口的时空隧道](docs/media/screenshots/qingyun-trail-tunnel.jpg) |
+
+### 武器与移动端
+
+| 8× 步枪瞄准镜 | 移动端横屏首页 |
+| --- | --- |
+| ![8 倍步枪瞄准镜](docs/media/screenshots/rifle-8x.jpg) | ![盐线行动移动端横屏首页](docs/media/screenshots/mobile-landscape.png) |
+
+更多截图与视频素材位于 [`docs/media/`](docs/media/)，本组完整截图位于 [`docs/media/screenshots/`](docs/media/screenshots/)。
 
 ## 来源说明
 

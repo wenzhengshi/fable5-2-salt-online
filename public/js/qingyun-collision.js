@@ -153,7 +153,7 @@
         }
       } else {
         const floor = groundHeight(pos.x, pos.z, pos.y + step);
-        if (nextY <= floor || (grounded && nextY - floor <= step)) {
+        if (nextY <= floor + .002 || (grounded && nextY - floor <= step)) {
           nextY = floor;
           vel.y = 0;
           status.onGround = true;

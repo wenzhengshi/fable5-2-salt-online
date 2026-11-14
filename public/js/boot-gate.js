@@ -9,6 +9,7 @@
   const CORE_SCRIPTS = [
     'audio-tap.js',
     'qingyun-zone.js',
+    'rifle-scope.js',
     'qingyun-audio.js',
     'qingyun-collision.js',
     'qingyun-portal.js',

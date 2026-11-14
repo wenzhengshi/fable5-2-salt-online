@@ -513,3 +513,17 @@ body.sail-active .h-heading { opacity: 0 !important; visibility: hidden !importa
   .sail-interact { top: auto; bottom: calc(176px + var(--sab)); min-height: 42px; }
   .sail-invite { top: calc(136px + var(--sat)); font-size: 10px; }
 }
+
+.rifle-scope { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+.rifle-scope[hidden] { display: none; }
+.rifle-scope i {
+  position: absolute; left: 50%; top: 50%; width: min(77vh, 76vw); aspect-ratio: 1;
+  transform: translate(-50%, -50%); border-radius: 50%; border: 2px solid #282d2e;
+  box-shadow: 0 0 0 120vmax #080a0cef, inset 0 0 2.2rem #080a0ccc;
+  background: linear-gradient(#15191a, #15191a) center / 1px 100% no-repeat,
+              linear-gradient(#15191a, #15191a) center / 100% 1px no-repeat;
+}
+.rifle-scope b {
+  position: absolute; left: 50%; top: calc(50% + min(31vh, 30vw)); transform: translateX(-50%);
+  padding: .2em .45em; color: #fff; background: #080a0ccc; font: 600 14px var(--f-mono);
+}

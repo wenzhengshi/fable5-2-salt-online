@@ -73,18 +73,21 @@
     vortex.scale.y = 1.12;
     gate.add(vortex);
 
-    const sign = document.createElement('canvas');
-    sign.width = 512;
-    sign.height = 96;
-    const ctx = sign.getContext('2d');
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 52px sans-serif';
-    ctx.fillStyle = '#b9f4ff';
-    ctx.shadowColor = '#18bcff';
-    ctx.shadowBlur = 14;
-    ctx.fillText(document.documentElement.lang === 'en-US' ? 'TIME RIFT' : '时空隧道', 256, 68);
+    function signTexture(chinese, english) {
+      const sign = document.createElement('canvas');
+      sign.width = 512;
+      sign.height = 96;
+      const ctx = sign.getContext('2d');
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 52px sans-serif';
+      ctx.fillStyle = '#b9f4ff';
+      ctx.shadowColor = '#18bcff';
+      ctx.shadowBlur = 14;
+      ctx.fillText(document.documentElement.lang === 'en-US' ? english : chinese, 256, 68);
+      return new THREE.CanvasTexture(sign);
+    }
     const label = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: new THREE.CanvasTexture(sign), depthWrite: false
+      map: signTexture('时空隧道', 'TIME RIFT'), depthWrite: false
     }));
     label.position.y = 1.76;
     label.scale.set(3.6, .675, 1);
@@ -92,10 +95,17 @@
     gate.visible = false;
     scene.add(gate);
 
-    const returnGate = gate.clone();
-    returnGate.name = 'qingyun-return-tunnel';
-    returnGate.position.set(zone.returnGate.x, zone.returnGate.y + 1.45, zone.returnGate.z);
-    scene.add(returnGate);
+    const returnLabel = label.material.clone();
+    returnLabel.map = signTexture('返回港口', 'RETURN TO PORT');
+
+    const returnGates = [zone.returnGate, zone.mainReturnGate].map((point, index) => {
+      const portal = gate.clone();
+      portal.name = index === 0 ? 'qingyun-return-tunnel' : 'qingyun-main-return-tunnel';
+      portal.position.set(point.x, point.y + 1.45, point.z);
+      portal.children.find(child => child.isSprite).material = returnLabel;
+      scene.add(portal);
+      return portal;
+    });
 
     let map = null;
     let collision = null;
@@ -193,7 +203,7 @@
     ].filter(Boolean);
 
     function drawQingyun(dt, frameTime) {
-      returnGate.visible = true;
+      for (const portal of returnGates) portal.visible = true;
       const hidden = portRoots().filter(object => object.visible);
       for (const object of hidden) object.visible = false;
       const clearAlpha = renderer.getClearAlpha();
@@ -234,7 +244,7 @@
         renderer.shadowMap.autoUpdate = shadowAutoUpdate;
         renderer.setClearColor(clearColor, clearAlpha);
         renderer.setRenderTarget(null);
-        returnGate.visible = false;
+        for (const portal of returnGates) portal.visible = false;
         for (const object of hidden) object.visible = true;
       }
     }

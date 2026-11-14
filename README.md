@@ -5,6 +5,10 @@
 项目基于 Node.js、Express、WebSocket 与 Three.js 构建，无需数据库。排行榜保存在本地 `data/` 目录中。
 
 <p align="center">
+  <a href="https://tulingai.com/app-market.html?id=49"><strong>App 市场快速下载 →</strong></a>
+</p>
+
+<p align="center">
   <img src="docs/media/screenshots/port-containers.jpg" width="920" alt="盐线行动港口集装箱区实机画面">
 </p>
 

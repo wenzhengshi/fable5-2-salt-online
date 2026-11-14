@@ -50,16 +50,18 @@
 
 ## Android 客户端
 
-[下载盐线行动 Android v1.0 APK](https://github.com/wenzhengshi/fable5-2-salt-online/releases/download/android-v1.0/saltline-android-v1.0.apk)
+[下载盐线行动 Android v1.0 APK（支持应用内连麦）](https://github.com/wenzhengshi/fable5-2-salt-online/releases/download/android-v1.0-voice/saltline-android-v1.0-voice.apk)
 
 - 支持 Android 5.0 及以上版本
-- APK 大小约 5.16 MiB
+- APK 大小约 5.83 MiB
 - 首次启动需要联网，应用会加载当前在线版游戏
-- SHA-256：`e30974084caff7801c38808dd6212fee1b4e917c33a00ee555186e576a1c1bbe`
+- 支持应用内连麦，首次使用时需要授予麦克风权限
+- 包名：`cn.jicreate.web_jjuuxm.a6b6b281d9f`
+- SHA-256：`91a3069646b6f412c892912d774c233bc884c85c0f64cf67e7335b55d1d1dea5`
 
-> 当前 Android v1.0 APK 构建早于在线语音功能，不包含麦克风权限。需要使用语音时，请进入浏览器在线版；后续需重新构建 Android 客户端。
+> 本次构建的包名与旧版 Android v1.0 不同，因此会作为独立应用安装；设备中的旧版客户端不会自动覆盖。
 
-版本说明与后续构建见 [Android v1.0 发布页](https://github.com/wenzhengshi/fable5-2-salt-online/releases/tag/android-v1.0)。
+版本说明与后续构建见 [Android v1.0（应用内连麦）发布页](https://github.com/wenzhengshi/fable5-2-salt-online/releases/tag/android-v1.0-voice)。
 
 ## 游戏预览
 

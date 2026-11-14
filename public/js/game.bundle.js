@@ -5817,7 +5817,7 @@ vObjP = position; vONrm = normal; vWNrm = normalize(mat3(modelMatrix) * normal);
           <div class="seg" role="group" aria-labelledby="l-q">${dM.map(U=>`<button data-q="${U}" aria-pressed="false">${({low:"低",medium:"中",high:"高",ultra:"极高"})[U]}</button>`).join("")}</div></div>
         <div class="row"><label for="s-sens">鼠标灵敏度</label><div class="slider"><input id="s-sens" type="range" min="0.2" max="3" step="0.05"><output data-o="sens"></output></div></div>
         <div class="row"><label id="l-inv">反转 Y 轴</label><button class="toggle" data-act="invert" aria-labelledby="l-inv" aria-pressed="false"><i></i><span>关</span></button></div>
-        <div class="row"><label id="l-inf">无限子弹</label><button class="toggle" data-act="infiniteAmmo" aria-labelledby="l-inf" aria-pressed="false" title="开启后射击不消耗弹药，也无需换弹"><i></i><span>关</span></button></div>
+        <div class="row"><label id="l-inf">无限子弹</label><button class="toggle" data-act="infiniteAmmo" aria-labelledby="l-inf" aria-pressed="false" title="备弹无限，但弹夹打空后仍需换弹"><i></i><span>关</span></button></div>
         <div class="row"><label for="s-vol">主音量</label><div class="slider"><input id="s-vol" type="range" min="0" max="100" step="1"><output data-o="vol"></output></div></div>
         <div class="row"><label for="s-fov">视野范围</label><div class="slider"><input id="s-fov" type="range" min="60" max="95" step="1"><output data-o="fov"></output></div></div>
         <div class="row" data-row="fs"><label id="l-fs">显示</label><button class="btn small" data-act="fullscreen" aria-labelledby="l-fs fs-t"><span id="fs-t">进入全屏</span></button></div>

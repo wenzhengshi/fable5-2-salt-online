@@ -9,6 +9,7 @@
   const CORE_SCRIPTS = [
     'audio-tap.js',
     'game.bundle.js',
+    'flight-collision.js',
     'ammo.js',
     'sail.js',
     'focus-mode.js',

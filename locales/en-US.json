@@ -167,7 +167,7 @@
     "任务简报": "Mission debrief",
     "设置与操作说明": "Settings and controls",
     "操作一览": "Controls at a glance",
-    "开启后射击不消耗弹药，也无需换弹": "Shots cost no ammo and reloading is disabled",
+    "备弹无限，但弹夹打空后仍需换弹": "Reserve ammo is unlimited, but the magazine still requires a reload",
     "推进": "Thrust",
     "倒车": "Reverse",
     "左转": "Turn left",

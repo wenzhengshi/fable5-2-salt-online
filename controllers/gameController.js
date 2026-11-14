@@ -67,6 +67,12 @@ module.exports = {
         boatSeats: 4,
         boatMissionRequired: false,
         externalCombatZone: true,
+        flightCollision: true,
+        droneAirWall: true,
+        typingVisibility: true,
+        airborneUnitSwitchRespawn: true,
+        infiniteAmmoRequiresReload: true,
+        serverAuthorityLegacyGuards: true,
         compactMobileType: true
       },
       online: getOnlinePlayers().length,

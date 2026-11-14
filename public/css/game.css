@@ -188,12 +188,11 @@ body { background: var(--ink); color: var(--bone); overflow: hidden; font-family
 .h-ammo-r { font: 500 15px/1 var(--f-mono); color: var(--bone); padding-bottom: 3px; }
 .h-ammo-r::before { content: '/ '; color: var(--bone-dim); }
 .h-ammo.low .h-ammo-n { color: var(--signal); }
-.h-ammo.infinite .h-ammo-n { color: var(--signal-hot); font-size: 0; }
-.h-ammo.infinite .h-ammo-n::after { content: '∞'; font-size: 76px; }
+.h-ammo.infinite .h-ammo-n { color: var(--signal-hot); }
+.h-ammo.infinite .h-ammo-n::after { content: ''; font-size: inherit; }
 .h-ammo.infinite .h-ammo-r { font-size: 0; }
 .h-ammo.infinite .h-ammo-r::before { content: ''; }
 .h-ammo.infinite .h-ammo-r::after { content: var(--h-ammo-infinite-label, '无限'); font-size: 15px; }
-.h-ammo.infinite .h-cue { display: none; }
 .h-pips { display: flex; justify-content: flex-end; gap: 2px; margin: 9px 0 7px; }
 .h-pips i { width: 3px; height: 11px; background: var(--bone); box-shadow: 0 0 2px rgba(0, 0, 0, .5); }
 .h-pips i.off { background: var(--bone-faint); box-shadow: none; }

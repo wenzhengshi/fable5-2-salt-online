@@ -14,6 +14,8 @@ const client = read('public/js/multiplayer.js');
 const server = read('realtime/multiplayer.js');
 const select = read('public/js/soldier-select.js');
 const mobileCss = read('public/css/mobile.css');
+const gameCss = read('public/css/game.css');
+const ammoScript = read('public/js/ammo.js');
 const zh = JSON.parse(read('locales/zh-CN.json'));
 const en = JSON.parse(read('locales/en-US.json'));
 
@@ -39,6 +41,7 @@ assert.match(bootGate, /'community\.js'/, '启动门控必须加载社区脚本'
 assert.match(bootGate, /'kill-streak\.js'/, '启动门控必须加载连杀播报');
 assert.match(bootGate, /'replay\.js'/, '启动门控必须加载本地回放');
 assert.match(bootGate, /'death-replay-3d\.js'/, '启动门控必须加载 3D 死亡回放');
+assert.match(bootGate, /'flight-collision\.js'/, '启动门控必须加载飞行碰撞模块');
 assert.ok(
   bootGate.indexOf('death-replay-3d.js') < bootGate.indexOf('multiplayer.js'),
   '3D 死亡回放必须在多人客户端之前加载'
@@ -55,6 +58,22 @@ assert.match(client, /SaltDeathReplay3D/, '死亡回放必须接入 Three.js 渲
 assert.match(client, /chaseLightCleanup/, '搜索灯必须有离场清理路径');
 assert.match(client, /recordSnapshotTrails/, '死亡回放必须使用老版快照数据');
 assert.match(client, /snapshotTrails\.clear\(\)/, '断线时必须清空快照轨迹');
+assert.match(client, /window\.SaltFlightCollision/, '无人机必须接入飞行碰撞模块');
+assert.match(client, /resolved\.blockedUp \|\| resolved\.blockedDown/, '飞行单位必须处理顶部与底部碰撞');
+assert.match(client, /large-ship-flight-guard/, '大船可视模型必须生成整船飞行碰撞包络');
+assert.match(client, /FLIGHT_AIR_WALL = Object\.freeze/, '无人机必须恢复旧版空气墙');
+assert.match(client, /clampToBounds\(player\.pos, FLIGHT_AIR_WALL/, '空气墙必须限制无人机水平位置');
+assert.match(client, /state === 'playing' \|\| state === 'paused'/, '聊天或暂停时玩家必须保持在线可见');
+assert.match(client, /!document\.hidden/, '页面切到后台时玩家仍应按现有逻辑隐藏');
+assert.match(client, /function randomGroundSpawn/, '空中切换单位必须支持地面随机复活');
+assert.match(client, /respawnAfterSwitch && nextSoldier !== 'drone'/, '空中无人机切换单位后必须立即随机复活');
+assert.doesNotMatch(ammoScript, /this\.ammo\s*=\s*this\.magSize/, '无限弹药不得每帧直接补满弹夹');
+assert.match(ammoScript, /ensureInfiniteReserve/, '无限弹药必须只补充备弹');
+assert.doesNotMatch(gameCss, /\.h-ammo\.infinite \.h-cue\s*\{\s*display:\s*none/, '无限弹药仍必须显示换弹提示');
+assert.match(gameCss, /\.h-ammo\.infinite \.h-ammo-r::after/, '无限弹药 HUD 必须保留弹夹并标记无限备弹');
+assert.match(server, /playerAuthority\.clampDronePosition/, '服务端必须强制无人机空气墙');
+assert.match(server, /playerAuthority\.consumeShot/, '服务端必须校验老版本弹夹与换弹');
+assert.match(server, /playerAuthority\.consumeHitCredit/, '服务端必须限制老版本命中包刷伤害');
 assert.match(client, /tulingai\.com\/app-market\.html\?id=49/, '标题页必须提供安卓应用市场入口');
 assert.match(client, /createMarketLink\('title'\)/, '标题页必须挂载安卓应用市场入口');
 assert.match(client, /createMarketLink\('paused'\)/, '暂停菜单必须挂载安卓应用市场入口');
@@ -86,6 +105,9 @@ console.log(JSON.stringify({
     'kill-streak',
     'local-replay',
     'android-market',
+    'flight-collision',
+    'server-authority',
+    'infinite-ammo-reload',
     'death-replay',
     'death-replay-3d',
     'drone-searchlight',

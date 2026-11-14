@@ -149,7 +149,26 @@
   let localUnitKind = null;
   let localDroneLight = null;
   let unitFlightY = 0;
+  let unitFlightPrev = null;
+  let flightGuardBoxes = [];
+  let flightCollisionBoxes = null;
+  let flightCollisionBase = null;
+  let flightCollisionBaseCount = 0;
   let lastUnitBadgeAt = 0;
+  const FLIGHT_COLLISION = {
+    radius: 0.72,
+    bottom: 0.12,
+    top: 1.2,
+    maxIterations: 5
+  };
+  const FLIGHT_AIR_WALL = Object.freeze({
+    minX: -40,
+    maxX: 40,
+    minZ: -30,
+    maxZ: 30,
+    padding: 0.4
+  });
+  const DRONE_AIRBORNE_CLEARANCE = 1.8;
   const virtualUnitInput = {
     ascend: false,
     descend: false
@@ -705,6 +724,43 @@
       }
     }
     return list;
+  }
+
+  function randomGroundSpawn() {
+    const list = [];
+    try {
+      const start = G && G.level && G.level.playerStart;
+      if (start && start.pos) {
+        list.push({ x: start.pos.x, y: start.pos.y, z: start.pos.z });
+      }
+      const enemySpawns = (G && G.level && G.level.enemySpawns) || [];
+      for (const spawn of enemySpawns) {
+        if (!spawn || !spawn.pos || spawn.type === 'air') continue;
+        const y = Number(spawn.pos.y) || 0;
+        if (y > 5) continue;
+        list.push({ x: Number(spawn.pos.x) || 0, y, z: Number(spawn.pos.z) || 0 });
+      }
+    } catch (err) { /* ignore */ }
+    const boat = window.__saltBoat;
+    if (boat && boat.externalUnlocked && Array.isArray(window.__SALT_EXTERNAL_SPAWNS)) {
+      for (const spawn of window.__SALT_EXTERNAL_SPAWNS) {
+        if (!spawn) continue;
+        const x = Number(spawn.x);
+        const y = Number(spawn.y);
+        const z = Number(spawn.z);
+        if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+        list.push({ x, y: Number.isFinite(y) ? y : 0, z });
+      }
+    }
+    if (!list.length) return defaultSpawn();
+    return list[Math.floor(Math.random() * list.length)];
+  }
+
+  function shouldRespawnAfterUnitSwitch() {
+    if (!G || !G.player || !G.player.alive) return false;
+    if (normalizeSoldier(mySoldier) !== 'drone') return false;
+    const ground = groundHeightAt(G.player.pos.x, G.player.pos.z, G.player.pos.y + 1.5);
+    return G.player.pos.y - ground > DRONE_AIRBORNE_CLEARANCE;
   }
 
   function defaultSpawn() {
@@ -1388,6 +1444,7 @@
       G.player.enabled = true;
       G.player.invulnerable = true;
       unitFlightY = 0;
+      unitFlightPrev = null;
       G.game.state = 'playing';
       G.hud.show(true);
       G.game.menus.show('none');
@@ -2164,8 +2221,9 @@
     if (!force && now - lastStateAt < 90) return;
     lastStateAt = now;
     const state = G.game && G.game.state;
-    const active = state === 'playing' && !respawn.active;
     const player = G.player;
+    const active = player.alive && !respawn.active && !document.hidden &&
+      (state === 'playing' || state === 'paused');
     send({
       type: 'state',
       pos: { x: player.pos.x, y: player.pos.y, z: player.pos.z },
@@ -2304,19 +2362,58 @@
     }).catch(() => {});
   }
 
+  function installFlightGuardBoxes() {
+    flightGuardBoxes = [];
+    flightCollisionBoxes = null;
+    flightCollisionBase = null;
+    flightCollisionBaseCount = 0;
+    const ship = G && G.backdrop && G.backdrop.ship;
+    if (!ship || !THREE || typeof THREE.Box3 !== 'function') return;
+    try {
+      ship.updateWorldMatrix(true, true);
+      for (const child of ship.children || []) {
+        const box = new THREE.Box3().setFromObject(child);
+        if (!box || box.isEmpty()) continue;
+        const size = box.getSize(new THREE.Vector3());
+        if (size.x < 0.04 || size.y < 0.04 || size.z < 0.04) continue;
+        flightGuardBoxes.push({
+          min: { x: box.min.x, y: box.min.y, z: box.min.z },
+          max: { x: box.max.x, y: box.max.y, z: box.max.z },
+          surface: 'metal',
+          tag: 'large-ship-flight-guard'
+        });
+      }
+    } catch (err) {
+      flightGuardBoxes = [];
+    }
+  }
+
+  function getFlightCollisionBoxes() {
+    const base = G && G.physics && Array.isArray(G.physics.boxes) ? G.physics.boxes : [];
+    if (flightCollisionBoxes && flightCollisionBase === base &&
+        flightCollisionBaseCount === base.length) {
+      return flightCollisionBoxes;
+    }
+    flightCollisionBase = base;
+    flightCollisionBaseCount = base.length;
+    flightCollisionBoxes = flightGuardBoxes.length ? base.concat(flightGuardBoxes) : base;
+    return flightCollisionBoxes;
+  }
+
   function applyLocalUnitFrame(dt) {
     if (!G || !G.player || !G.camera) return;
     if (window.__saltBoat && window.__saltBoat.riding) return;
     const player = G.player;
     const input = G.input;
     const kind = normalizeSoldier(mySoldier);
+    let ground = 0;
     if (!isMachine(kind)) {
       disposeLocalDroneLight();
+      unitFlightPrev = null;
       return;
     }
 
     if (kind === 'drone') {
-      let ground = 0;
       try {
         ground = Number(G.physics.groundHeight(player.pos.x, player.pos.z, player.pos.y + 3)) || 0;
       } catch (err) {
@@ -2329,14 +2426,51 @@
       if (ascend) unitFlightY += 4.6 * dt;
       if (descend) unitFlightY -= 4.6 * dt;
       unitFlightY = Math.max(minY, Math.min(22, unitFlightY));
-      player.pos.y = unitFlightY;
+      const candidate = {
+        x: player.pos.x,
+        y: unitFlightY,
+        z: player.pos.z
+      };
+      const collision = window.SaltFlightCollision;
+      if (collision && G.physics && Array.isArray(G.physics.boxes)) {
+        const resolved = collision.resolve(candidate, getFlightCollisionBoxes(), {
+          ...FLIGHT_COLLISION,
+          previous: unitFlightPrev
+        });
+        player.pos.x = resolved.x;
+        player.pos.z = resolved.z;
+        if (typeof collision.clampToBounds === 'function') {
+          const wall = collision.clampToBounds(player.pos, FLIGHT_AIR_WALL, FLIGHT_AIR_WALL.padding);
+          player.pos.x = wall.x;
+          player.pos.z = wall.z;
+          if (wall.clampedX) player.vel.x = 0;
+          if (wall.clampedZ) player.vel.z = 0;
+        }
+        unitFlightY = Math.max(minY, Math.min(22, resolved.y));
+        player.pos.y = unitFlightY;
+        if (resolved.hitWall) {
+          if (Math.abs(resolved.x - candidate.x) > 0.0001) player.vel.x = 0;
+          if (Math.abs(resolved.z - candidate.z) > 0.0001) player.vel.z = 0;
+        }
+        if (resolved.blockedUp || resolved.blockedDown) player.vel.y = 0;
+      } else {
+        player.pos.x = clampNum(player.pos.x, FLIGHT_AIR_WALL.minX + FLIGHT_AIR_WALL.padding, FLIGHT_AIR_WALL.maxX - FLIGHT_AIR_WALL.padding);
+        player.pos.z = clampNum(player.pos.z, FLIGHT_AIR_WALL.minZ + FLIGHT_AIR_WALL.padding, FLIGHT_AIR_WALL.maxZ - FLIGHT_AIR_WALL.padding);
+        player.pos.y = unitFlightY;
+      }
       player.vel.y = 0;
       player.onGround = false;
       player.eye.set(player.pos.x, player.pos.y + 0.9, player.pos.z);
+      unitFlightPrev = {
+        x: player.pos.x,
+        y: player.pos.y,
+        z: player.pos.z
+      };
     } else {
       unitFlightY = 0;
+      unitFlightPrev = null;
       try {
-        const ground = Number(G.physics.groundHeight(player.pos.x, player.pos.z, player.pos.y + 2));
+        ground = Number(G.physics.groundHeight(player.pos.x, player.pos.z, player.pos.y + 2));
         if (Number.isFinite(ground)) player.pos.y = ground;
       } catch (err) { /* ignore */ }
       player.eye.set(player.pos.x, player.pos.y + 0.68, player.pos.z);
@@ -2715,6 +2849,7 @@
     }
 
     patchCombat();
+    installFlightGuardBoxes();
     patchPlayerForUnits();
     installLocalUnit();
     updateUnitBadge();
@@ -2849,10 +2984,15 @@
       return true;
     },
     setSoldier(value) {
-      mySoldier = normalizeSoldier(value);
+      const respawnAfterSwitch = shouldRespawnAfterUnitSwitch();
+      const nextSoldier = normalizeSoldier(value);
+      mySoldier = nextSoldier;
       saveSoldier(mySoldier);
       if (ws && ws.readyState === 1) send({ type: 'soldier', soldier: mySoldier });
       applyUnitSelection();
+      if (respawnAfterSwitch && nextSoldier !== 'drone') {
+        revive(randomGroundSpawn(), Date.now() + 1200);
+      }
       return mySoldier;
     }
   };

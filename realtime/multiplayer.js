@@ -6,6 +6,7 @@ const contentFilter = require('../services/contentFilter');
 const chatHistory = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
 const deathReplay = require('../services/deathReplay');
+const playerAuthority = require('../services/playerAuthority');
 
 const TICK_MS = 100;
 const RESPAWN_MS = 5000;
@@ -636,6 +637,7 @@ function handleMessage(player, raw) {
       player.name = uniqueName(filtered ? '' : requested, player);
       player.spawns = sanitizeSpawns(msg.spawns);
       player.soldier = normalizeSoldier(msg.soldier);
+      playerAuthority.resetWeaponState(player);
       player.joined = true;
       const focused = player.focusUntil > now;
       if (focused) {
@@ -662,6 +664,7 @@ function handleMessage(player, raw) {
         break;
       }
       player.soldier = soldier;
+      playerAuthority.resetWeaponState(player);
       broadcast({ type: 'soldierState', id: player.id, soldier });
       break;
     }
@@ -886,7 +889,7 @@ function handleMessage(player, raw) {
       if (player.boatSeat == null) {
         const pos = safeVec(msg.pos, player.pos);
         if (pos) {
-          player.pos = pos;
+          player.pos = playerAuthority.clampDronePosition(pos, player.soldier, player.boatSeat) || player.pos;
         }
       }
       if (Number.isFinite(Number(msg.yaw))) player.yaw = Number(msg.yaw);
@@ -912,7 +915,13 @@ function handleMessage(player, raw) {
       const origin = safeVec(msg.origin);
       const dir = safeVec(msg.dir);
       if (!origin || !dir) break;
+      if (Math.hypot(origin.x - player.pos.x, origin.z - player.pos.z) > 2.5 ||
+          Math.abs(origin.y - (player.pos.y + 1.2)) > 3.5) {
+        break;
+      }
+      if (!playerAuthority.consumeShot(player, now)) break;
       deathReplay.recordShot(player, origin, dir, now);
+      playerAuthority.acceptShotCredit(player, now);
       broadcast(
         { type: 'shot', id: player.id, origin, dir },
         (other) => other !== player && other.active
@@ -935,6 +944,7 @@ function handleMessage(player, raw) {
         player.pos.z - target.pos.z
       );
       if (dist > 90) break;
+      if (!playerAuthority.consumeHitCredit(player, now)) break;
       target.hp = Math.max(0, target.hp - HIT_DAMAGE);
       const killed = target.hp <= 0;
       deathReplay.recordHit(player, target, HIT_DAMAGE, target.hp, killed, now);
@@ -997,6 +1007,7 @@ function handleMessage(player, raw) {
       player.hp = MAX_HP;
       player.respawnAt = 0;
       player.pos = { x: spawn.x, y: spawn.y, z: spawn.z };
+      playerAuthority.resetWeaponState(player);
       player.protectedUntil = now + PROTECT_MS;
       send(player.ws, {
         type: 'respawned',

@@ -42,26 +42,43 @@
         }
 
         const hookedWeapons = new WeakSet();
+        const finiteReserve = new WeakMap();
+        function ensureInfiniteReserve(weapon) {
+          if (!weapon || !infiniteAmmo) return;
+          if (!finiteReserve.has(weapon)) {
+            finiteReserve.set(weapon, Math.max(0, Number(weapon.reserve) || 0));
+          }
+          const magSize = Math.max(1, Number(weapon.magSize) || 30);
+          weapon.reserve = Math.max(Number(weapon.reserve) || 0, magSize * 12);
+        }
+
+        function restoreFiniteReserve(weapon) {
+          if (!weapon || infiniteAmmo || !finiteReserve.has(weapon)) return;
+          weapon.reserve = finiteReserve.get(weapon);
+          finiteReserve.delete(weapon);
+        }
+
         function syncWeapon() {
           const weapon = window.__G && window.__G.weapon;
           if (!weapon || typeof weapon.update !== "function") return;
 
           weapon.infiniteAmmo = infiniteAmmo;
-          if (infiniteAmmo) weapon.ammo = weapon.magSize;
+          if (infiniteAmmo) ensureInfiniteReserve(weapon);
+          else restoreFiniteReserve(weapon);
 
           if (hookedWeapons.has(weapon)) return;
           const originalUpdate = weapon.update;
           const originalReset = weapon.reset;
           weapon.update = function () {
-            if (this.infiniteAmmo) this.ammo = this.magSize;
+            if (this.infiniteAmmo) ensureInfiniteReserve(this);
             const result = originalUpdate.apply(this, arguments);
-            if (this.infiniteAmmo) this.ammo = this.magSize;
+            if (this.infiniteAmmo) ensureInfiniteReserve(this);
             return result;
           };
           if (typeof originalReset === "function") {
             weapon.reset = function () {
               const result = originalReset.apply(this, arguments);
-              if (this.infiniteAmmo) this.ammo = this.magSize;
+              if (this.infiniteAmmo) ensureInfiniteReserve(this);
               return result;
             };
           }
@@ -99,7 +116,7 @@
 
           const row = document.createElement("div");
           row.className = "row";
-          row.innerHTML = '<label id="l-inf">' + localeText("无限子弹") + '</label><button class="toggle" data-act="infiniteAmmo" aria-labelledby="l-inf" aria-pressed="false" title="' + localeText("开启后射击不消耗弹药，也无需换弹") + '"><i></i><span>' + localeText("关") + '</span></button>';
+          row.innerHTML = '<label id="l-inf">' + localeText("无限子弹") + '</label><button class="toggle" data-act="infiniteAmmo" aria-labelledby="l-inf" aria-pressed="false" title="' + localeText("备弹无限，但弹夹打空后仍需换弹") + '"><i></i><span>' + localeText("关") + '</span></button>';
           const invert = pane.querySelector('[data-act="invert"]');
           const invertRow = invert && invert.closest(".row");
           if (invertRow && invertRow.parentNode === pane) invertRow.after(row);

@@ -5,10 +5,10 @@
 项目基于 Node.js、Express、WebSocket 与 Three.js 构建，无需数据库。排行榜保存在本地 `data/` 目录中。
 
 <p align="center">
-  <img src="docs/media/screenshots/qingyun-mountains.jpg" width="920" alt="盐线行动青云地图的群峰、桃林与湖面倒影">
+  <img src="docs/media/screenshots/port-containers.jpg" width="920" alt="盐线行动港口集装箱区实机画面">
 </p>
 
-<p align="center"><sub>在港口集装箱与吊机之间交火，穿过时空隧道进入云海、桃林与石峰环绕的青云地图。</sub></p>
+<p align="center"><sub>从港口集装箱区出发，在仓库、吊机与外海之间交火，也可穿过时空隧道进入青云地图。</sub></p>
 
 ## v1.25.7 服务端约束旧客户端
 
@@ -105,27 +105,19 @@
 
 <p align="center"><sub>码头交火 · 集装箱、仓库与吊机组成多条进攻路线</sub></p>
 
-| 集装箱区 | 仓库内部 |
+| 仓库内部 | 时空隧道 |
 | --- | --- |
-| ![集装箱区](docs/media/screenshots/port-containers.jpg) | ![仓库内部](docs/media/screenshots/port-warehouse.jpg) |
+| ![仓库内部](docs/media/screenshots/port-warehouse.jpg) | ![港口时空隧道](docs/media/screenshots/port-tunnel.jpg) |
 
-| 时空隧道 | 港口吊机 |
+| 港口吊机 | 撤离码头 |
 | --- | --- |
-| ![港口时空隧道](docs/media/screenshots/port-tunnel.jpg) | ![港口吊机与货船](docs/media/screenshots/port-crane.jpg) |
-
-<p align="center">
-  <img src="docs/media/screenshots/extraction-boat.jpg" width="900" alt="盐线行动撤离码头与船只">
-</p>
-
-<p align="center"><sub>撤离码头 · 登船离港后仍可在外海继续交战</sub></p>
+| ![港口吊机与货船](docs/media/screenshots/port-crane.jpg) | ![盐线行动撤离码头与船只](docs/media/screenshots/extraction-boat.jpg) |
 
 ### 青云地图
 
-<p align="center">
-  <img src="docs/media/screenshots/qingyun-overlook.jpg" width="900" alt="盐线行动青云地图俯瞰岩台、石阶与殿宇">
-</p>
-
-<p align="center"><sub>青云俯瞰 · 岩台与石阶连接悬空据点，时空隧道散布在主要路线上</sub></p>
+| 青云群峰 | 青云俯瞰 |
+| --- | --- |
+| ![青云地图群峰、桃林与湖面倒影](docs/media/screenshots/qingyun-mountains.jpg) | ![青云地图俯瞰岩台、石阶与殿宇](docs/media/screenshots/qingyun-overlook.jpg) |
 
 | 青云主殿 | 返回港口 |
 | --- | --- |

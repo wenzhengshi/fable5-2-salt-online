@@ -977,8 +977,8 @@ function handleMessage(player, raw) {
       }
       player.signEditAt = now;
       player.signBusy = true;
-      signRegistry.mutate(player, msg, now).then(({ sign, removed, reason }) => {
-        send(player.ws, { type: 'signResult', reason, removed: !!removed });
+      signRegistry.mutate(player, msg, now).then(({ sign, removed, reason, remaining }) => {
+        send(player.ws, { type: 'signResult', reason, removed: !!removed, remaining });
         if (sign) broadcastSign(sign, removed);
       }).catch(error => {
         console.error('[signs] save failed:', error.message);

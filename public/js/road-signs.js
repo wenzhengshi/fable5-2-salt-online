@@ -14,13 +14,14 @@
       cancel: tr('取消', 'Cancel'),
       label: tr('牌面文字', 'Sign text'),
       help: tr('瞄准五米内的地面，可在绿色标记处立牌。', 'Aim at the ground within five metres. The green marker shows where the sign will go.'),
-      rules: tr('路牌会一直留在原地。只有你能拔除，最早是次日零点（北京时间）。', 'The sign stays in place. Only you can remove it, from midnight the next day in Beijing time.'),
+      rules: tr('路牌会一直留在原地。每位玩家每天最多立 10 块；只有你能拔除，最早是次日零点（北京时间）。', 'The sign stays in place. Each player can place up to 10 signs per day. Only you can remove it, from midnight the next day in Beijing time.'),
       blue: tr('蓝底白字', 'Blue with white letters'),
       yellow: tr('黄底黑字', 'Yellow with black letters'),
       offline: tr('联网后才能立路牌。', 'Connect to multiplayer to place a sign.'),
       flagged: tr('你的路牌已被标记违规，牌面文字已替换。', 'Your road sign was flagged and its displayed text replaced.'),
       placed: tr('路牌已立好。', 'Sign planted.'),
       removed: tr('路牌已拔除。', 'Sign removed.'),
+      remaining: tr('今日还可立 {n} 块', '{n} signs remaining today'),
       confirm: tr('拔除这块路牌？', 'Remove this sign?'),
       reason: {
         occupied: tr('附近已经有路牌，请换个位置。', 'A sign is already here. Pick another spot.'),
@@ -32,7 +33,14 @@
         map: tr('请在青云宗或远征地图内操作。', 'Road signs are available in Qingyun and the expedition maps.'),
         identity: tr('请启用本站 Cookie 后刷新。', 'Enable cookies for this site and reload.'),
         storage: tr('路牌保存暂时失败，请重试。', 'Could not save the sign. Try again.'),
-        busy: tr('操作过快，请稍等。', 'Wait a moment and try again.')
+        busy: tr('操作过快，请稍等。', 'Wait a moment and try again.'),
+        cooldown: tr('立牌间隔太短，请稍后再试。', 'You are placing signs too quickly. Try again shortly.'),
+        burst: tr('短时间立牌过多，请稍后再试。', 'Too many signs were placed in a short time. Try again later.'),
+        daily: tr('今日最多只能立 10 块路牌，明天再试。', 'You have reached the limit of 10 signs today. Try again tomorrow.'),
+        density: tr('这一片路牌已经太密集，请换个位置。', 'This area already has too many signs. Pick another location.'),
+        ownerLimit: tr('你在附近或该地图的路牌数量已达上限。', 'You have reached the sign limit for this area or map.'),
+        networkLimit: tr('当前网络设备的立牌数量已达上限，请稍后再试。', 'This network has reached its sign limit. Try again later.'),
+        mapFull: tr('该地图的路牌已满，暂时无法继续立牌。', 'This map has reached its sign capacity.')
       }
     };
 
@@ -209,7 +217,11 @@
         return;
       }
       if (msg.type === 'signResult') {
-        notice(msg.reason ? (text.reason[msg.reason] || text.reason.storage) : (msg.removed ? text.removed : text.placed));
+        let message = msg.reason ? (text.reason[msg.reason] || text.reason.storage) : (msg.removed ? text.removed : text.placed);
+        if (!msg.reason && !msg.removed && Number.isFinite(Number(msg.remaining))) {
+          message += ' · ' + text.remaining.replace('{n}', String(msg.remaining));
+        }
+        notice(message);
         return;
       }
       if (msg.map !== map) return;

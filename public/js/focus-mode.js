@@ -119,8 +119,14 @@
     record: null,
     targetId: null,
     targetSince: 0,
+    targetManual: false,
+    targetNoticeAt: 0,
+    spectatorSignature: '',
+    renderedTargetId: '',
     game: null,
     resumeGameplay: false,
+    preFocusState: '',
+    lateSpawnUntil: 0,
     lastEndAt: 0,
     finishFallbackAt: 0,
     statusAt: 0,
@@ -134,7 +140,11 @@
     fingerprint: identity.fingerprint,
     get active() { return state.active; },
     get until() { return state.until; },
-    get kind() { return state.kind; }
+    get kind() { return state.kind; },
+    get targetId() { return state.targetId; },
+    get targetManual() { return state.targetManual; },
+    switchTarget(direction) { return stepTarget(Number(direction) || 1); },
+    selectTarget(id) { return selectTarget(id, true); }
   };
 
   function formatClock(ms) {
@@ -184,9 +194,25 @@
     '<div class="focus-stage">',
     '  <div class="focus-reticle" aria-hidden="true"><i></i><b></b></div>',
     '  <div class="focus-target-card">',
-    '    <span class="focus-target-k">' + t('watching') + '</span>',
+    '    <div class="focus-target-topline">',
+    '      <span class="focus-target-k">' + t('watching') + '</span>',
+    '      <button type="button" class="focus-auto-toggle is-active" id="focus-auto-toggle" data-focus-auto aria-pressed="true">',
+    '        <i aria-hidden="true"></i><span id="focus-auto-label">' + t('targetAuto') + '</span>',
+    '      </button>',
+    '    </div>',
     '    <b id="focus-target-name">' + t('waiting') + '</b>',
     '    <em id="focus-target-unit"></em>',
+    '    <div class="focus-target-switch">',
+    '      <button type="button" class="focus-switch-button" data-focus-step="-1" aria-label="' + t('previousTarget') + '">',
+    '        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>',
+    '      </button>',
+    '      <span class="focus-target-count" id="focus-target-count">' + t('targetCounter', { index: 0, total: 0 }) + '</span>',
+    '      <button type="button" class="focus-switch-button" data-focus-step="1" aria-label="' + t('nextTarget') + '">',
+    '        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>',
+    '      </button>',
+    '      <span class="focus-target-hint">' + t('switchHint') + '</span>',
+    '    </div>',
+    '    <div class="focus-spectator-list" id="focus-spectator-list" role="listbox" aria-label="' + t('spectatorList') + '"></div>',
     '  </div>',
     '  <div class="focus-waiting" id="focus-waiting" hidden><b>' + t('waiting') + '</b><span>' + t('waitingHint') + '</span></div>',
     '</div>',
@@ -226,6 +252,10 @@
     progress: root.querySelector('#focus-progress'),
     targetName: root.querySelector('#focus-target-name'),
     targetUnit: root.querySelector('#focus-target-unit'),
+    targetCount: root.querySelector('#focus-target-count'),
+    autoToggle: root.querySelector('#focus-auto-toggle'),
+    autoLabel: root.querySelector('#focus-auto-label'),
+    spectatorList: root.querySelector('#focus-spectator-list'),
     waiting: root.querySelector('#focus-waiting'),
     record: root.querySelector('#focus-record'),
     kicker: root.querySelector('#focus-kicker'),
@@ -290,8 +320,41 @@
 
   function detectResumeGameplay() {
     const game = state.game || window.__G;
-    const value = game && game.game && game.game.state;
+    const value = game && game.game ? String(game.game.state || '') : '';
+    state.preFocusState = value;
     state.resumeGameplay = value === 'playing' || value === 'paused' || value === 'dead' || value === 'respawning';
+  }
+
+  function deployFocusSpawn(message) {
+    if (!message || !message.spawn) return false;
+    try {
+      if (window.__mp && typeof window.__mp.focusDeploy === 'function') {
+        window.__mp.focusDeploy(message.spawn, message.protectedUntil);
+        state.lateSpawnUntil = 0;
+        return true;
+      }
+    } catch (err) { /* ignore */ }
+    return false;
+  }
+
+  function restorePlayableState() {
+    const game = state.game || window.__G;
+    if (!game) return;
+    const before = state.preFocusState;
+    const wasPlayable = before === 'playing' || before === 'paused' || state.resumeGameplay;
+    if (!wasPlayable) return;
+    const gameApi = game.game || {};
+    try {
+      if (gameApi.state === 'paused' && typeof gameApi.resume === 'function') gameApi.resume();
+    } catch (err) { /* ignore */ }
+    try { if (game.player) game.player.enabled = true; } catch (err) { /* ignore */ }
+    try { if (game.hud && game.hud.show) game.hud.show(true); } catch (err) { /* ignore */ }
+    try {
+      if (game.input && game.input.setGameplay) game.input.setGameplay(true);
+    } catch (err) { /* ignore */ }
+    try {
+      if (game.player && typeof game.player.syncView === 'function') game.player.syncView();
+    } catch (err) { /* ignore */ }
   }
 
   function activate(focus) {
@@ -304,6 +367,15 @@
     const wasActive = state.active;
     const kind = (focus && focus.kind) || (record && record.kind) || state.kind || 'manual';
     if (!state.active) detectResumeGameplay();
+    if (!wasActive) {
+      state.targetId = null;
+      state.targetSince = 0;
+      state.targetManual = false;
+      state.targetNoticeAt = 0;
+      state.spectatorSignature = '';
+      state.renderedTargetId = '';
+      state.lateSpawnUntil = 0;
+    }
     state.active = true;
     state.ending = false;
     state.finishFallbackAt = 0;
@@ -329,6 +401,10 @@
     state.ending = false;
     state.targetId = null;
     state.targetSince = 0;
+    state.targetManual = false;
+    state.targetNoticeAt = 0;
+    state.spectatorSignature = '';
+    state.renderedTargetId = '';
     state.until = 0;
     state.finishFallbackAt = 0;
     state.kind = 'manual';
@@ -336,22 +412,12 @@
     state.record = null;
     root.hidden = true;
     document.body.classList.remove('focus-mode-on');
-    const game = state.game || window.__G;
-    if (game && (state.resumeGameplay || (game.game && game.game.state === 'playing'))) {
-      try { if (game.player) game.player.enabled = true; } catch (err) { /* ignore */ }
-      try { if (game.hud && game.hud.show) game.hud.show(true); } catch (err) { /* ignore */ }
-      try {
-        if (game.input && game.input.setGameplay && game.game && game.game.state === 'playing') game.input.setGameplay(true);
-      } catch (err) { /* ignore */ }
-    }
-    if (message && message.spawn && state.resumeGameplay) {
-      try {
-        if (window.__mp && typeof window.__mp.focusDeploy === 'function') {
-          window.__mp.focusDeploy(message.spawn, message.protectedUntil);
-        }
-      } catch (err) { /* ignore */ }
-    }
+    const canSpawn = state.resumeGameplay;
+    const deployed = !!(canSpawn && message && message.spawn && deployFocusSpawn(message));
+    restorePlayableState();
+    state.lateSpawnUntil = canSpawn && !deployed ? Date.now() + 60000 : 0;
     state.resumeGameplay = false;
+    state.preFocusState = '';
     updateSettingsRow();
     if (wasActive) toast(t(endedKind === 'auto' ? 'autoEnded' : 'ended'));
   }
@@ -409,8 +475,19 @@
     const mp = window.__mp;
     if (!mp || !Array.isArray(mp.avatarList)) return [];
     const self = mp.id;
+    const order = new Map();
+    if (Array.isArray(mp.roster)) {
+      mp.roster.forEach(function (item, index) {
+        if (item && item.id != null) order.set(String(item.id), index);
+      });
+    }
     return mp.avatarList.filter(function (item) {
-      return item && item.data && item.id !== self && item.data.alive !== false;
+      return item && item.data && String(item.id) !== String(self) && item.data.alive !== false;
+    }).sort(function (a, b) {
+      const aOrder = order.has(String(a.id)) ? order.get(String(a.id)) : Number.MAX_SAFE_INTEGER;
+      const bOrder = order.has(String(b.id)) ? order.get(String(b.id)) : Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return String(a.data.name || '').localeCompare(String(b.data.name || ''));
     });
   }
 
@@ -418,33 +495,162 @@
     const list = targets();
     if (!list.length) {
       state.targetId = null;
+      state.targetManual = false;
       return null;
     }
     let current = null;
     for (const item of list) {
-      if (item.id === state.targetId) { current = item; break; }
+      if (String(item.id) === String(state.targetId)) { current = item; break; }
+    }
+    if (state.targetManual && current) return current;
+    if (state.targetManual && !current && state.targetId) {
+      state.targetManual = false;
+      state.targetId = null;
+      if (now - state.targetNoticeAt > 2500) {
+        state.targetNoticeAt = now;
+        toast(t('targetLeft'));
+      }
     }
     if (current && now - state.targetSince < 9000) return current;
-    const index = Math.floor(now / 9000) % list.length;
-    const next = list[index] || list[0];
-    if (!state.targetId || state.targetId !== next.id) {
-      state.targetId = next.id;
+    const index = list.findIndex(function (item) { return String(item.id) === String(state.targetId); });
+    const next = list[index >= 0 ? (index + 1) % list.length : 0] || list[0];
+    if (!state.targetId || String(state.targetId) !== String(next.id)) {
+      state.targetId = String(next.id);
       state.targetSince = now;
     }
     return next;
   }
 
-  function renderTarget(target) {
+  function unitText(kind) {
+    return mpText(UNIT_KEYS[kind] || 'unitMale');
+  }
+
+  function renderSpectatorList(list, target) {
+    const signature = list.map(function (item) {
+      return [item.id, (item.data && item.data.name) || '', (item.data && item.data.soldier) || ''].join('|');
+    }).join('||');
+    if (signature !== state.spectatorSignature) {
+      state.spectatorSignature = signature;
+      state.renderedTargetId = '';
+      ui.spectatorList.replaceChildren();
+      if (!list.length) {
+        const empty = document.createElement('span');
+        empty.className = 'focus-spectator-empty';
+        empty.textContent = t('targetEmpty');
+        ui.spectatorList.appendChild(empty);
+      } else {
+        list.forEach(function (item) {
+          const name = (item.data && item.data.name) || t('watching');
+          const kind = (item.data && item.data.soldier) || 'male';
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = 'focus-spectator-option';
+          option.dataset.focusTargetId = String(item.id);
+          option.setAttribute('role', 'option');
+          option.setAttribute('aria-selected', 'false');
+          option.title = name + ' · ' + unitText(kind);
+
+          const dot = document.createElement('i');
+          dot.className = 'focus-spectator-dot';
+          dot.style.background = (item.data && item.data.color) || '#ffb347';
+          dot.style.color = (item.data && item.data.color) || '#ffb347';
+          dot.setAttribute('aria-hidden', 'true');
+
+          const label = document.createElement('span');
+          label.textContent = name;
+          const unit = document.createElement('small');
+          unit.textContent = unitText(kind);
+
+          option.append(dot, label, unit);
+          ui.spectatorList.appendChild(option);
+        });
+      }
+    }
+    const activeId = target ? String(target.id) : '';
+    const selectionChanged = state.renderedTargetId !== activeId;
+    state.renderedTargetId = activeId;
+    ui.spectatorList.querySelectorAll('[data-focus-target-id]').forEach(function (option) {
+      const selected = option.dataset.focusTargetId === activeId;
+      option.classList.toggle('is-active', selected);
+      option.setAttribute('aria-selected', selected ? 'true' : 'false');
+      if (selected && selectionChanged) {
+        try { option.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (err) { /* ignore */ }
+      }
+    });
+  }
+
+  function renderTarget(target, list) {
+    const options = Array.isArray(list) ? list : targets();
     if (!target) {
-      ui.targetName.textContent = t('waiting');
-      ui.targetUnit.textContent = '';
+      setText(ui.targetName, t('waiting'));
+      setText(ui.targetUnit, '');
       ui.waiting.hidden = false;
+      setText(ui.targetCount, t('targetCounter', { index: 0, total: options.length }));
+      ui.autoToggle.classList.toggle('is-active', !state.targetManual);
+      ui.autoToggle.setAttribute('aria-pressed', state.targetManual ? 'false' : 'true');
+      setText(ui.autoLabel, t(state.targetManual ? 'targetAutoResume' : 'targetAuto'));
+      root.dataset.targetMode = state.targetManual ? 'manual' : 'auto';
+      renderSpectatorList(options, null);
       return;
     }
     ui.waiting.hidden = true;
-    ui.targetName.textContent = (target.data && target.data.name) || t('watching');
+    setText(ui.targetName, (target.data && target.data.name) || t('watching'));
     const kind = (target.data && target.data.soldier) || 'male';
-    ui.targetUnit.textContent = mpText(UNIT_KEYS[kind] || 'unitMale');
+    setText(ui.targetUnit, unitText(kind));
+    const index = options.findIndex(function (item) { return String(item.id) === String(target.id); });
+    setText(ui.targetCount, t('targetCounter', { index: index >= 0 ? index + 1 : 0, total: options.length }));
+    ui.autoToggle.classList.toggle('is-active', !state.targetManual);
+    ui.autoToggle.setAttribute('aria-pressed', state.targetManual ? 'false' : 'true');
+    setText(ui.autoLabel, t(state.targetManual ? 'targetAutoResume' : 'targetAuto'));
+    root.dataset.targetMode = state.targetManual ? 'manual' : 'auto';
+    renderSpectatorList(options, target);
+  }
+
+  function selectTarget(id, announce) {
+    const list = targets();
+    const target = list.find(function (item) { return String(item.id) === String(id); });
+    if (!target) {
+      if (announce !== false) toast(t('targetEmpty'));
+      return false;
+    }
+    state.targetId = String(target.id);
+    state.targetManual = true;
+    state.targetSince = Date.now();
+    renderTarget(target, list);
+    if (announce !== false) {
+      toast(t('targetSelected', { name: (target.data && target.data.name) || t('watching') }));
+    }
+    return true;
+  }
+
+  function stepTarget(direction) {
+    const list = targets();
+    if (!list.length) {
+      if (Date.now() - state.targetNoticeAt > 1800) {
+        state.targetNoticeAt = Date.now();
+        toast(t('targetEmpty'));
+      }
+      return false;
+    }
+    if (list.length === 1) {
+      selectTarget(list[0].id, false);
+      toast(t('targetSingle'));
+      return true;
+    }
+    const current = list.findIndex(function (item) { return String(item.id) === String(state.targetId); });
+    const delta = direction < 0 ? -1 : 1;
+    const next = current < 0
+      ? (delta < 0 ? list.length - 1 : 0)
+      : (current + delta + list.length) % list.length;
+    return selectTarget(list[next].id, true);
+  }
+
+  function resumeAuto(announce) {
+    state.targetManual = false;
+    state.targetId = null;
+    state.targetSince = 0;
+    renderFocus();
+    if (announce !== false) toast(t('targetAutoOn'));
   }
 
   function spectatorCamera(now) {
@@ -657,12 +863,40 @@
     }
   });
 
+  root.addEventListener('click', function (event) {
+    const targetNode = event.target && event.target.closest ? event.target : null;
+    if (!targetNode) return;
+    const autoButton = targetNode.closest('[data-focus-auto]');
+    if (autoButton) {
+      event.preventDefault();
+      resumeAuto(state.targetManual);
+      return;
+    }
+    const stepButton = targetNode.closest('[data-focus-step]');
+    if (stepButton) {
+      event.preventDefault();
+      stepTarget(Number(stepButton.dataset.focusStep) || 1);
+      return;
+    }
+    const playerButton = targetNode.closest('[data-focus-target-id]');
+    if (playerButton) {
+      event.preventDefault();
+      selectTarget(playerButton.dataset.focusTargetId, true);
+    }
+  });
+
   window.addEventListener('keydown', function (event) {
     if (!dialog.hidden) {
       if (event.key === 'Escape') closeDialog();
       return;
     }
     if (!state.active) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      stepTarget(event.key === 'ArrowLeft' ? -1 : 1);
+      return;
+    }
     if (event.key === 'F5' || event.key === 'F11' || event.key === 'F12') return;
     if ((event.ctrlKey || event.metaKey) && !['KeyR', 'KeyW', 'KeyL', 'KeyT', 'KeyN'].includes(event.code)) return;
     event.preventDefault();
@@ -717,6 +951,8 @@
           state.finishFallbackAt = Date.now() + 6500;
           requestFocusEnd();
         }
+      } else if (msg.ended && msg.spawn && state.lateSpawnUntil > Date.now()) {
+        deployFocusSpawn(msg);
       }
       if (msg.denied) toast(t('blocked'));
       if ((msg.ended || msg.expired) && !state.record) refreshStatus();

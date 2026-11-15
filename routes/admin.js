@@ -22,7 +22,7 @@ function page(req, res, status, view, session, messageKey = '') {
     csrf: session?.csrf || '',
     firstLogin: !!session?.firstLogin,
     message: messageKey ? req.t(messageKey) : '',
-    returnTo: view === 'signs' ? '/admin/signs' : '/admin'
+    returnTo: view === 'signs' ? '/admin/signs' : view === 'moderation' ? '/admin/moderation' : '/admin'
   });
 }
 
@@ -144,6 +144,52 @@ router.post('/signs/:id/flag', requireSession, async (req, res, next) => {
     const query = new URLSearchParams({ page: String(Math.max(1, Math.trunc(Number(req.body.page) || 1))) });
     if (flagged) query.set('flagged', '1');
     return res.redirect(303, '/admin/signs?' + query.toString());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/moderation', async (req, res, next) => {
+  const session = req.backupSession;
+  if (!session) return res.redirect(303, '/admin');
+  if (session.firstLogin) return res.redirect(303, '/admin/password');
+  try {
+    const report = await require('../realtime/multiplayer').getModerationReport();
+    const result = { kicked: 'admin.modKicked', banned: 'admin.modBanned', revoked: 'admin.modRevoked', unavailable: 'admin.modUnavailable' };
+    const key = typeof req.query.result === 'string' && Object.hasOwn(result, req.query.result) ? result[req.query.result] : '';
+    const date = new Intl.DateTimeFormat(res.locals.lang === 'en-US' ? 'en-GB' : 'zh-CN', {
+      timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'medium'
+    });
+    return res.render('admin', { view: 'moderation', csrf: session.csrf, report,
+      formatTime: value => date.format(value), message: key ? req.t(key) : '', returnTo: '/admin/moderation' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/moderation/ban/:token', requireSession, async (req, res, next) => {
+  if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
+  try {
+    const { banPlayer } = require('../realtime/multiplayer');
+    const reason = typeof req.body.reason === 'string' ? req.body.reason.trim().slice(0, 120) : '';
+    const record = reason && await banPlayer(req.params.token, req.body.duration, reason);
+    return res.redirect(303, '/admin/moderation?result=' + (record ? 'banned' : 'unavailable'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/moderation/kick/:token', requireSession, (req, res) => {
+  if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
+  const kicked = require('../realtime/multiplayer').kickPlayer(req.params.token);
+  return res.redirect(303, '/admin/moderation?result=' + (kicked ? 'kicked' : 'unavailable'));
+});
+
+router.post('/moderation/revoke/:id', requireSession, async (req, res, next) => {
+  if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
+  try {
+    const record = await require('../realtime/multiplayer').revokePlayerBan(req.params.id);
+    return res.redirect(303, '/admin/moderation?result=' + (record ? 'revoked' : 'unavailable'));
   } catch (error) {
     next(error);
   }

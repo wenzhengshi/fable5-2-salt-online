@@ -24,6 +24,7 @@ function resetWeaponState(player) {
   player.weaponReloadUntil = 0;
   player.lastAcceptedShotAt = 0;
   player.shotCredits = 0;
+  player.pendingShot = null;
 }
 
 function clampDronePosition(position, soldier, boatSeat) {
@@ -68,7 +69,8 @@ function consumeShot(player, now) {
   return true;
 }
 
-function acceptShotCredit(player, now) {
+function acceptShotCredit(player, now, origin, dir) {
+  player.pendingShot = origin && dir ? { origin, dir } : null;
   if (!player) return;
   player.lastAcceptedShotAt = Number(now) || Date.now();
   player.shotCredits = Math.min(MAX_SHOT_CREDITS, (Number(player.shotCredits) || 0) + 1);
@@ -86,6 +88,43 @@ function consumeHitCredit(player, now) {
   return true;
 }
 
+function takeReportedShot(player, now) {
+  const shot = player.pendingShot;
+  player.pendingShot = null;
+  if (!shot || !consumeHitCredit(player, now)) return null;
+  return shot;
+}
+
+function alignedHit(shot, target) {
+  const { origin, dir } = shot;
+  const x = target.pos.x - origin.x;
+  const y = target.pos.y + (target.soldier === 'drone' || target.soldier === 'hound' ? .3 : .95) - origin.y;
+  const z = target.pos.z - origin.z;
+  const forward = x * dir.x + y * dir.y + z * dir.z;
+  // Covers the collision box and client interpolation without accepting shots far off-axis.
+  const tolerance = 2.65 + Math.min(Math.max(forward, 0) * .015, 1.35);
+  return forward >= -1 && forward <= 93 && x * x + y * y + z * z - forward * forward <= tolerance * tolerance;
+}
+
+function observeMovement(player, candidate, now) {
+  let motion = player.motionBudget;
+  if (!motion) {
+    player.motionBudget = { at: now, reserve: 9, climbReserve: 13 };
+    return true;
+  }
+  const speed = player.soldier === 'drone' ? 19 : player.soldier === 'hound' ? 17 : 13;
+  const elapsed = Math.max(0, now - motion.at);
+  motion.at = now;
+  motion.reserve = Math.min(9, motion.reserve + elapsed * speed / 1000);
+  motion.climbReserve = Math.min(13, motion.climbReserve + elapsed * 22 / 1000);
+  const delta = Math.hypot(candidate.x - player.pos.x, candidate.z - player.pos.z);
+  const climb = Math.max(0, candidate.y - player.pos.y);
+  if (delta > motion.reserve + .025 || climb > motion.climbReserve + .025) return false;
+  motion.reserve = Math.max(0, motion.reserve - delta);
+  motion.climbReserve = Math.max(0, motion.climbReserve - climb);
+  return true;
+}
+
 module.exports = {
   AIR_WALL,
   WEAPON_MAG_SIZE,
@@ -95,5 +134,8 @@ module.exports = {
   clampDronePosition,
   consumeShot,
   acceptShotCredit,
-  consumeHitCredit
+  consumeHitCredit,
+  takeReportedShot,
+  alignedHit,
+  observeMovement
 };

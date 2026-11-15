@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title><%= t(view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %> · <%= t('nav.title') %></title>
-  <link rel="stylesheet" href="/css/admin-backup.css?v=3">
+  <title><%= t(view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %> · <%= t('nav.title') %></title>
+  <link rel="stylesheet" href="/css/admin-backup.css?v=4">
 </head>
 <body>
   <main>
@@ -26,8 +26,8 @@
       </div>
     </header>
     <section aria-labelledby="title">
-      <h1 id="title"><%= t(view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
-      <% if (message) { %><p class="<%= view === 'signs' ? 'caption' : 'error' %>" role="status"><%= message %></p><% } %>
+      <h1 id="title"><%= t(view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
+      <% if (message) { %><p class="<%= view === 'signs' || view === 'moderation' ? 'caption' : 'error' %>" role="status"><%= message %></p><% } %>
       <% if (view === 'backup') { %>
         <p><%= t('admin.backupIntro') %></p>
         <ul>
@@ -40,7 +40,7 @@
           <button type="submit" class="primary"><%= t('admin.backupGenerate') %></button>
         </form>
         <p class="caption"><%= t('admin.backupNote') %></p>
-        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
+        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/moderation"><%= t('admin.modTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
       <% } else if (view === 'signs') { %>
         <p><%= t('admin.signsIntro') %></p>
         <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
@@ -66,6 +66,67 @@
             <span><%= result.page %> / <%= result.pages %></span>
             <% if (result.page < result.pages) { %><a href="?page=<%= result.page + 1 %>"><%= t('admin.next') %></a><% } %>
           </nav>
+        <% } %>
+      <% } else if (view === 'moderation') { %>
+        <p><%= t('admin.modIntro') %></p>
+        <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
+        <% const banForm = row => { %>
+          <% if (row.canBan) { %>
+            <details>
+              <summary><%= t('admin.modBan') %></summary>
+              <form class="login" action="/admin/moderation/ban/<%= row.token %>" method="post">
+                <input name="csrf" type="hidden" value="<%= csrf %>">
+                <label><%= t('admin.modDuration') %>
+                  <select name="duration" required>
+                    <option value="day"><%= t('admin.modDay') %></option>
+                    <option value="week"><%= t('admin.modWeek') %></option>
+                    <option value="permanent"><%= t('admin.modPermanent') %></option>
+                  </select>
+                </label>
+                <label><%= t('admin.modReason') %>
+                  <input name="reason" maxlength="120" required>
+                </label>
+                <button class="plain" type="submit"><%= t('admin.modConfirm') %></button>
+              </form>
+            </details>
+          <% } %>
+        <% }; %>
+        <h2><%= t('admin.modSignals') %> (<%= report.incidents.length %>)</h2>
+        <% if (!report.incidents.length) { %><p class="caption"><%= t('admin.modEmpty') %></p><% } %>
+        <% for (const row of report.incidents) { %>
+          <article class="review-sign">
+            <strong><%= row.name %> · <%= row.id %></strong>
+            <p class="caption"><%= row.map %> · <%= t('admin.modTypes.' + row.kind) %> × <%= row.count %> · <%= formatTime(row.lastAt) %></p>
+            <% banForm(row); %>
+          </article>
+        <% } %>
+        <h2><%= t('admin.modOnline') %> (<%= report.online.length %>)</h2>
+        <% for (const row of report.online) { %>
+          <article class="review-sign">
+            <strong><%= row.name %> · <%= row.id %></strong>
+            <p class="caption"><%= row.map %> · <%= row.kills %> / <%= row.deaths %></p>
+            <% if (row.sameIp || row.sameFingerprint || row.samePair) { %>
+              <p class="caption"><%= t('admin.modSameIp') %> <%= row.sameIp %> · <%= t('admin.modSameFingerprint') %> <%= row.sameFingerprint %> · <%= t('admin.modSamePair') %> <%= row.samePair %></p>
+            <% } %>
+            <% if (!row.canBan) { %><p class="caption"><%= t('admin.modNoIdentity') %></p><% } %>
+            <% banForm(row); %>
+            <form action="/admin/moderation/kick/<%= row.token %>" method="post">
+              <input name="csrf" type="hidden" value="<%= csrf %>">
+              <button class="plain" type="submit"><%= t('admin.modKick') %></button>
+            </form>
+          </article>
+        <% } %>
+        <h2><%= t('admin.modActive') %> (<%= report.bans.length %>)</h2>
+        <% for (const ban of report.bans) { %>
+          <article class="review-sign">
+            <strong><%= ban.name %></strong>
+            <p><%= ban.automatic ? t('admin.modAuto') + ' · ' + t('admin.modTypes.' + ban.reason) : ban.reason %></p>
+            <p class="caption"><%= formatTime(ban.at) %> → <%= ban.until ? formatTime(ban.until) : t('admin.modPermanent') %></p>
+            <form action="/admin/moderation/revoke/<%= ban.id %>" method="post">
+              <input name="csrf" type="hidden" value="<%= csrf %>">
+              <button class="plain" type="submit"><%= t('admin.modUnban') %></button>
+            </form>
+          </article>
         <% } %>
       <% } else if (view === 'password') { %>
         <p><%= t(firstLogin ? 'admin.firstLogin' : 'admin.passwordIntro') %></p>

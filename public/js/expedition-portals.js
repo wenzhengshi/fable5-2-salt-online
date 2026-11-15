@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const { maps, near } = window.SaltExpeditionZones;
+  const { maps, near, pickRespawn } = window.SaltExpeditionZones;
   const messages = (window.__SALT_I18N__ || {}).messages || {};
 
   function t(key, vars) {
@@ -29,6 +29,7 @@
     const hit = new THREE.Vector3();
     let active = null;
     let environment = null;
+    let lastLocalRespawn = null;
     let lastRequest = -Infinity;
     const status = document.createElement('div');
     status.setAttribute('role', 'status');
@@ -214,7 +215,14 @@
 
     game.expedition = {
       get active() { return active; },
-      spawn() { return active && { ...active.landing, y: ground(active.landing.x, active.landing.z, active.landing.y + 2) }; },
+      spawn(point) {
+        if (!active) return null;
+        if (!point) {
+          point = pickRespawn(active, lastLocalRespawn);
+          lastLocalRespawn = point;
+        }
+        return { ...point, y: ground(point.x, point.z, point.y + 2) };
+      },
       leave,
       moveDrone(previous, candidate) {
         const next = new THREE.Vector3(

@@ -701,6 +701,8 @@ body.is-playing .mp-net { opacity: 0.78; }
 .mp-rr.team-blue.self { border-left-color: #5fd0ff; background: rgba(95, 208, 255, 0.08); }
 .mp-rr.team-red.self { border-left-color: #ff5b63; background: rgba(255, 91, 99, 0.08); }
 .mp-rr.down { opacity: 0.52; }
+.mp-rr.focused { border-left-color: #ffe066; background: rgba(255, 224, 102, 0.07); }
+.mp-rr.down.focused { opacity: 0.92; }
 
 .mp-rr-name {
   display: flex;
@@ -727,6 +729,13 @@ body.is-playing .mp-net { opacity: 0.78; }
 .mp-rr-name em.mp-rr-team {
   color: #8edfff;
   border-color: rgba(95, 208, 255, 0.45);
+}
+
+.mp-rr-name em.mp-rr-focus {
+  color: #ffe066;
+  border-color: rgba(255, 224, 102, 0.55);
+  background: rgba(255, 224, 102, 0.08);
+  box-shadow: 0 0 12px rgba(255, 224, 102, 0.12);
 }
 
 .mp-rr.team-red .mp-rr-name em.mp-rr-team {

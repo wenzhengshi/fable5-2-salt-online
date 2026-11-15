@@ -86,6 +86,8 @@ module.exports = {
         continuousResetMinutes: 5,
         enforcement: 'server',
         autoSpectate: true,
+        publicAnnouncements: true,
+        rosterField: 'focused',
         storage: 'focus-records.json',
         playStorage: focusMode.PLAY_FILE,
         playPersistence: focusMode.playPersistence(),

@@ -1,4 +1,11 @@
 /* Manual focus mode: a read-only spectator layer for the 3D battlefield. */
+#focus-mode,
+.focus-dialog {
+  --f-label: "Barlow Condensed", "Noto Sans SC", sans-serif;
+  --f-display: "Big Shoulders Display", "Noto Sans SC", sans-serif;
+  --f-mono: "IBM Plex Mono", "Noto Sans SC", monospace;
+}
+
 .focus-setting-row { align-items: stretch; }
 
 .focus-setting-button {
@@ -224,12 +231,61 @@
 .focus-target-card {
   justify-self: start;
   align-self: end;
-  max-width: min(450px, 82vw);
+  width: min(520px, 86vw);
+  max-width: min(520px, 86vw);
   margin: 0 0 clamp(22px, 6vh, 74px) clamp(4px, 5vw, 74px);
   padding: 14px 18px 15px;
   border-left: 3px solid var(--signal, #ffb347);
   background: linear-gradient(90deg, rgba(6, 9, 11, 0.82), rgba(6, 9, 11, 0.4));
   backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+
+.focus-target-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.focus-auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 4px;
+  border: 1px solid rgba(232, 228, 218, 0.18);
+  background: rgba(232, 228, 218, 0.035);
+  color: rgba(241, 237, 228, 0.56);
+  font: 600 8px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+}
+
+.focus-auto-toggle i {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: rgba(241, 237, 228, 0.38);
+}
+
+.focus-auto-toggle.is-active {
+  border-color: rgba(126, 240, 226, 0.42);
+  background: rgba(126, 240, 226, 0.08);
+  color: #b9fff5;
+}
+
+.focus-auto-toggle.is-active i {
+  background: #7ef0e2;
+  box-shadow: 0 0 8px rgba(126, 240, 226, 0.7);
+}
+
+.focus-auto-toggle:hover,
+.focus-auto-toggle:focus-visible {
+  border-color: var(--signal, #ffb347);
+  outline: none;
 }
 
 .focus-target-k {
@@ -260,6 +316,142 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--signal, #ffb347);
+}
+
+.focus-target-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(232, 228, 218, 0.11);
+}
+
+.focus-switch-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid rgba(232, 228, 218, 0.2);
+  background: rgba(232, 228, 218, 0.045);
+  color: rgba(241, 237, 228, 0.82);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+}
+
+.focus-switch-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.focus-switch-button:hover,
+.focus-switch-button:focus-visible {
+  border-color: var(--signal, #ffb347);
+  background: rgba(255, 179, 71, 0.1);
+  color: #fff8ed;
+  outline: none;
+}
+
+.focus-target-count {
+  min-width: 40px;
+  color: rgba(241, 237, 228, 0.75);
+  font: 600 10px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-target-hint {
+  margin-left: auto;
+  color: rgba(241, 237, 228, 0.34);
+  font: 500 8px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.focus-spectator-list {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-bottom: 3px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 179, 71, 0.45) transparent;
+}
+
+.focus-spectator-list::-webkit-scrollbar { height: 3px; }
+.focus-spectator-list::-webkit-scrollbar-thumb { background: rgba(255, 179, 71, 0.45); }
+.focus-spectator-list::-webkit-scrollbar-track { background: transparent; }
+
+.focus-spectator-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 180px;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border: 1px solid rgba(232, 228, 218, 0.12);
+  background: rgba(232, 228, 218, 0.03);
+  color: rgba(241, 237, 228, 0.66);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.focus-spectator-option:hover,
+.focus-spectator-option:focus-visible {
+  border-color: rgba(255, 179, 71, 0.56);
+  background: rgba(255, 179, 71, 0.07);
+  color: #fff8ed;
+  outline: none;
+}
+
+.focus-spectator-option.is-active {
+  border-color: rgba(255, 179, 71, 0.8);
+  background: rgba(255, 179, 71, 0.14);
+  color: #fff8ed;
+  box-shadow: inset 0 -2px 0 var(--signal, #ffb347);
+}
+
+.focus-spectator-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.focus-spectator-option span {
+  max-width: 108px;
+  overflow: hidden;
+  font: 600 10px/1 var(--f-label, "Barlow Condensed", sans-serif);
+  letter-spacing: 0.045em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-spectator-option small {
+  color: rgba(241, 237, 228, 0.38);
+  font: 500 7px/1 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.focus-spectator-option.is-active small { color: rgba(255, 248, 237, 0.66); }
+
+.focus-spectator-empty {
+  display: block;
+  padding: 5px 0 3px;
+  color: rgba(241, 237, 228, 0.38);
+  font: 500 9px/1.3 var(--f-mono, "IBM Plex Mono", monospace);
+  letter-spacing: 0.04em;
 }
 
 .focus-waiting {
@@ -482,9 +674,12 @@ body.focus-mode-on .app-toast {
   .focus-target-card {
     margin-left: 4px;
     margin-bottom: 40px;
-    max-width: min(330px, 84vw);
+    width: min(360px, 88vw);
+    max-width: min(360px, 88vw);
   }
   .focus-target-card b { font-size: 30px; }
+  .focus-target-hint { display: none; }
+  .focus-spectator-option small { display: none; }
   .focus-foot { padding-left: 14px; padding-right: 14px; }
   .focus-foot p { font-size: 9px; }
   .focus-dialog-actions { flex-direction: column-reverse; }
@@ -498,6 +693,8 @@ body.focus-mode-on .app-toast {
   .focus-time b { font-size: 22px; }
   .focus-target-card { margin-bottom: 8px; padding: 9px 13px; }
   .focus-target-card b { font-size: 25px; }
+  .focus-target-switch { margin-top: 7px; padding-top: 7px; }
+  .focus-spectator-list, .focus-target-hint { display: none; }
   .focus-foot { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
   .focus-foot p, .focus-foot small { display: none; }
 }

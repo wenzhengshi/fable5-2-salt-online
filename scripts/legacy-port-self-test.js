@@ -16,6 +16,7 @@ const select = read('public/js/soldier-select.js');
 const mobileCss = read('public/css/mobile.css');
 const gameCss = read('public/css/game.css');
 const ammoScript = read('public/js/ammo.js');
+const comms = read('public/js/comms.js');
 const zh = JSON.parse(read('locales/zh-CN.json'));
 const en = JSON.parse(read('locales/en-US.json'));
 
@@ -67,13 +68,23 @@ assert.match(client, /state === 'playing' \|\| state === 'paused'/, '聊天或�
 assert.match(client, /!document\.hidden/, '页面切到后台时玩家仍应按现有逻辑隐藏');
 assert.match(client, /function randomGroundSpawn/, '空中切换单位必须支持地面随机复活');
 assert.match(client, /respawnAfterSwitch && nextSoldier !== 'drone'/, '空中无人机切换单位后必须立即随机复活');
+assert.match(client, /function chatComposerActive/, '复活流程必须识别正在使用的聊天输入框');
+assert.match(client, /function captureChatComposer/, '复活流程必须保留聊天输入焦点与光标位置');
+const reviveSource = client.slice(client.indexOf('function revive('), client.indexOf('el.respawnBtn.addEventListener'));
+assert.match(reviveSource, /chatComposerActive\(\)/, '复活必须先检查聊天面板或输入框状态');
+assert.match(reviveSource, /setSelectionRange/, '复活后必须恢复聊天输入的光标位置');
+assert.ok(
+  reviveSource.indexOf('chatComposerActive()') < reviveSource.indexOf('requestLock'),
+  '复活时聊天输入活跃则不得请求鼠标锁定'
+);
+assert.match(comms, /document\.activeElement === el\.input[\s\S]{0,120}exitPointerLock/, '指针锁定不得抢走聊天输入焦点');
 assert.doesNotMatch(ammoScript, /this\.ammo\s*=\s*this\.magSize/, '无限弹药不得每帧直接补满弹夹');
 assert.match(ammoScript, /ensureInfiniteReserve/, '无限弹药必须只补充备弹');
 assert.doesNotMatch(gameCss, /\.h-ammo\.infinite \.h-cue\s*\{\s*display:\s*none/, '无限弹药仍必须显示换弹提示');
 assert.match(gameCss, /\.h-ammo\.infinite \.h-ammo-r::after/, '无限弹药 HUD 必须保留弹夹并标记无限备弹');
 assert.match(server, /playerAuthority\.clampDronePosition/, '服务端必须强制无人机空气墙');
 assert.match(server, /playerAuthority\.consumeShot/, '服务端必须校验老版本弹夹与换弹');
-assert.match(server, /playerAuthority\.consumeHitCredit/, '服务端必须限制老版本命中包刷伤害');
+assert.match(server, /playerAuthority\.takeReportedShot/, '服务端必须限制老版本命中包刷伤害');
 assert.match(client, /tulingai\.com\/app-market\.html\?id=49/, '标题页必须提供安卓应用市场入口');
 assert.match(client, /createMarketLink\('title'\)/, '标题页必须挂载安卓应用市场入口');
 assert.match(client, /createMarketLink\('paused'\)/, '暂停菜单必须挂载安卓应用市场入口');

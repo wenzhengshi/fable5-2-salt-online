@@ -580,7 +580,8 @@
       rosterData.every((item, index) => {
         const row = renderedRoster[index];
         return row.id === item.id && row.name === item.name && row.color === item.color &&
-          row.kills === item.kills && row.deaths === item.deaths && row.alive === item.alive;
+          row.kills === item.kills && row.deaths === item.deaths && row.alive === item.alive &&
+          !!row.focused === !!item.focused && row.focusKind === item.focusKind;
       })) return;
     renderedSelf = myId;
     renderedRoster = rosterData;
@@ -590,11 +591,19 @@
       const isSelf = item.id === myId;
       if (!isSelf) others += 1;
       const row = document.createElement('li');
-      row.className = 'mp-rr' + (isSelf ? ' self' : '') + (item.alive ? '' : ' down');
+      const focused = item.focused === true;
+      row.className = 'mp-rr' + (isSelf ? ' self' : '') + (item.alive ? '' : ' down') + (focused ? ' focused' : '');
       const name = document.createElement('span');
       name.className = 'mp-rr-name';
       name.textContent = item.name;
       name.style.color = item.color || 'var(--bone)';
+      if (focused) {
+        const focus = document.createElement('em');
+        focus.className = 'mp-rr-focus';
+        focus.textContent = t('focusBadge');
+        focus.title = t(item.focusKind === 'auto' ? 'focusAutoBadge' : 'focusManualBadge');
+        name.appendChild(focus);
+      }
       if (isSelf) {
         const tag = document.createElement('em');
         tag.textContent = t('you');
@@ -605,7 +614,7 @@
       kd.textContent = (item.kills || 0) + ' / ' + (item.deaths || 0);
       const state = document.createElement('i');
       state.className = 'mp-rr-state' + (item.alive ? ' alive' : '');
-      state.title = item.alive ? '' : t('respawningShort');
+      state.title = focused ? t('focusSpectating') : (item.alive ? '' : t('respawningShort'));
       row.append(name, kd, state);
       rows.appendChild(row);
     }
@@ -715,6 +724,33 @@
   });
 
   /* ---------------------------------------------------------- respawn flow */
+
+  function chatComposerActive() {
+    try {
+      const input = document.getElementById('vc-input');
+      const panelOpen = !!(window.__vc && window.__vc.panelOpen);
+      return panelOpen || !!(input && document.activeElement === input);
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function captureChatComposer() {
+    if (!chatComposerActive()) return null;
+    try {
+      const input = document.getElementById('vc-input');
+      if (!input) return null;
+      const focused = document.activeElement === input;
+      return {
+        input,
+        focused,
+        start: focused && typeof input.selectionStart === 'number' ? input.selectionStart : null,
+        end: focused && typeof input.selectionEnd === 'number' ? input.selectionEnd : null
+      };
+    } catch (err) {
+      return null;
+    }
+  }
 
   function spawnsFromLevel() {
     const list = [];
@@ -1466,8 +1502,9 @@
 
   function revive(spawn, protectedUntil) {
     if (!G) return;
+    const chatComposer = captureChatComposer();
     disposeLocalDroneLight();
-    const zoneSpawn = G?.expedition?.spawn();
+    const zoneSpawn = G?.expedition?.spawn(spawn);
     const point = zoneSpawn || spawn || defaultSpawn();
     const yaw = typeof point.yaw === 'number' ? point.yaw : Math.random() * Math.PI * 2;
     try {
@@ -1507,6 +1544,17 @@
     hideRespawnOverlay();
     toast(t('respawned'));
     window.setTimeout(() => {
+      if (chatComposerActive()) {
+        if (chatComposer && chatComposer.focused && chatComposer.input.isConnected) {
+          try {
+            chatComposer.input.focus({ preventScroll: true });
+            if (chatComposer.start != null) {
+              chatComposer.input.setSelectionRange(chatComposer.start, chatComposer.end);
+            }
+          } catch (err) { /* ignore */ }
+        }
+        return;
+      }
       try { G && G.input && G.input.requestLock && G.input.requestLock(); } catch (err) { /* ignore */ }
     }, 120);
     sendState(true);
@@ -2630,7 +2678,7 @@
       handleMessage(msg);
     });
 
-    socket.addEventListener('close', () => {
+    socket.addEventListener('close', event => {
       connected = false;
       myId = null;
       pendingRename = null;
@@ -2645,6 +2693,11 @@
         avatar.group.visible = false;
       }
       snapshotTrails.clear();
+      clearInterval(pingTimer);
+      if (event.code === 4403 || event.code === 4404) {
+        toast(t(event.code === 4403 ? 'banned' : 'kicked'));
+        return;
+      }
       if (everJoined) toast(t('disconnected'));
       scheduleReconnect();
     });

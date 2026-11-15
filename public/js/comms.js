@@ -15,6 +15,7 @@
   const MAX_AHEAD = 0.8;
   const VOICE_MAGIC = 0x56;
   const MUTE_KEY = 'saltline.voice.incomingMuted';
+  const SYSTEM_EVENTS = new Set(['focusStart', 'focusEnd']);
 
   function t(key, vars) {
     const raw = dictionary[key];
@@ -34,6 +35,32 @@
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, MAX_TEXT);
+  }
+
+  function normalizeSystemEvent(raw) {
+    if (!raw || typeof raw !== 'object' || !SYSTEM_EVENTS.has(raw.event)) return null;
+    const targetName = cleanText(raw.targetName || raw.name);
+    if (!targetName) return null;
+    return {
+      event: raw.event,
+      targetName,
+      focusKind: raw.focusKind === 'auto' ? 'auto' : 'manual',
+      durationMs: Math.max(0, Number(raw.durationMs) || 0)
+    };
+  }
+
+  function systemText(item) {
+    const system = item && item.system;
+    if (!system) return '';
+    const vars = {
+      name: system.targetName,
+      minutes: Math.max(1, Math.round((Number(system.durationMs) || 0) / 60000))
+    };
+    if (system.event === 'focusStart') {
+      return t(system.focusKind === 'auto' ? 'focusStartAuto' : 'focusStart', vars);
+    }
+    if (system.event === 'focusEnd') return t('focusEnd', vars);
+    return '';
   }
 
   const ui = document.createElement('div');
@@ -738,10 +765,22 @@
 
   function normalizeHistoryItem(raw) {
     if (!raw || typeof raw !== 'object') return null;
-    const text = cleanText(raw.text);
-    if (!text) return null;
     const at = Number(raw.at) || Date.now();
     const playerId = String(raw.playerId || raw.id || '');
+    const system = normalizeSystemEvent(raw);
+    if (system) {
+      return {
+        id: String(raw.id || ('live:system:' + at + ':' + system.event)),
+        playerId: '',
+        name: '',
+        color: /^#[0-9a-f]{3,8}$/i.test(String(raw.color || '')) ? raw.color : '#ffb347',
+        text: '',
+        at,
+        system
+      };
+    }
+    const text = cleanText(raw.text);
+    if (!text) return null;
     const id = String(raw.id || ('live:' + playerId + ':' + at + ':' + text));
     return {
       id,
@@ -749,7 +788,8 @@
       name: cleanText(raw.name) || '—',
       color: /^#[0-9a-f]{3,8}$/i.test(String(raw.color || '')) ? raw.color : '#ffb347',
       text,
-      at
+      at,
+      system: null
     };
   }
 
@@ -805,13 +845,15 @@
     const fragment = document.createDocumentFragment();
     for (const item of historyItems) {
       const row = document.createElement('li');
-      row.className = isMyMessage(item) ? 'self' : '';
+      const system = item.system;
+      row.className = system ? 'system' : (isMyMessage(item) ? 'self' : '');
+      row.dataset.kind = system ? 'system' : 'chat';
       row.dataset.mid = item.id;
       row.style.setProperty('--speaker-color', item.color);
       const who = document.createElement('span');
       who.className = 'vc-history-who';
       const name = document.createElement('b');
-      name.textContent = isMyMessage(item) ? t('you') : item.name;
+      name.textContent = system ? t('systemName') : (isMyMessage(item) ? t('you') : item.name);
       const time = document.createElement('time');
       time.textContent = formatMessageTime(item.at);
       if (item.at) {
@@ -821,7 +863,7 @@
       who.append(name, time);
       const text = document.createElement('span');
       text.className = 'vc-history-text';
-      text.textContent = item.text;
+      text.textContent = system ? systemText(item) : item.text;
       row.append(who, text);
       fragment.appendChild(row);
     }
@@ -884,17 +926,20 @@
     if (bannerActive || !chatQueue.length) return;
     const item = chatQueue.shift();
     bannerActive = true;
-    el.bannerName.textContent = isMyMessage(item) ? t('you') : item.name;
+    const system = item.system;
+    const text = system ? systemText(item) : item.text;
+    el.bannerName.textContent = system ? t('systemName') : (isMyMessage(item) ? t('you') : item.name);
     el.bannerName.style.color = item.color || 'var(--signal)';
-    el.bannerText.textContent = item.text;
-    el.banner.dataset.size = item.text.length > 54 ? 'long' : item.text.length > 30 ? 'medium' : 'short';
+    el.bannerText.textContent = text;
+    el.banner.dataset.size = text.length > 54 ? 'long' : text.length > 30 ? 'medium' : 'short';
+    el.banner.dataset.kind = system ? 'system' : 'chat';
     el.banner.style.setProperty('--speaker-color', item.color || '#ffb347');
     el.banner.hidden = false;
     el.banner.classList.remove('on');
     void el.banner.offsetWidth;
     el.banner.classList.add('on');
     window.clearTimeout(bannerTimer);
-    const duration = Math.min(9000, BANNER_MS + Math.max(0, item.text.length - 36) * 55);
+    const duration = Math.min(9000, BANNER_MS + Math.max(0, text.length - 36) * 55);
     bannerTimer = window.setTimeout(() => {
       el.banner.classList.remove('on');
       window.setTimeout(() => {
@@ -912,7 +957,12 @@
       name: msg.name,
       color: msg.color,
       text: msg.text,
-      at: msg.at
+      at: msg.at,
+      kind: msg.kind,
+      event: msg.event,
+      targetName: msg.targetName,
+      focusKind: msg.focusKind,
+      durationMs: msg.durationMs
     });
     if (!item) return;
     if (isMyMessage(item)) lastChatAttempt = '';
@@ -1056,7 +1106,12 @@
   }, true);
 
   document.addEventListener('pointerlockchange', () => {
-    if (document.pointerLockElement && panelOpen) closePanel();
+    if (!document.pointerLockElement || !panelOpen) return;
+    if (document.activeElement === el.input) {
+      try { document.exitPointerLock(); } catch (err) { /* ignore */ }
+      return;
+    }
+    closePanel();
   });
 
   document.addEventListener('pointerdown', (event) => {

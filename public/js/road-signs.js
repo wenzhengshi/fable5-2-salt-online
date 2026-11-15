@@ -19,6 +19,7 @@
       yellow: tr('黄底黑字', 'Yellow with black letters'),
       offline: tr('联网后才能立路牌。', 'Connect to multiplayer to place a sign.'),
       flagged: tr('你的路牌已被标记违规，牌面文字已替换。', 'Your road sign was flagged and its displayed text replaced.'),
+      flaggedSign: tr('该牌子违规', 'Flagged sign'),
       placed: tr('路牌已立好。', 'Sign planted.'),
       removed: tr('路牌已拔除。', 'Sign removed.'),
       remaining: tr('今日还可立 {n} 块', '{n} signs remaining today'),
@@ -153,12 +154,13 @@
       }
 
       const time = timestamp(sign.submittedAt);
-      const glyphs = Array.from(sign.text);
+      const label = sign.flagged ? text.flaggedSign : sign.text;
+      const glyphs = Array.from(label);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = ink;
       ctx.font = 'bold 60px system-ui, sans-serif';
-      if (ctx.measureText(sign.text).width <= 450) ctx.fillText(sign.text, 256, time ? 69 : 86);
+      if (ctx.measureText(label).width <= 450) ctx.fillText(label, 256, time ? 69 : 86);
       else {
         const middle = Math.ceil(glyphs.length / 2);
         ctx.font = 'bold 47px system-ui, sans-serif';
@@ -209,7 +211,8 @@
 
     function accept(sign) {
       const previous = entries.get(sign.id);
-      if (previous && (previous.text !== sign.text || previous.submittedAt !== sign.submittedAt || previous.suppressed !== sign.suppressed)) erase(sign.id);
+      if (previous && (previous.text !== sign.text || previous.flagged !== sign.flagged ||
+          previous.submittedAt !== sign.submittedAt || previous.suppressed !== sign.suppressed)) erase(sign.id);
       entries.set(sign.id, sign);
       if (!sign.suppressed && !models.has(sign.id)) buildQueue.add(sign.id);
     }
@@ -327,7 +330,7 @@
       notices.hidden = true;
       editor = { mode, entry, map, relock: input.locked };
       heading.textContent = mode === 'place' ? text.place : text.confirm;
-      detail.textContent = mode === 'place' ? text.rules : entry.text;
+      detail.textContent = mode === 'place' ? text.rules : (entry.flagged ? text.flaggedSign : entry.text);
       field.hidden = style.hidden = mode !== 'place';
       value.disabled = mode !== 'place';
       value.value = '';

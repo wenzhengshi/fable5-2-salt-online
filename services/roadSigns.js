@@ -149,8 +149,13 @@ function createRegistry(options = {}) {
 
   function publicSign(sign, owner) {
     const { id, map, pos, yaw, style, removeAt, submittedAt } = sign;
-    const text = sign.flaggedAt ? '该牌子违规' : sign.text;
-    return { id, map, pos, yaw, style, text, removeAt, submittedAt, own: sign.owner === owner, suppressed: protectedSpot(map, pos) };
+    const flagged = !!sign.flaggedAt;
+    return {
+      id, map, pos, yaw, style, removeAt, submittedAt, flagged,
+      text: flagged ? '' : sign.text,
+      own: sign.owner === owner,
+      suppressed: protectedSpot(map, pos)
+    };
   }
 
   async function list(map, pos, owner) {

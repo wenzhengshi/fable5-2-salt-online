@@ -353,6 +353,13 @@
 
 .vc-banner[data-size="medium"] .vc-banner-text { font-size: clamp(30px, 4.6vw, 62px); }
 .vc-banner[data-size="long"] .vc-banner-text { font-size: clamp(25px, 3.8vw, 50px); max-width: 18em; }
+.vc-banner[data-kind="system"] .vc-banner-card {
+  border-top-color: rgba(255, 224, 102, .62);
+  border-bottom-color: rgba(255, 224, 102, .28);
+}
+.vc-banner[data-kind="system"] .vc-banner-kicker { color: rgba(255, 224, 102, .7); }
+.vc-banner[data-kind="system"] .vc-banner-name { color: #ffe066; }
+.vc-banner[data-kind="system"] .vc-banner-text { color: #fff5c7; }
 
 body.mp-respawning .vc-banner,
 body.vc-panel-open .vc-banner { opacity: .55; }
@@ -908,6 +915,15 @@ body.vc-panel-open .vc-rail { opacity: 1; }
     rgba(232, 228, 218, .022);
 }
 .vc-history li.self { border-color: rgba(255, 179, 71, .12); border-left-color: var(--signal); }
+.vc-history li.system {
+  border-color: rgba(255, 224, 102, .14);
+  border-left-color: #ffe066;
+  background:
+    linear-gradient(90deg, rgba(255, 224, 102, .08), transparent 48%),
+    rgba(232, 228, 218, .025);
+}
+.vc-history li.system .vc-history-who b { color: #ffe066; }
+.vc-history li.system .vc-history-text { color: #fff5c7; }
 .vc-history .vc-history-who {
   display: flex;
   flex-direction: column;

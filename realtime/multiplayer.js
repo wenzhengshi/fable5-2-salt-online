@@ -7,6 +7,23 @@ const chatHistory = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
 const deathReplay = require('../services/deathReplay');
 const playerAuthority = require('../services/playerAuthority');
+const { randomUUID } = require('node:crypto');
+const moderation = require('../services/moderation').createModeration();
+moderation.ready.catch(error => console.error('[moderation] load failed:', error.message));
+const pendingAutomaticBans = new Set();
+function monitor(player, kind, now) {
+  if (!moderation.signal(player, kind, now, roadSigns.mapOf(player) || 'port')) return;
+  // Stop the offending session immediately while the temporary ban is saved.
+  player.moderationBlocked = true;
+  removePlayer(player, 'banned');
+  closeBannedSocket(player.ws);
+  if (!player.signOwner || pendingAutomaticBans.has(player.signOwner)) return;
+  pendingAutomaticBans.add(player.signOwner);
+  moderation.ban(moderation.snapshot(player), 'auto', kind).then(ban => {
+    if (ban) disconnectBannedIdentity(ban.owner);
+  }).catch(error => console.error('[moderation] automatic ban save failed:', error.message))
+    .finally(() => pendingAutomaticBans.delete(player.signOwner));
+}
 const qingyun = require('../public/js/qingyun-zone');
 const expeditions = require('../public/js/expedition-zones');
 const roadSigns = require('../services/roadSigns');
@@ -52,6 +69,7 @@ const FOCUS_BLOCKED_TYPES = new Set([
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
 
 const players = new Map();
+const announcedFocusEvents = new Map();
 const boat = {
   id: BOAT_ID,
   x: BOAT_DOCK.x,
@@ -330,11 +348,21 @@ function sanitizeSpawns(raw) {
   return list;
 }
 
-function pickSpawn(player) {
+function pickSpawn(player, now) {
+  if (player.mapId) {
+    const positions = [];
+    for (const other of players.values()) {
+      if (other !== player && other.alive && sameMap(other, player) &&
+          (other.active || other.protectedUntil > now)) positions.push(other.pos);
+    }
+    const spawn = expeditions.pickRespawn(expeditions.maps[player.mapId], player.lastExpeditionSpawn, positions);
+    player.lastExpeditionSpawn = spawn;
+    return spawn;
+  }
   const spawns = player.spawns && player.spawns.length ? player.spawns : [{ x: 0, y: 0, z: 4 }];
   const external = player.pos && Number(player.pos.x) > 65;
   const zoneSpawns = spawns.filter((spawn) => (Number(spawn.x) > 65) === external);
-  const candidates = player.mapId ? [expeditions.maps[player.mapId].landing] : player.inQingyun ? qingyun.spawns : zoneSpawns.length ? zoneSpawns : spawns;
+  const candidates = player.inQingyun ? qingyun.spawns : zoneSpawns.length ? zoneSpawns : spawns;
   const enemies = [...players.values()].filter((item) => item !== player && item.active && item.alive &&
     sameMap(item, player));
   let best = null;
@@ -428,27 +456,9 @@ function getLeaderboard(limit) {
 
 function getOnlinePlayers() {
   const now = Date.now();
-  return [...players.values()].map((player) => ({
-    id: player.id,
-    name: player.name,
-    color: player.color,
-    soldier: player.soldier,
-    kills: player.kills,
-    deaths: player.deaths,
-    streak: player.streak,
-    alive: player.alive,
-    active: player.active,
-    focused: player.focusUntil > now,
-    voice: publicVoice(player)
-  }));
-}
-
-/* ------------------------------------------------------------- game actions */
-
-function rosterPayload() {
-  const now = Date.now();
-  return [...players.values()]
-    .map((player) => ({
+  return [...players.values()].map((player) => {
+    const focus = publicFocusState(player, now);
+    return {
       id: player.id,
       name: player.name,
       color: player.color,
@@ -458,9 +468,39 @@ function rosterPayload() {
       streak: player.streak,
       alive: player.alive,
       active: player.active,
-      focused: player.focusUntil > now,
+      focused: focus.active,
+      focusUntil: focus.until,
+      focusKind: focus.kind,
+      focus,
       voice: publicVoice(player)
-    }))
+    };
+  });
+}
+
+/* ------------------------------------------------------------- game actions */
+
+function rosterPayload() {
+  const now = Date.now();
+  return [...players.values()]
+    .map((player) => {
+      const focus = publicFocusState(player, now);
+      return {
+        id: player.id,
+        name: player.name,
+        color: player.color,
+        soldier: player.soldier,
+        kills: player.kills,
+        deaths: player.deaths,
+        streak: player.streak,
+        alive: player.alive,
+        active: player.active,
+        focused: focus.active,
+        focusUntil: focus.until,
+        focusKind: focus.kind,
+        focus,
+        voice: publicVoice(player)
+      };
+    })
     .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || a.name.localeCompare(b.name));
 }
 
@@ -533,9 +573,65 @@ function focusPayload(player, extra) {
   };
 }
 
+function publicFocusState(player, now) {
+  const at = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  const until = Math.max(0, Number(player && player.focusUntil) || 0);
+  const active = until > at;
+  return {
+    active,
+    until: active ? until : 0,
+    remainingMs: active ? until - at : 0,
+    kind: active ? (player.focusKind === 'auto' ? 'auto' : 'manual') : '',
+    durationMs: active ? Math.max(0, Number(player.focusDurationMs) || 0) : 0,
+    trigger: active ? String(player.focusTrigger || 'manual') : ''
+  };
+}
+
+function announceFocusEvent(player, event, meta) {
+  if (!player || !player.joined) return false;
+  const details = meta || {};
+  const at = Date.now();
+  const recordId = String(details.recordId || player.focusRecordId || '');
+  const announceKey = recordId ? recordId + ':' + event : '';
+  if (announceKey) {
+    if (announcedFocusEvents.has(announceKey)) return false;
+    announcedFocusEvents.set(announceKey, at);
+    while (announcedFocusEvents.size > 2000) {
+      announcedFocusEvents.delete(announcedFocusEvents.keys().next().value);
+    }
+  }
+  const focusKind = details.kind === 'auto' || player.focusKind === 'auto' ? 'auto' : 'manual';
+  const durationMs = Math.max(0, Number(details.durationMs) || Number(player.focusDurationMs) || 0);
+  const saved = chatHistory.append({
+    kind: 'system',
+    event,
+    targetName: player.name,
+    color: player.color,
+    focusKind,
+    durationMs,
+    at
+  });
+  broadcast({
+    type: 'chat',
+    mid: saved && saved.id ? saved.id : 'sys:' + event + ':' + at,
+    kind: 'system',
+    event,
+    targetName: player.name,
+    color: player.color,
+    focusKind,
+    durationMs,
+    at: saved && saved.at ? saved.at : at,
+    persisted: !!(saved && saved.persisted !== false)
+  });
+  return true;
+}
+
 function setFocusLock(player, until, recordId, options) {
   if (!player) return 0;
   const meta = options || {};
+  const now = Date.now();
+  const wasFocused = player.focusUntil > now;
+  const previousRecordId = player.focusRecordId || '';
   const expiresAt = Math.max(Date.now(), Number(until) || 0);
   const hadVoice = !!(player.voice && player.voice.enabled);
   player.focusUntil = expiresAt;
@@ -558,6 +654,10 @@ function setFocusLock(player, until, recordId, options) {
   send(player.ws, focusPayload(player, { scope: player.focusKind, playMs: Math.max(0, Number(meta.playMs) || 0) }));
   if (hadVoice) {
     broadcast({ type: 'voiceState', player: publicVoice(player) });
+  }
+  const nextRecordId = String(recordId || '');
+  if (!wasFocused || (nextRecordId && nextRecordId !== previousRecordId)) {
+    announceFocusEvent(player, 'focusStart');
   }
   return 1;
 }
@@ -608,6 +708,7 @@ function beginAutomaticFocus(player, play) {
 }
 
 function handleMessage(player, raw) {
+  if (player.moderationBlocked) return;
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -621,7 +722,11 @@ function handleMessage(player, raw) {
     player.msgCount = 0;
   }
   player.msgCount += 1;
-  if (player.msgCount > MAX_MSG_PER_SEC) return;
+  if (player.msgCount > MAX_MSG_PER_SEC) {
+    // Stop counting after a bounded sample of excess traffic per second.
+    if (player.msgCount <= MAX_MSG_PER_SEC + 12) monitor(player, 'packetFlood', Date.now());
+    return;
+  }
 
   const now = Date.now();
 
@@ -640,6 +745,7 @@ function handleMessage(player, raw) {
 
   switch (msg.type) {
     case 'join': {
+      if (player.joined) { monitor(player, 'repeatJoin', now); break; }
       const requested = sanitizeName(msg.name);
       const filtered = !!requested && contentFilter.isBlocked(requested);
       player.name = uniqueName(filtered ? '' : requested, player);
@@ -672,7 +778,7 @@ function handleMessage(player, raw) {
         break;
       }
       player.soldier = soldier;
-      playerAuthority.resetWeaponState(player);
+      player.pendingShot = null;
       broadcast({ type: 'soldierState', id: player.id, soldier });
       break;
     }
@@ -839,6 +945,7 @@ function handleMessage(player, raw) {
       }
       removeFromBoat(player, false);
       player.pos = exit;
+      player.motionBudget = null;
       player.active = player.alive && player.focusUntil <= now;
       send(player.ws, {
         type: 'boatAck',
@@ -903,6 +1010,8 @@ function handleMessage(player, raw) {
       player.moving = false;
       player.sprint = false;
       player.shotCredits = 0;
+      player.pendingShot = null;
+      player.motionBudget = null;
       send(player.ws, { type: 'qingyunEntered', pos: player.pos });
       break;
     }
@@ -916,6 +1025,8 @@ function handleMessage(player, raw) {
       player.moving = false;
       player.sprint = false;
       player.shotCredits = 0;
+      player.pendingShot = null;
+      player.motionBudget = null;
       send(player.ws, { type: 'qingyunReturned', pos: player.pos });
       break;
     }
@@ -925,6 +1036,8 @@ function handleMessage(player, raw) {
       player.inQingyun = false;
       player.pos = { ...player.spawns[0] };
       player.shotCredits = 0;
+      player.pendingShot = null;
+      player.motionBudget = null;
       break;
     }
     case 'mapEnter': {
@@ -938,6 +1051,8 @@ function handleMessage(player, raw) {
       player.pitch = 0;
       player.moving = player.sprint = false;
       player.shotCredits = 0;
+      player.pendingShot = null;
+      player.motionBudget = null;
       send(player.ws, { type: 'mapEntered', map: map.id, pos: player.pos });
       break;
     }
@@ -953,6 +1068,8 @@ function handleMessage(player, raw) {
       player.pitch = 0;
       player.moving = player.sprint = false;
       player.shotCredits = 0;
+      player.pendingShot = null;
+      player.motionBudget = null;
       send(player.ws, { type: 'mapReturned', pos: player.pos });
       break;
     }
@@ -1001,7 +1118,9 @@ function handleMessage(player, raw) {
       break;
     }
     case 'state': {
+      if (!player.joined) break;
       if (player.boatSeat == null) {
+        let candidate;
         const map = expeditions.maps[player.mapId];
         const rawZ = Number(msg.pos?.z);
         const rawX = Number(msg.pos?.x);
@@ -1009,7 +1128,7 @@ function handleMessage(player, raw) {
         const pos = safeVec(msg.pos, player.pos);
         if (map && [rawX, rawY, rawZ].every(Number.isFinite) &&
             rawZ >= map.minZ - 2 && rawZ <= map.maxZ + 2) {
-          player.pos = {
+          candidate = {
             x: clamp(rawX, map.minX, map.maxX),
             y: clamp(rawY, -80, 240),
             z: clamp(rawZ, map.minZ, map.maxZ)
@@ -1017,10 +1136,15 @@ function handleMessage(player, raw) {
         } else if (!map && pos && (player.inQingyun ? qingyun.contains(pos) : !qingyun.contains(pos))) {
           if (player.inQingyun) {
             const { minX, maxX, minZ, maxZ } = qingyun.bounds;
-            player.pos = { x: clamp(pos.x, minX, maxX), y: pos.y, z: clamp(pos.z, minZ, maxZ) };
+            candidate = { x: clamp(pos.x, minX, maxX), y: pos.y, z: clamp(pos.z, minZ, maxZ) };
           } else {
-            player.pos = playerAuthority.clampDronePosition(pos, player.soldier, player.boatSeat) || player.pos;
+            candidate = playerAuthority.clampDronePosition(pos, player.soldier, player.boatSeat) || player.pos;
           }
+        }
+        if (candidate && player.alive && msg.active === true) {
+          const withinBudget = playerAuthority.observeMovement(player, candidate, now);
+          player.pos = candidate;
+          if (!withinBudget) monitor(player, 'positionJump', now);
         }
       }
       if (Number.isFinite(Number(msg.yaw))) player.yaw = Number(msg.yaw);
@@ -1030,6 +1154,10 @@ function handleMessage(player, raw) {
       player.sprint = !!msg.sprint;
       player.prone = false;
       player.lastSeen = now;
+      if (player.active && player.alive && Number.isFinite(msg.hp) && msg.hp > player.hp) {
+        monitor(player, 'healthClaim', now);
+        if (player.moderationBlocked) break;
+      }
       const play = focusMode.trackPlay({
         clientId: player.clientId,
         fingerprint: player.fingerprint,
@@ -1041,7 +1169,8 @@ function handleMessage(player, raw) {
     }
     case 'shot': {
       if (!player.active || !player.alive) break;
-      if (now - player.lastShotAt < 55) break;
+      player.pendingShot = null;
+      if (now - player.lastShotAt < 55) { monitor(player, 'fireRate', now); break; }
       player.lastShotAt = now;
       const origin = safeVec(msg.origin);
       if (player.mapId && origin && Number.isFinite(msg.origin.z) && Number.isFinite(msg.origin.x)) {
@@ -1049,14 +1178,20 @@ function handleMessage(player, raw) {
         origin.x = msg.origin.x;
       }
       const dir = safeVec(msg.dir);
-      if (!origin || !dir) break;
+      const norm = dir && Math.hypot(dir.x, dir.y, dir.z);
+      if (!origin || !norm || norm < .9 || norm > 1.1) { monitor(player, 'invalidShot', now); break; }
+      dir.x /= norm;
+      dir.y /= norm;
+      dir.z /= norm;
       if (Math.hypot(origin.x - player.pos.x, origin.z - player.pos.z) > 2.5 ||
           Math.abs(origin.y - (player.pos.y + 1.2)) > 3.5) {
+        monitor(player, 'shotOrigin', now);
         break;
       }
-      if (!playerAuthority.consumeShot(player, now)) break;
+      if (!playerAuthority.consumeShot(player, now)) { monitor(player, 'reloadBypass', now); break; }
+      moderation.sharedCombat(player, now, roadSigns.mapOf(player) || 'port');
       deathReplay.recordShot(player, origin, dir, now);
-      playerAuthority.acceptShotCredit(player, now);
+      playerAuthority.acceptShotCredit(player, now, origin, dir);
       broadcast(
         { type: 'shot', id: player.id, origin, dir },
         (other) => other !== player && other.active && sameMap(other, player)
@@ -1064,6 +1199,8 @@ function handleMessage(player, raw) {
       break;
     }
     case 'hit': {
+      if (!player.active || !player.alive) break;
+      const shot = playerAuthority.takeReportedShot(player, now);
       const target = players.get(String(msg.targetId));
       if (!target || target === player || !sameMap(target, player)) break;
       if (!player.active || !player.alive || !target.active || !target.alive) break;
@@ -1078,8 +1215,9 @@ function handleMessage(player, raw) {
         player.pos.y - target.pos.y,
         player.pos.z - target.pos.z
       );
-      if (dist > 90) break;
-      if (!playerAuthority.consumeHitCredit(player, now)) break;
+      if (dist > 90) { monitor(player, 'hitRange', now); break; }
+      if (!shot) { monitor(player, 'hitWithoutShot', now); break; }
+      if (!playerAuthority.alignedHit(shot, target)) { monitor(player, 'hitOffAxis', now); break; }
       target.hp = Math.max(0, target.hp - HIT_DAMAGE);
       const killed = target.hp <= 0;
       deathReplay.recordHit(player, target, HIT_DAMAGE, target.hp, killed, now);
@@ -1137,11 +1275,12 @@ function handleMessage(player, raw) {
         send(player.ws, { type: 'respawnWait', ms: player.respawnAt - now });
         break;
       }
-      const spawn = pickSpawn(player);
+      const spawn = pickSpawn(player, now);
       player.alive = true;
       player.hp = MAX_HP;
       player.respawnAt = 0;
       player.pos = { x: spawn.x, y: spawn.y, z: spawn.z };
+      player.motionBudget = null;
       playerAuthority.resetWeaponState(player);
       player.protectedUntil = now + PROTECT_MS;
       send(player.ws, {
@@ -1159,22 +1298,29 @@ function handleMessage(player, raw) {
         break;
       }
       const endedKind = player.focusKind || 'manual';
+      const endedDurationMs = Math.max(0, Number(player.focusDurationMs) || 0);
+      const endedRecordId = player.focusRecordId || '';
+      const hadFocus = !!(player.focusRecordId || player.focusUntil);
       player.focusUntil = 0;
       player.focusRecordId = '';
       player.focusKind = '';
       player.focusDurationMs = 0;
       player.focusTrigger = '';
-      const spawn = pickSpawn(player);
+      const spawn = pickSpawn(player, now);
       player.alive = true;
       player.active = false;
       player.hp = MAX_HP;
       player.respawnAt = 0;
       player.pos = { x: spawn.x, y: spawn.y, z: spawn.z };
+      player.motionBudget = null;
       player.yaw = Math.random() * Math.PI * 2;
       player.moving = false;
       player.sprint = false;
       player.protectedUntil = now + PROTECT_MS;
       send(player.ws, focusPayload(player, { scope: endedKind, kind: endedKind, ended: true, spawn }));
+      if (hadFocus) {
+        announceFocusEvent(player, 'focusEnd', { kind: endedKind, durationMs: endedDurationMs, recordId: endedRecordId });
+      }
       send(player.ws, {
         type: 'respawned',
         pos: spawn,
@@ -1200,7 +1346,7 @@ function requestIp(req) {
   return focusMode.normalizeIp(raw);
 }
 
-function addPlayer(ws, req) {
+function addPlayer(ws, req, signOwner) {
   const numId = nextId;
   const id = 'p' + numId;
   nextId += 1;
@@ -1240,7 +1386,9 @@ function addPlayer(ws, req) {
     joined: false,
     clientId,
     fingerprint,
-    signOwner: roadSigns.ownerFromRequest(req),
+    signOwner,
+    modToken: randomUUID(),
+    modIdentityPair: clientId && fingerprint ? 'pair:' + clientId + ':' + fingerprint : '',
     ip,
     userAgent: String((req && req.headers && req.headers['user-agent']) || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 240),
     lang: query.get('lang') === 'en-US' ? 'en-US' : 'zh-CN',
@@ -1334,12 +1482,19 @@ function tick() {
   for (const player of players.values()) {
     if (!player.focusUntil || player.focusUntil > now) continue;
     const expiredKind = player.focusKind || 'manual';
+    const expiredDurationMs = Math.max(0, Number(player.focusDurationMs) || 0);
+    const expiredRecordId = player.focusRecordId || '';
     player.focusUntil = 0;
     player.focusRecordId = '';
     player.focusKind = '';
     player.focusDurationMs = 0;
     player.focusTrigger = '';
-      send(player.ws, {
+    announceFocusEvent(player, 'focusEnd', {
+      kind: expiredKind,
+      durationMs: expiredDurationMs,
+      recordId: expiredRecordId
+    });
+    send(player.ws, {
       type: 'focusState',
       active: false,
       expired: true,
@@ -1347,7 +1502,7 @@ function tick() {
       until: 0,
       remainingMs: 0,
       serverTime: now
-      });
+    });
   }
   syncBoatOccupants();
   deathReplay.recordPlayers(players.values(), now);
@@ -1399,11 +1554,64 @@ function tick() {
         alive: player.alive,
         active: player.active,
         focusUntil: player.focusUntil || 0,
+        focusKind: player.focusKind || '',
+        focusDurationMs: Math.max(0, Number(player.focusDurationMs) || 0),
         respawnAt: player.respawnAt,
         protectedUntil: player.protectedUntil
       }
     });
   }
+}
+
+function closeBannedSocket(socket) {
+  if (socket.readyState === 1) socket.close(4403, 'Player banned');
+}
+
+async function banPlayer(token, duration, reason) {
+  if (!['day', 'week', 'permanent'].includes(duration)) return null;
+  const live = [...players.values()].find(player => player.modToken === token);
+  const target = live ? moderation.snapshot(live) : moderation.target(token);
+  const ban = await moderation.ban(target, duration, reason);
+  if (!ban) return null;
+  disconnectBannedIdentity(ban.owner);
+  return ban;
+}
+
+function disconnectBannedIdentity(owner) {
+  for (const player of players.values()) if (player.signOwner === owner) {
+    player.moderationBlocked = true;
+    removePlayer(player, 'banned');
+    closeBannedSocket(player.ws);
+  }
+}
+
+function kickPlayer(token) {
+  const player = [...players.values()].find(candidate => candidate.modToken === token && candidate.joined);
+  if (!player) return false;
+  player.moderationBlocked = true;
+  removePlayer(player, 'kicked');
+  if (player.ws.readyState === 1) player.ws.close(4404, 'Removed by moderator');
+  return true;
+}
+
+async function getModerationReport() {
+  await moderation.ready;
+  const joined = [...players.values()].filter(player => player.joined);
+  const counts = new Map();
+  for (const player of joined) {
+    for (const key of [player.ip && 'ip:' + player.ip, player.fingerprint && 'fp:' + player.fingerprint, player.modIdentityPair]) {
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    }
+  }
+  const online = joined.map(player => ({
+    token: player.modToken, id: player.id, name: player.name,
+    map: roadSigns.mapOf(player) || 'port', kills: player.kills, deaths: player.deaths,
+    sameIp: Math.max(0, (counts.get('ip:' + player.ip) || 0) - 1),
+    sameFingerprint: Math.max(0, (counts.get('fp:' + player.fingerprint) || 0) - 1),
+    samePair: Math.max(0, (counts.get(player.modIdentityPair) || 0) - 1),
+    canBan: !!player.signOwner
+  }));
+  return { online, ...moderation.report() };
 }
 
 function attachMultiplayer(server) {
@@ -1423,9 +1631,23 @@ function attachMultiplayer(server) {
   };
   server.on('upgrade', upgradeHandler);
 
-  wss.on('connection', (ws, req) => {
+  wss.on('connection', async (ws, req) => {
+    if (!ws.listenerCount('error')) ws.on('error', () => {});
+    try {
+      await moderation.ready;
+    } catch {
+      ws.close(1011, 'Moderation storage unavailable');
+      return;
+    }
+    if (ws.readyState !== 1) return;
+    const owner = roadSigns.ownerFromRequest(req);
+    const ban = moderation.activeBan(owner);
+    if (ban || pendingAutomaticBans.has(owner)) {
+      closeBannedSocket(ws);
+      return;
+    }
     ws.isAlive = true;
-    const player = addPlayer(ws, req);
+    const player = addPlayer(ws, req, owner);
 
     ws.on('pong', () => {
       ws.isAlive = true;
@@ -1433,6 +1655,7 @@ function attachMultiplayer(server) {
 
     ws.on('message', (data, isBinary) => {
       try {
+        if (player.moderationBlocked) return;
         if (isBinary) {
           relayPlayerAudio(player, data);
           return;
@@ -1494,6 +1717,10 @@ module.exports = {
   attachMultiplayer,
   getLeaderboard,
   getOnlinePlayers,
+  getModerationReport,
+  banPlayer,
+  kickPlayer,
+  revokePlayerBan: moderation.revoke,
   applyFocusLock,
   listRoadSignsForReview: signRegistry.reviewList,
   flagRoadSign,

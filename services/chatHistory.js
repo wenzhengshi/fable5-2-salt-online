@@ -10,6 +10,7 @@ const DEFAULT_PAGE = 20;
 const MAX_PAGE = 50;
 const RETRY_MS = 4000;
 const RETRY_LOG_MS = 30000;
+const SYSTEM_EVENTS = new Set(['focusStart', 'focusEnd']);
 
 let messages = [];
 let pending = [];
@@ -54,12 +55,39 @@ function sanitizeColor(raw) {
   return /^#[0-9a-f]{3,8}$/i.test(value) ? value : '#ffb347';
 }
 
+function normalizeSystemEvent(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const event = SYSTEM_EVENTS.has(raw.event) ? raw.event : '';
+  if (!event) return null;
+  const targetName = sanitizeName(raw.targetName || raw.name);
+  if (!targetName || contentFilter.isBlocked(targetName)) return null;
+  return {
+    kind: 'system',
+    event,
+    targetName,
+    focusKind: raw.focusKind === 'auto' ? 'auto' : 'manual',
+    durationMs: clamp(Math.floor(Number(raw.durationMs) || 0), 0, 24 * 60 * 60 * 1000)
+  };
+}
+
 function rowKey(row) {
   return String(row.seq) + ':' + String(row.at);
 }
 
 function normalizeRow(row) {
   if (!row || typeof row !== 'object') return null;
+  const system = normalizeSystemEvent(row);
+  if (system) {
+    return {
+      seq: Math.max(0, Math.floor(Number(row.seq) || 0)),
+      playerId: '',
+      name: '',
+      color: sanitizeColor(row.color),
+      text: '',
+      at: Math.max(0, Math.floor(Number(row.at) || 0)),
+      ...system
+    };
+  }
   const text = sanitizeText(row.text);
   const name = sanitizeName(row.name);
   if (!text || !name || contentFilter.isBlocked(text) || contentFilter.isBlocked(name)) return null;
@@ -70,7 +98,12 @@ function normalizeRow(row) {
     name,
     color: sanitizeColor(row.color),
     text,
-    at
+    at,
+    kind: 'chat',
+    event: '',
+    targetName: '',
+    focusKind: '',
+    durationMs: 0
   };
 }
 
@@ -141,7 +174,12 @@ function publicRow(row) {
     name: row.name,
     color: row.color,
     text: row.text,
-    at: row.at
+    at: row.at,
+    kind: row.kind === 'system' ? 'system' : 'chat',
+    event: row.event || '',
+    targetName: row.targetName || '',
+    focusKind: row.focusKind || '',
+    durationMs: Math.max(0, Number(row.durationMs) || 0)
   };
 }
 
@@ -205,19 +243,26 @@ function retryPending() {
 }
 
 function append(input) {
-  const text = sanitizeText(input && input.text);
-  const name = sanitizeName(input && input.name);
-  if (!text || !name || contentFilter.isBlocked(text) || contentFilter.isBlocked(name)) return null;
-
   syncFromDisk();
   const at = Math.max(Date.now(), Math.floor(Number(input && input.at) || 0));
+  const system = normalizeSystemEvent(input);
+  const text = system ? '' : sanitizeText(input && input.text);
+  const name = system ? '' : sanitizeName(input && input.name);
+  if (!system && (!text || !name || contentFilter.isBlocked(text) || contentFilter.isBlocked(name))) return null;
   const row = {
     seq: nextSeq,
-    playerId: typeof (input && input.playerId) === 'string' ? input.playerId.slice(0, 32) : '',
+    playerId: system ? '' : (typeof (input && input.playerId) === 'string' ? input.playerId.slice(0, 32) : ''),
     name,
     color: sanitizeColor(input && input.color),
     text,
-    at
+    at,
+    ...(system || {
+      kind: 'chat',
+      event: '',
+      targetName: '',
+      focusKind: '',
+      durationMs: 0
+    })
   };
   nextSeq += 1;
   messages.push(row);

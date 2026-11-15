@@ -13,7 +13,7 @@
 - 落盘策略：正常时同步追加并 `fsync` 后再广播；若部署目录暂时不可写，大字仍会立即广播，同时进入进程内重试队列，每 4 秒自动重试并通过 `chatWarning` 提醒发送者。历史接口会返回尚未落盘的 `pending` 记录。进程收到 `SIGTERM` / `SIGINT` 时会最后重试一次并同步排行榜与大字文件。
 - API 缓存：`/api/*` 统一返回 `Cache-Control: no-store`，避免历史分页被浏览器或代理缓存成空列表。
 - 内容安全：玩家代号与全服大字在服务端统一做敏感词过滤；拆字、全角、零宽字符、符号替代与常见同形字规避同样会被识别。
-- 当前版本：`1.26.3`，仅保留 WebGL2 + Three.js 三维渲染；客户端会先在实际游戏画布上异步重试并预热 WebGL2 上下文，再加载游戏 bundle，成功上下文由 Three.js 主渲染器直接复用。渲染器、单位预览与死亡回放继续优先请求 `high-performance`，上下文创建失败时按兼容属性回退。画质提供五档：极低档将内部渲染比例降至 50%、手机 DPR 上限设为 1，并关闭阴影、泛光、体积光、环境光遮蔽和平面反射；低内存、少核心或小屏手机会自动进入极低档，动态降档链路也会从低档继续降至极低档。远端玩家操控的机器狗与无人机稳定复用游戏内骨骼单位模型，模型模块晚于首个快照加载时也会自动升级，不再永久回退为方块模型。撤离船升级为任务前置可用的四人多人载具，服务端同步船位、舵手、乘客、坐标、朝向和速度；外海新增带碰撞与复活点的交战平台。青云宗的三座传送门位于入口东西两侧草坡与正前方石阶平台，距落点约 31–32 米，并显示实时方位与距离；从传送门地图返回时会落在对应门户旁。路牌创建由服务端按身份、浏览器指纹与网络来源执行每日额度、短时冷却、突发限流、单地图容量和区域密度限制。死亡回放仍由服务端以 10 Hz 录制双方真实轨迹、枪口弹道与命中事件，再通过 `youDied.replay` 下发给被击杀者。本地回放通过 WebAudio 分流同时录制游戏音效，音轨仅进入本机 `MediaRecorder`，不读取麦克风、不上传服务器；客户端会通过 UA 与微信 JS Bridge 自动识别微信内置浏览器，在回放面板显示下载限制提示、录制前二次确认，并拦截微信内下载，引导玩家改在系统浏览器中录制。录制提醒与删除回放均使用 `public/js/modal.js` 提供的自定义模态框，不再调用浏览器原生 `confirm`。版本号统一从 `package.json` 读取，发布前可运行 `npm run release:check` 检查托管完整性。
+- 当前版本：`1.26.7`，仅保留 WebGL2 + Three.js 三维渲染；客户端会先在实际游戏画布上异步重试并预热 WebGL2 上下文，再加载游戏 bundle，成功上下文由 Three.js 主渲染器直接复用。渲染器、单位预览与死亡回放继续优先请求 `high-performance`，上下文创建失败时按兼容属性回退。画质提供五档：极低档将内部渲染比例降至 50%、手机 DPR 上限设为 1，并关闭阴影、泛光、体积光、环境光遮蔽和平面反射；低内存、少核心或小屏手机会自动进入极低档，动态降档链路也会从低档继续降至极低档。远端玩家操控的机器狗与无人机稳定复用游戏内骨骼单位模型，模型模块晚于首个快照加载时也会自动升级，不再永久回退为方块模型。撤离船升级为任务前置可用的四人多人载具，服务端同步船位、舵手、乘客、坐标、朝向和速度；外海新增带碰撞与复活点的交战平台。青云宗的三座传送门位于入口东西两侧草坡与正前方石阶平台，距落点约 31–32 米，并显示实时方位与距离；从传送门地图返回时会落在对应门户旁。路牌创建由服务端按身份、浏览器指纹与网络来源执行每日额度、短时冷却、突发限流、单地图容量和区域密度限制。死亡回放仍由服务端以 10 Hz 录制双方真实轨迹、枪口弹道与命中事件，再通过 `youDied.replay` 下发给被击杀者。复活时若聊天面板打开或输入框聚焦，客户端会保留输入内容、光标位置与面板状态，不再自动请求鼠标锁定；指针锁定事件也不会抢走聊天输入焦点。专注模式开始与结束时，服务端会向全服公屏写入结构化系统播报并广播，实时名单显示“专注”徽章；在线玩家接口和 10 Hz 快照同时返回 `focused` 与 `focus` 详情，便于观战者和其他客户端识别专注玩家。专注观战层支持用上一位 / 下一位按钮、玩家列表和键盘方向键切换目标，手动锁定后保持视角，目标离开时回退自动轮播；该切换完全由客户端基于现有快照完成，不新增 WebSocket 消息。本地回放通过 WebAudio 分流同时录制游戏音效，音轨仅进入本机 `MediaRecorder`，不读取麦克风、不上传服务器；客户端会通过 UA 与微信 JS Bridge 自动识别微信内置浏览器，在回放面板显示下载限制提示、录制前二次确认，并拦截微信内下载，引导玩家改在系统浏览器中录制。录制提醒与删除回放均使用 `public/js/modal.js` 提供的自定义模态框，不再调用浏览器原生 `confirm`。版本号统一从 `package.json` 读取，发布前可运行 `npm run release:check` 检查托管完整性。
 
 ## 页面
 
@@ -114,6 +114,8 @@
   - `focusMode.continuousResetMinutes`：连续游玩中断判定，当前为 `5` 分钟
   - `focusMode.enforcement`：`server`，表示操作锁定由服务端强制执行
   - `focusMode.autoSpectate`：是否自动切换观战视角
+  - `focusMode.publicAnnouncements`：开始 / 结束专注时是否向公屏广播系统消息
+  - `focusMode.rosterField`：实时名单中标识专注玩家的字段，当前为 `focused`
   - `focusMode.storage`：专注记录持久化文件 `focus-records.json`
   - `focusMode.playStorage`：连续游玩计时文件 `play-sessions.json`
   - `focusMode.playPersistence`：连续游玩计时存储诊断，字段与 `focusMode.persistence` 相同
@@ -134,7 +136,7 @@
   - `comms.chatHistory.pageSize` / `maxPageSize`：默认每页 `20` 条，最大 `50` 条
   - `comms.chatHistory.persisted`：`true` 表示当前目录可写且没有待重试记录
   - `controls`：本地化操作列表；包含移动、观察、射击、瞄准、换弹、交互、跳跃、冲刺、近战、语音、大字、立路牌、拔路牌、名单与暂停
-- 返回示例：`{"ok":true,"version":"1.25.9","engine":"WebGL2 / Three.js (bundled)","rendering":{"mode":"3d","primary":"webgl2","modes":["webgl2"],"fallback":null,"autoFallback":false,"requiresWebGL2":true,"coldStartRecovery":true,"contextReuse":true,"maxContextAttempts":8},"mode":"free-for-all","respawnSeconds":5,"characters":[{"id":"male","name":"男士兵","role":"重装突击手"},{"id":"female","name":"女士兵","role":"先锋侦察兵"},{"id":"hound","name":"机器狗","role":"四足突击平台"},{"id":"drone","name":"无人机","role":"空中侦察平台"},{"id":"classic","name":"方块人","role":"怀旧方块兵"}],"features":{"localReplay":true,"localReplayAudio":true,"deathReplay":true,"deathReplay3d":true,"deathReplayAuthoritative":true,"deathReplayRateHz":10,"deathReplayWindowMs":4500,"multiplayerBoat":true,"boatSeats":4,"boatMissionRequired":false,"externalCombatZone":true,"flightCollision":true,"droneAirWall":true,"typingVisibility":true,"airborneUnitSwitchRespawn":true,"infiniteAmmoRequiresReload":true,"serverAuthorityLegacyGuards":true,"compactMobileType":true},"websocket":"/ws","moderation":{"enabled":true,"names":true,"chat":true,"evasionResistant":true},"focusMode":{"durationMinutes":30,"manualDurationMinutes":30,"autoDurationMinutes":20,"continuousPlayLimitMinutes":240,"continuousResetMinutes":5,"enforcement":"server","autoSpectate":true,"storage":"focus-records.json","playStorage":"play-sessions.json","records":["clientId","fingerprint","ip"]},"comms":{"voice":"server-pcm-relay","sampleRate":16000,"frameMs":20,"globalAudience":true,"listenerMicRequired":false,"chatHistory":{"endpoint":"/api/game/chat/history","persisted":true,"storage":"data/chat-history.jsonl","dataDir":"/srv/runtime-data/data","dataSource":"JICREATE_DATA_DIR","records":42,"pending":0}},"controls":[{"keys":"WASD","label":"移动"}]}`
+- 返回示例：`{"ok":true,"version":"1.26.7","engine":"WebGL2 / Three.js (bundled)","rendering":{"mode":"3d","primary":"webgl2","modes":["webgl2"],"fallback":null,"autoFallback":false,"requiresWebGL2":true,"coldStartRecovery":true,"contextReuse":true,"maxContextAttempts":8},"mode":"free-for-all","respawnSeconds":5,"characters":[{"id":"male","name":"男士兵","role":"重装突击手"},{"id":"female","name":"女士兵","role":"先锋侦察兵"},{"id":"hound","name":"机器狗","role":"四足突击平台"},{"id":"drone","name":"无人机","role":"空中侦察平台"},{"id":"classic","name":"方块人","role":"怀旧方块兵"}],"features":{"localReplay":true,"localReplayAudio":true,"deathReplay":true,"deathReplay3d":true,"deathReplayAuthoritative":true,"deathReplayRateHz":10,"deathReplayWindowMs":4500,"multiplayerBoat":true,"boatSeats":4,"boatMissionRequired":false,"externalCombatZone":true,"flightCollision":true,"droneAirWall":true,"typingVisibility":true,"airborneUnitSwitchRespawn":true,"infiniteAmmoRequiresReload":true,"serverAuthorityLegacyGuards":true,"compactMobileType":true},"websocket":"/ws","moderation":{"enabled":true,"names":true,"chat":true,"evasionResistant":true},"focusMode":{"durationMinutes":30,"manualDurationMinutes":30,"autoDurationMinutes":20,"continuousPlayLimitMinutes":240,"continuousResetMinutes":5,"enforcement":"server","autoSpectate":true,"publicAnnouncements":true,"rosterField":"focused","storage":"focus-records.json","playStorage":"play-sessions.json","records":["clientId","fingerprint","ip"]},"comms":{"voice":"server-pcm-relay","sampleRate":16000,"frameMs":20,"globalAudience":true,"listenerMicRequired":false,"chatHistory":{"endpoint":"/api/game/chat/history","persisted":true,"storage":"data/chat-history.jsonl","dataDir":"/srv/runtime-data/data","dataSource":"JICREATE_DATA_DIR","records":42,"pending":0}},"controls":[{"keys":"WASD","label":"移动"}]}`
 
 ### 排行榜与在线列表
 
@@ -142,6 +144,7 @@
 - 路径：`/api/game/leaderboard`
 - 参数：可选 `?limit=1..100`，默认 `20`
 - 返回字段：`online`、`respawnSeconds`、`players[]`、`leaderboard[]`
+- `players[]` 每项含 `focused`、`focusUntil`、`focusKind` 与 `focus`；`focus.active: true` 表示该玩家正在专注观战，`focus.kind` 为 `manual` 或 `auto`，并含剩余毫秒与时长。
 - 说明：战绩在击杀 / 死亡时累加，并异步写回 `data/leaderboard.json`（保留前 300 条）。命中敏感词的历史代号会被过滤，不会出现在在线列表或排行榜中。
 
 ### 大字历史分页
@@ -152,7 +155,7 @@
   - `limit`：可选，每页条数，默认 `20`，范围 `1..50`
   - `before`：可选，上一页返回的 `nextCursor`；不传时返回最新一页
 - 返回字段：`persisted`、`storage`、`dataDir`、`dataSource`、`pending`、`messages[]`、`nextCursor`、`hasMore`、`total`、`limit`
-- `messages[]` 按新到旧排列，每项含 `id`（大字记录 ID）、`playerId`、`name`、`color`、`text`、`at`、`pending`。`pending: true` 表示该消息已广播但仍在等待重试落盘。
+- `messages[]` 按新到旧排列，每项含 `id`（大字记录 ID）、`kind`、`playerId`、`name`、`color`、`text`、`at`、`pending`。普通大字 `kind: "chat"`；专注系统播报 `kind: "system"`，并返回 `event`（`focusStart` / `focusEnd`）、`targetName`、`focusKind` 与 `durationMs`，客户端按当前语言渲染文案。`pending: true` 表示该消息已广播但仍在等待重试落盘。
 - 说明：记录来自 `data/chat-history.jsonl`，读取时会对比文件大小与修改时间，确保服务重启或外部写入后仍以磁盘内容为准；前端滚动到列表底部时携带 `before` 自动加载更早一页。命中敏感词或损坏的记录会被忽略。
 - 返回示例：`{"ok":true,"lang":"zh-CN","persisted":true,"storage":"data/chat-history.jsonl","dataDir":"/srv/runtime-data/data","dataSource":"JICREATE_DATA_DIR","pending":0,"messages":[{"id":"c12","playerId":"p3","name":"RAVEN-42","color":"#ffb347","text":"跟我推进！","at":1794500000000,"pending":false}],"nextCursor":"c12","hasMore":true,"total":48,"limit":20}`
 
@@ -187,7 +190,7 @@
 - 方法：`POST`
 - 路径：`/api/focus/start`
 - Body：`{"clientId":"c_...","fingerprint":"fp1-..."}`
-- 说明：固定手动锁定 30 分钟，不接受客户端指定更短时长；已存在有效记录时复用原到期时间，不会因重复提交延长。服务端会同步锁定该 `clientId` / `fingerprint` 对应的在线 WebSocket 会话，并记录请求 IP。自动强制专注由服务端内部创建，不通过此接口触发。
+- 说明：固定手动锁定 30 分钟，不接受客户端指定更短时长；已存在有效记录时复用原到期时间，不会因重复提交延长。服务端会同步锁定该 `clientId` / `fingerprint` 对应的在线 WebSocket 会话，并记录请求 IP；首次进入专注时向全服公屏广播系统消息，重复提交不会重复播报。自动强制专注由服务端内部创建，不通过此接口触发，但同样会播报。
 - 返回字段：`focus.active`、`focus.record`、`reused`、`persisted`（审计记录是否已落盘）、`sessions`（本次同步锁定的在线会话数）
 - 状态码：首次创建 `201`；已有有效记录 `200`
 - 容错说明：托管数据目录或文件锁暂时不可写时，服务端仍会立即建立内存锁定并返回成功，`persisted` 为 `false`；记录会每 4 秒自动重试原子写入，进程收到 `SIGTERM` / `SIGINT` 时也会再次补写。单次 WebSocket 会话同步异常同样不会改变成功状态码。
@@ -243,6 +246,9 @@
 
 专注锁定期间，`state`、`soldier`、`spawns`、`chat`、`voiceState`、`rename`、`shot`、`hit`、`died`、`respawn`、`boatBoard`、`boatLeave`、`boatPose`、`boatInvite`、`qingyunEnter`、`qingyunReturn`、`qingyunLeave`、`mapEnter`、`mapReturn`、`mapLeave` 均被服务端拒绝；只允许 `join`、`focusEnd` 与 `ping`。二进制语音帧同样不会转发。
 
+专注观战的切换目标完全在客户端完成：从最新 `snapshot.players` 中筛选同一地图内可见、存活的玩家，支持上一位 / 下一位按钮、目标列表点击与键盘 `ArrowLeft` / `ArrowRight`。切换不会发送新的 WebSocket 消息，也不会改变服务端专注锁定或专注记录；手动目标离开或阵亡后，客户端自动回退到 9 秒轮播。
+专注结束时，客户端会恢复进入专注前的战局状态；若从暂停菜单进入，会自动继续行动并同步 HUD、输入和第一人称镜头。即使本地超时兜底先结束观战层，后续到达的 `focusState.ended` 复活点仍会写入本地玩家位置，不需要刷新页面。
+
 ### 客户端 → 服务端（二进制）
 
 - 只有 `voiceState.enabled=true` 且 `muted=false` 时，服务端才接受音频。
@@ -258,7 +264,7 @@
 | `soldierAck` | `soldier` | 操控单位已生效 |
 | `soldierState` | `id`, `soldier` | 某位在线玩家的操控单位发生变化；客户端据此实时替换远端模型 |
 | `nameDenied` | `reason` | `filtered`（敏感词）或 `invalid`（空代号）；改代号失败时原代号不变 |
-| `snapshot` | `t`, `online`, `players[]`, `roster[]`, `voice[]`, `boat`, `you` | 10 Hz 状态帧；`players[]` 每项含 `x,y,z,yaw,pitch,hp,moving,sprint,shield,soldier`，`roster[]` 同样包含 `soldier` 与 `focused`，`voice[]` 只包含已开麦玩家，`boat` 为共享撤离船状态，`you` 含 `active` 与 `focusUntil` |
+| `snapshot` | `t`, `online`, `players[]`, `roster[]`, `voice[]`, `boat`, `you` | 10 Hz 状态帧；`players[]` 每项含 `x,y,z,yaw,pitch,hp,moving,sprint,shield,soldier`，`roster[]` 每项含 `soldier`、`focused`、`focusUntil`、`focusKind` 与 `focus{active,until,remainingMs,kind,durationMs,trigger}`，`voice[]` 只包含已开麦玩家，`boat` 为共享撤离船状态，`you` 含 `active`、`focusUntil`、`focusKind` 与 `focusDurationMs` |
 | `boatAck` | `aboard`, `seat`, `pos`, `boat` | 登船或下船确认；登船时含座位，下船时含安全落点 |
 | `boatDenied` | `reason` | 船只操作拒绝；`range`、`full`、`helm`、`moving`、`landing`、`notAboard`、`rate`、`helmOnly` 或 `unavailable` |
 | `boatState` | `boat` | 船只成员或状态变化；`boat.seats` 固定为四个槽位，空位为 `null` |
@@ -268,12 +274,12 @@
 | `qingyunReturned` | `pos` | 已从青云宗返回港口；`pos` 为港口回程落点 |
 | `mapEntered` | `map`, `pos` | 已从青云宗进入传送门地图；`map` 为地图 ID，`pos` 为服务器指定的落点 |
 | `mapReturned` | `pos` | 已从传送门地图返回青云宗；`pos` 为青云宗枢纽落点 |
-| `signList` | `map`, `signs[]` | 当前地图可见路牌；每项含 `id`、位置、朝向、颜色、牌面文字、提交时间、可拔除时间、本人归属与保护区状态 |
+| `signList` | `map`, `signs[]` | 当前地图可见路牌；每项含 `id`、位置、朝向、颜色、牌面文字、提交时间、可拔除时间、本人归属、保护区状态与 `flagged` 违规标记 |
 | `signChange` | `map`, `id`, `removed`, `sign` | 路牌新增、更新或拔除通知；`removed: true` 时不带 `sign` |
 | `signResult` | `reason`, `removed`, `remaining` | 路牌操作结果。成功放置时 `remaining` 为今日剩余额度；失败原因可为 `cooldown`、`burst`、`daily`、`density`、`ownerLimit`、`networkLimit`、`mapFull`、`occupied`、`gate`、`range`、`text`、`style`、`owner`、`tomorrow`、`identity`、`storage` 或 `busy` |
 | `signFlagged` | 无 | 自己创建的路牌被管理员标记为违规，客户端显示牌面已替换提示 |
 | `voiceState` | `player{id,name,color,enabled,muted,speaking}` | 开麦、静音、说话状态变化 |
-| `chat` | `id`, `mid`, `name`, `color`, `text`, `at`, `persisted` | 全服大字消息；`id` 为发送者玩家 ID，`mid` 为大字记录 ID；`persisted: false` 表示已广播但正在异步重试落盘 |
+| `chat` | `id`, `mid`, `name`, `color`, `text`, `at`, `persisted` | 普通全服大字；另含专注公屏系统播报：`kind: "system"`、`event: "focusStart" / "focusEnd"`、`targetName`、`focusKind`、`durationMs`。`mid` 为大字记录 ID；`persisted: false` 表示已广播但正在异步重试落盘 |
 | `chatDenied` | `reason`, `retryIn` | `rate`、`empty`、`filtered` 或 `focus`；被拒绝的消息不会广播 |
 | `chatWarning` | `reason`, `mid` | `reason: "storage"` 表示消息已正常广播，但历史记录暂未落盘并已进入自动重试队列 |
 | `kill` | `killer`, `victim`, `at` | 击杀事件。`killer` / `victim` 均包含 `id`、`name`、`color`、`soldier`；`soldier` 为 `male` / `female` / `hound` / `drone`，客户端据此在公屏显示击杀者操控单位 |

@@ -45,6 +45,8 @@
     "melee": "近战",
     "mic": "开麦 / 关麦",
     "bigText": "发送大字",
+    "placeSign": "立路牌",
+    "removeSign": "拔自己的路牌",
     "pause": "暂停",
     "roster": "战场名单"
   },

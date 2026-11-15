@@ -5830,6 +5830,8 @@ let C=m.goal;if(m.path){for(;m.wp<m.path.length-1&&Math.hypot(m.path[m.wp].x-m.p
     <div><dt>冲刺</dt><dd><kbd>Shift</kbd></dd></div>
     <div><dt>趴下</dt><dd><kbd>Z</kbd> 或 <kbd>X</kbd>（切换）</dd></div>
     <div><dt>近战</dt><dd><kbd>F</kbd></dd></div>
+    <div><dt>立路牌</dt><dd><kbd>B</kbd></dd></div>
+    <div><dt>拔自己的路牌</dt><dd><kbd>Delete</kbd></dd></div>
     <div><dt>暂停</dt><dd><kbd>Esc</kbd> 或 <kbd>P</kbd></dd></div>
   </dl>`,ZC=`
   <dl class="keys">
@@ -5841,6 +5843,7 @@ let C=m.goal;if(m.path){for(;m.wp<m.path.length-1&&Math.hypot(m.path[m.wp].x-m.p
     <div><dt>跳跃</dt><dd>“跳跃”</dd></div>
     <div><dt>切断中继器</dt><dd>在中继器旁按住“互动”</dd></div>
     <div><dt>冲刺</dt><dd>将摇杆推到最前</dd></div>
+    <div><dt>路牌</dt><dd>地图内点「立路牌」或「拔路牌」</dd></div>
   </dl>`;function pM(i,e){let t=document.getElementById("ui"),n=YC(),s=document.createElement("div");s.className="menu",s.dataset.screen="none",s.innerHTML=`
     <div class="m-veil"></div>
     <div class="m-bars"><i></i><i></i></div>
@@ -5861,7 +5864,7 @@ let C=m.goal;if(m.path){for(;m.wp<m.path.length-1&&Math.hypot(m.path[m.wp].x-m.p
       </div>
       <aside class="m-legend" aria-label="操作一览">
         <div><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动</span><span><kbd>鼠标</kbd> 观察</span><span><kbd>左键</kbd> 射击</span><span><kbd>右键</kbd> 瞄准</span><span><kbd>R</kbd> 换弹</span></div>
-        <div><span><kbd>E</kbd> 切断中继器</span><span><kbd>Space</kbd> 跳跃</span><span><kbd>Shift</kbd> 冲刺</span><span><kbd>Esc</kbd> 暂停</span></div>
+        <div><span><kbd>E</kbd> 切断中继器</span><span><kbd>Space</kbd> 跳跃</span><span><kbd>Shift</kbd> 冲刺</span><span><kbd>B</kbd> 立路牌</span><span><kbd>Delete</kbd> 拔路牌</span><span><kbd>Esc</kbd> 暂停</span></div>
         <div class="lg-touch"><em>触控</em><span>左拇指移动</span><span>右拇指观察</span><span>屏幕上可射击、瞄准、换弹、跳跃</span></div>
       </aside>
     </section>
@@ -5919,6 +5922,7 @@ let C=m.goal;if(m.path){for(;m.wp<m.path.length-1&&Math.hypot(m.path[m.wp].x-m.p
       </div>
       <div class="panel-b" data-pane="controls" hidden>
         <h3>键盘 \xB7 鼠标</h3>${$C}
+        <p class="panel-note">路牌只在青云宗和远征地图可用：瞄准 5 米内地面按 B 立牌；靠近自己的路牌按 Delete 拔牌。</p>
         <p class="panel-note">如果浏览器无法锁定鼠标，请按住鼠标按键拖动视角（左键同时射击，右键同时瞄准）。方向键或 <kbd>I</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> 可转向，<kbd>Enter</kbd> 射击。</p>
         <h3>触控</h3>${ZC}
         <h3>手柄</h3>

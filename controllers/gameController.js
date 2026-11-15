@@ -128,6 +128,8 @@ module.exports = {
         { keys: 'F', label: req.t('controls.melee') },
         { keys: 'M', label: req.t('controls.mic') },
         { keys: 'T', label: req.t('controls.bigText') },
+        { keys: 'B', label: req.t('controls.placeSign') },
+        { keys: 'Delete', label: req.t('controls.removeSign') },
         { keys: 'Tab', label: req.t('controls.roster') },
         { keys: 'Esc / P', label: req.t('controls.pause') }
       ]

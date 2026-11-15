@@ -35,6 +35,12 @@
 }
 
 body.is-playing .mp-chip { opacity: 0.72; }
+[data-gfx="minimal"] .mp-chip,
+[data-gfx="low"] .mp-chip {
+  background-color: rgba(11, 13, 15, 0.92);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 body.is-playing .mp-chip:hover,
 .mp-chip:focus-within { opacity: 1; }
 

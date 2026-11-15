@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  window.createQingyunCollision = function (THREE, geometry, offsetZ, terrainHeight) {
+  window.createQingyunCollision = async function (THREE, geometry, offsetZ, terrainHeight) {
     const cellSize = 4;
     const columns = new Map();
     const cell = value => Math.floor(value / cellSize);
@@ -16,10 +16,16 @@
     const down = new THREE.Vector3(0, -1, 0);
     let stamp = 0;
 
+    let sliceStarted = performance.now();
     for (const mesh of geometry) {
       const positions = mesh.getAttribute('position');
       const indices = mesh.getIndex();
-      for (let i = 0; i < (indices ? indices.count : positions.count); i += 3) {
+      const count = indices ? indices.count : positions.count;
+      for (let i = 0; i < count; i += 3) {
+        if (i % 768 === 0 && performance.now() - sliceStarted > 4) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+          sliceStarted = performance.now();
+        }
         a.fromBufferAttribute(positions, indices ? indices.getX(i) : i);
         b.fromBufferAttribute(positions, indices ? indices.getX(i + 1) : i + 1);
         c.fromBufferAttribute(positions, indices ? indices.getX(i + 2) : i + 2);

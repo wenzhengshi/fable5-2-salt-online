@@ -157,6 +157,45 @@
   color: rgba(232, 228, 218, .58);
   font: 500 12px/1.5 "Noto Sans SC", var(--f-mono, monospace);
 }
+.sr-wechat-warning {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  margin: 15px 24px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 179, 71, .46);
+  border-left: 3px solid #ffb347;
+  background:
+    linear-gradient(90deg, rgba(255, 179, 71, .15), rgba(255, 179, 71, .035)),
+    rgba(7, 10, 12, .6);
+  color: #ffe2ad;
+}
+.sr-wechat-warning[hidden] { display: none; }
+.sr-wechat-warning > i {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255, 179, 71, .58);
+  border-radius: 50%;
+  background: rgba(255, 179, 71, .12);
+  color: #ffcb76;
+  font: 800 14px/1 var(--f-mono, monospace);
+  font-style: normal;
+}
+.sr-wechat-warning b {
+  display: block;
+  color: #ffd89a;
+  font: 700 12px/1.35 "Noto Sans SC", sans-serif;
+  letter-spacing: .02em;
+}
+.sr-wechat-warning p {
+  margin: 4px 0 0;
+  color: rgba(255, 226, 173, .74);
+  font: 500 10px/1.6 "Noto Sans SC", var(--f-mono, monospace);
+}
+.sr-wechat-warning.is-pulsing { animation: sr-wechat-flash .95s ease; }
 .sr-close {
   position: absolute;
   top: 15px;
@@ -366,6 +405,11 @@
   50% { opacity: .42; transform: scale(.78); }
 }
 
+@keyframes sr-wechat-flash {
+  0%, 100% { border-color: rgba(255, 179, 71, .46); box-shadow: none; }
+  35% { border-color: #ffb347; box-shadow: 0 0 0 3px rgba(255, 179, 71, .2); }
+}
+
 @media (max-width: 760px) {
   #sr-launch { top: calc(132px + var(--sat)); left: max(10px, env(safe-area-inset-left, 0px)); }
   #sr-modal { padding: 0; place-items: end center; }
@@ -373,6 +417,9 @@
   .sr-head { padding: 18px 54px 14px 17px; }
   .sr-head h2 { font-size: 34px; }
   .sr-intro { font-size: 11px; }
+  .sr-wechat-warning { margin: 12px 17px 0; padding: 11px 12px; gap: 10px; }
+  .sr-wechat-warning b { font-size: 11px; }
+  .sr-wechat-warning p { font-size: 9px; }
   .sr-toolbar { flex-wrap: wrap; padding: 12px 17px; }
   .sr-record-btn { width: 100%; }
   .sr-limit { margin-left: 0; }
@@ -388,5 +435,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   #sr-recording > i { animation: none; }
+  .sr-wechat-warning.is-pulsing { animation: none; }
   .sr-backdrop, .sr-dialog { transition: none; }
 }

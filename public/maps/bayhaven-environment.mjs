@@ -14797,6 +14797,23 @@ function $h({ scene: e, map: t, collide: n, props: r, decor: i, quality: a, even
 			v = null;
 		}
 	}
+	function* buildNearby(x, z, radius) {
+		const start = Qh();
+		const center = t.chunkOf(x, z);
+		for (let cx = center.cx - radius; cx <= center.cx + radius; cx++) {
+			for (let cz = center.cz - radius; cz <= center.cz + radius; cz++) {
+				const key = Zh(cx, cz);
+				if (!t.inWorld(cx, cz) || d.has(key)) continue;
+				const task = f.get(key) || { lod: 0, cx, cz };
+				f.set(key, task);
+				while (!ce(task)) yield;
+				if (v === task) v = null;
+			}
+		}
+		_ = _.filter(task => task.lod === 1 || f.has(Zh(task.cx, task.cz)));
+		E.ensureMs = Qh() - start;
+		y = 0;
+	}
 	let j = {
 		buildMs: 0,
 		stat: E,
@@ -14809,20 +14826,17 @@ function $h({ scene: e, map: t, collide: n, props: r, decor: i, quality: a, even
 			return _.length + +!!v;
 		},
 		isLoaded: (e, t) => d.has(Zh(e, t)),
-		ensure(e, n, r = 1) {
-			let i = Qh(), a = t.chunkOf(e, n);
-			for (let e = a.cx - r; e <= a.cx + r; e++) for (let n = a.cz - r; n <= a.cz + r; n++) {
-				let r = Zh(e, n);
-				if (!t.inWorld(e, n) || d.has(r)) continue;
-				let i = f.get(r) || {
-					lod: 0,
-					cx: e,
-					cz: n
-				};
-				for (f.set(r, i); !ce(i););
-				v === i && (v = null);
+		ensure(x, z, radius = 1) {
+			for (const step of buildNearby(x, z, radius)) { /* finish before teleport */ }
+			return Promise.resolve(d.size);
+		},
+		async warm(x, z, radius) {
+			let sliceStart = Qh();
+			for (const step of buildNearby(x, z, radius)) {
+				if (Qh() - sliceStart < 3) continue;
+				await new Promise(resolve => setTimeout(resolve, 0));
+				sliceStart = Qh();
 			}
-			return _ = _.filter((e) => e.lod === 1 || f.has(Zh(e.cx, e.cz))), E.ensureMs = Qh() - i, y = 0, Promise.resolve(d.size);
 		},
 		update(e) {
 			let n = s.player, r = Qh();
@@ -15252,10 +15266,25 @@ function cg(e, { low: t = () => !1 } = {}) {
 					let l = Math.max(Math.abs(r.cx - n), Math.abs(r.cz - a)) <= c;
 					if (e === "palmFar" ? l : e.startsWith("palm") && !l) continue;
 					let u = Math.min(s.length / 16, t.cap - o);
+					if (!u) break;
 					if (i.set(u * 16 === s.length ? s : s.subarray(0, u * 16), o * 16), t.tint) for (let e = 0; e < u; e++) t.mesh.setColorAt(o + e, f.set(r.tints[e]));
 					o += u;
 				}
-				t.mesh.count = o, t.mesh.instanceMatrix.needsUpdate = !0, h += o, t.tint && t.mesh.instanceColor && (t.mesh.instanceColor.needsUpdate = !0);
+				t.mesh.count = o;
+				h += o;
+				// Only upload the visible prefix, not the full fixed-capacity arrays.
+				if (o) {
+					const matrix = t.mesh.instanceMatrix;
+					matrix.clearUpdateRanges();
+					matrix.addUpdateRange(0, o * matrix.itemSize);
+					matrix.needsUpdate = true;
+					if (t.tint && t.mesh.instanceColor) {
+						const color = t.mesh.instanceColor;
+						color.clearUpdateRanges();
+						color.addUpdateRange(0, o * color.itemSize);
+						color.needsUpdate = true;
+					}
+				}
 			}
 		}
 	};
@@ -15723,7 +15752,7 @@ async function wg() {
 	let u = new ti(16768449, 2.1);
 	u.position.set(-45, 90, 32), e.add(u, new Wr(16771054, 5792106, 1.6));
 	let d = new rr(new xr(12e3, 12e3), new Gn({ color: 4746129 }));
-	d.rotation.x = -Math.PI / 2, d.position.y = -.8, e.add(d), await s.ensure(t.spawn.x, t.spawn.z, 1);
+	d.rotation.x = -Math.PI / 2, d.position.y = -.8, e.add(d), await s.warm(t.spawn.x, t.spawn.z, 1);
 	let f = [];
 	return {
 		scene: e,

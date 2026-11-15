@@ -17,7 +17,7 @@
       const renderer = new Promise((resolve, reject) => {
         script.onload = resolve;
         script.onerror = reject;
-        script.src = assets + 'qingyun-renderer.js?v=2';
+        script.src = assets + 'qingyun-renderer.js?v=3';
         document.head.appendChild(script);
       });
       loading = Promise.all([
@@ -47,7 +47,7 @@
       transparent: true,
       side: THREE.DoubleSide,
       depthWrite: false,
-      uniforms: { time: { value: 0 } },
+      uniforms: { time: { value: 0 }, tint: { value: new THREE.Vector3(.1, .9, 1.25) } },
       vertexShader: `
         varying vec2 portalUV;
         void main() {
@@ -57,6 +57,7 @@
       `,
       fragmentShader: `
         uniform float time;
+        uniform vec3 tint;
         varying vec2 portalUV;
         void main() {
           vec2 p = portalUV * 2.0 - 1.0;
@@ -65,7 +66,7 @@
           float wave = sin(angle * 5.0 + r * 25.0 + time * 4.0);
           float spiral = pow(wave * .5 + .5, 4.0);
           float edge = smoothstep(.65, .96, r);
-          vec3 color = mix(vec3(.025,.012,.16), vec3(.10,.9,1.25), spiral * .85 + edge * .15);
+          vec3 color = mix(vec3(.025,.012,.12) + tint * .03, tint, spiral * .85 + edge * .15);
           gl_FragColor = vec4(color, (1.0-smoothstep(.96,1.0,r))*.97);
         }
       `
@@ -83,7 +84,7 @@
       ctx.fillStyle = '#b9f4ff';
       ctx.shadowColor = '#18bcff';
       ctx.shadowBlur = 14;
-      ctx.fillText(document.documentElement.lang === 'en-US' ? english : chinese, 256, 68);
+      ctx.fillText(english === undefined || document.documentElement.lang !== 'en-US' ? chinese : english, 256, 68, 485);
       return new THREE.CanvasTexture(sign);
     }
     const label = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -120,9 +121,9 @@
     function prepare() {
       if (map || preparing || game.time.t < retryAfter) return;
       preparing = true;
-      loadMap().then(([, models, meta]) => {
+      loadMap().then(async ([, models, meta]) => {
         const nextMap = window.createQingyunMap(renderer, models, meta);
-        collision = window.createQingyunCollision(THREE, nextMap.collisionGeometry, zone.offsetZ, nextMap.terrainHeight);
+        collision = await window.createQingyunCollision(THREE, nextMap.collisionGeometry, zone.offsetZ, nextMap.terrainHeight);
         map = nextMap;
       }).catch(error => {
         retryAfter = game.time.t + 5;
@@ -211,6 +212,7 @@
       renderer.getClearColor(clearColor);
       const toneMapping = renderer.toneMapping;
       const shadowAutoUpdate = renderer.shadowMap.autoUpdate;
+      const matrices = scene.matrixWorldAutoUpdate;
       try {
         renderer.info.reset();
         renderer.shadowMap.autoUpdate = false;
@@ -229,6 +231,8 @@
           actorCamera.projectionMatrixInverse.copy(renderCamera.projectionMatrixInverse);
           actorCamera.updateMatrixWorld(true);
           renderer.setRenderTarget(target);
+          scene.updateMatrixWorld();
+          scene.matrixWorldAutoUpdate = false;
           renderer.render(scene, actorCamera);
         });
         renderer.setRenderTarget(null);
@@ -241,6 +245,7 @@
         viewCamera.matrixWorldInverse.copy(camera.matrixWorldInverse);
         renderer.render(scene, viewCamera);
       } finally {
+        scene.matrixWorldAutoUpdate = matrices;
         renderer.toneMapping = toneMapping;
         renderer.shadowMap.autoUpdate = shadowAutoUpdate;
         renderer.setClearColor(clearColor, clearAlpha);
@@ -260,6 +265,19 @@
 
     game.qingyun = {
       get active() { return inQingyun; },
+      createTunnel(title, color) {
+        const tunnel = gate.clone();
+        const [rim, disc, name] = tunnel.children;
+        const tint = new THREE.Color(color);
+        rim.material = ringMaterial.clone();
+        rim.material.color.copy(tint).multiplyScalar(2.25);
+        disc.material = vortex.material.clone();
+        disc.material.uniforms.tint.value.set(tint.r, tint.g, tint.b).multiplyScalar(1.65);
+        name.material = label.material.clone();
+        name.material.map = signTexture(title);
+        name.material.color.copy(tint).lerp(new THREE.Color(0xffffff), .55);
+        return tunnel;
+      },
       get collision() { return collision; },
       land,
       suspend() {

@@ -33,6 +33,18 @@
     'video/webm;codecs=vp8',
     'video/webm'
   ];
+  function detectWeChatBrowser() {
+    try {
+      const ua = String(navigator.userAgent || '');
+      return /MicroMessenger/i.test(ua) ||
+        /WeChat/i.test(ua) ||
+        typeof window.WeixinJSBridge !== 'undefined';
+    } catch (err) {
+      return false;
+    }
+  }
+
+  const IS_WECHAT = detectWeChatBrowser();
 
   function t(key, vars) {
     const raw = COPY[key];
@@ -77,6 +89,7 @@
     tickTimer: 0,
     stopPromise: null,
     stopResolve: null,
+    starting: false,
     memoryOnly: false,
     downloadReadyAt: 0,
     hasAudio: false
@@ -162,6 +175,50 @@
       } catch (err) { /* continue with video only */ }
     }
     return added;
+  }
+
+  async function confirmWeChatRecording() {
+    if (!IS_WECHAT) return true;
+    if (!window.SaltModal || typeof window.SaltModal.confirm !== 'function') {
+      console.warn('[replay] custom modal unavailable; skipping WeChat confirmation');
+      return true;
+    }
+    return window.SaltModal.confirm({
+      tone: 'warning',
+      kicker: t('kicker'),
+      title: t('wechatTitle'),
+      message: t('wechatWarning'),
+      confirmText: t('wechatContinue'),
+      cancelText: t('wechatCancel'),
+      focus: 'cancel'
+    });
+  }
+
+  function confirmDeleteClip(clip) {
+    if (!window.SaltModal || typeof window.SaltModal.confirm !== 'function') {
+      console.warn('[replay] custom modal unavailable; delete confirmation cancelled');
+      return Promise.resolve(false);
+    }
+    return window.SaltModal.confirm({
+      tone: 'danger',
+      kicker: t('kicker'),
+      title: t('deleteTitle'),
+      message: t('deleteMessage', { name: clip.fileName }),
+      confirmText: t('deleteConfirm'),
+      cancelText: t('cancel'),
+      focus: 'cancel'
+    });
+  }
+
+  function highlightWeChatWarning() {
+    const warning = ui.modal.querySelector('#sr-wechat-warning');
+    if (!warning || warning.hidden) return;
+    warning.classList.remove('is-pulsing');
+    void warning.offsetWidth;
+    warning.classList.add('is-pulsing');
+    try {
+      warning.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) { /* ignore */ }
   }
 
   function openDb() {
@@ -283,6 +340,10 @@
       '    <div><span class="sr-kicker"></span><h2 id="sr-title"></h2><p class="sr-intro"></p></div>',
       '    <button class="sr-close" type="button" data-sr-close aria-label=""></button>',
       '  </header>',
+      '  <div class="sr-wechat-warning" id="sr-wechat-warning" role="alert" hidden>',
+      '    <i aria-hidden="true">!</i>',
+      '    <div><b></b><p></p></div>',
+      '  </div>',
       '  <div class="sr-toolbar">',
       '    <button class="sr-record-btn" type="button" data-sr-record><i></i><span></span></button>',
       '    <div class="sr-toolbar-copy"><b id="sr-status"></b><span id="sr-storage"></span></div>',
@@ -302,6 +363,10 @@
     modal.querySelector('#sr-title').textContent = t('title');
     modal.querySelector('.sr-intro').textContent = t('intro');
     modal.querySelector('.sr-close').setAttribute('aria-label', t('close'));
+    modal.querySelector('#sr-wechat-warning b').textContent = t('wechatTitle');
+    modal.querySelector('#sr-wechat-warning p').textContent = t('wechatWarning');
+    modal.querySelector('#sr-wechat-warning').hidden = !IS_WECHAT;
+    modal.dataset.wechat = IS_WECHAT ? '1' : '0';
     modal.querySelector('.sr-record-btn span').textContent = t('start');
     modal.querySelector('#sr-library-title').textContent = t('library');
     modal.querySelector('#sr-empty').textContent = t('empty');
@@ -325,14 +390,15 @@
       event.preventDefault();
       downloadSelected();
     });
-    modal.querySelector('.sr-delete').addEventListener('click', () => {
+    modal.querySelector('.sr-delete').addEventListener('click', async () => {
       const clip = selectedClip();
       if (!clip) return;
-      if (window.confirm(t('confirmDelete'))) {
-        deleteClip(clip.id).then(() => toast(t('deleted')));
-      }
+      const allowed = await confirmDeleteClip(clip);
+      if (!allowed) return;
+      deleteClip(clip.id).then(() => toast(t('deleted')));
     });
     document.addEventListener('keydown', (event) => {
+      if (window.SaltModal && window.SaltModal.isOpen) return;
       if (event.key === 'Escape' && !modal.hidden) {
         event.preventDefault();
         closeModal();
@@ -359,8 +425,9 @@
     button.disabled = !canRecordCanvas();
     const status = ui.modal.querySelector('#sr-status');
     if (!mimeType) status.textContent = t('unsupported');
-    else if (!mp4Supported) status.textContent = t('fallbackFormat');
     else if (recording) status.textContent = t('recordingHint');
+    else if (IS_WECHAT) status.textContent = t('wechatStatus');
+    else if (!mp4Supported) status.textContent = t('fallbackFormat');
     else status.textContent = t('ready');
   }
 
@@ -468,13 +535,26 @@
     }
   }
 
-  function startRecording() {
-    if (state.recorder) return Promise.resolve(selectedClip());
+  async function startRecording() {
+    if (state.recorder || state.starting) return selectedClip();
     if (!canRecordCanvas()) {
       toast(t('unsupported'));
       setButtonState();
-      return Promise.resolve(null);
+      return null;
     }
+    state.starting = true;
+    let allowed = false;
+    try {
+      allowed = await confirmWeChatRecording();
+    } finally {
+      state.starting = false;
+    }
+    if (!allowed) {
+      if (ui.modal.hidden) openModal();
+      else highlightWeChatWarning();
+      return null;
+    }
+    if (state.recorder) return selectedClip();
     const videoStream = gameCanvas().captureStream(FPS);
     const stream = new MediaStream(videoStream.getVideoTracks());
     const audioTracks = addAudioTracks(stream);
@@ -490,7 +570,7 @@
       try { recorder = new MediaRecorder(stream, fallbackOptions); } catch (fallbackErr) {
         stream.getTracks().forEach((track) => track.stop());
         toast(t('startFailed'));
-        return Promise.resolve(null);
+        return null;
       }
     }
     state.stream = stream;
@@ -516,7 +596,7 @@
     state.tickTimer = window.setInterval(updateRecordingUi, 250);
     state.autoStopTimer = window.setTimeout(() => stopRecording(), MAX_DURATION_MS);
     setButtonState();
-    return Promise.resolve(null);
+    return null;
   }
 
   function updateRecordingUi() {
@@ -589,7 +669,12 @@
       fileName: 'saltline-replay-' + stamp + '.' + extension
     };
     await saveClip(clip);
-    toast(t(/mp4/i.test(actualType) ? 'savedMp4' : 'savedWebm'));
+    if (IS_WECHAT) {
+      toast(t(/mp4/i.test(actualType) ? 'savedMp4Wechat' : 'savedWebmWechat'));
+      highlightWeChatWarning();
+    } else {
+      toast(t(/mp4/i.test(actualType) ? 'savedMp4' : 'savedWebm'));
+    }
     if (state.stopResolve) state.stopResolve(clip);
     state.stopResolve = null;
     state.stopPromise = null;
@@ -600,6 +685,11 @@
   function downloadSelected() {
     const clip = selectedClip();
     if (!clip) return;
+    if (IS_WECHAT) {
+      highlightWeChatWarning();
+      toast(t('wechatDownloadBlocked'));
+      return;
+    }
     const now = Date.now();
     if (now < state.downloadReadyAt) return;
     state.downloadReadyAt = now + 600;
@@ -631,6 +721,7 @@
   window.SaltReplay = {
     get supported() { return canRecordCanvas(); },
     get mp4Supported() { return mp4Supported; },
+    get wechat() { return IS_WECHAT; },
     get recording() { return !!state.recorder; },
     get clips() { return state.clips.slice(); },
     start: startRecording,

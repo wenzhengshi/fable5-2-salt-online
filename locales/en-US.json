@@ -74,6 +74,7 @@
     "摧毁机械": "Machines destroyed",
     "存活时间": "Survival time",
     "低": "Low",
+    "极低": "Lowest",
     "中": "Medium",
     "高": "High",
     "极高": "Ultra",
@@ -202,6 +203,7 @@
     "鼠标已锁定 — 按 Esc 释放": "Pointer locked — press Esc to release",
     "继续行动将重新锁定鼠标。": "Resume will lock the pointer again.",
     "画质修改立即生效；阴影与反射可能需要片刻重建。": "Quality changes apply immediately; shadows and reflections may rebuild for a moment.",
+    "画质已设为极低：关闭阴影、泛光、反射与体积光，优先保证低配手机帧率。": "Lowest quality: shadows, bloom, reflections and volumetric light are off to protect frame rate on low-end phones.",
     "检查步枪": "Inspecting rifle",
     "唤醒港口主管": "Waking the port supervisor",
     "唤醒渲染器": "Waking the renderer",
@@ -556,6 +558,18 @@
     "chipValid": "7-day invite",
     "chipTalk": "Player chat"
   },
+  "expedition": {
+    "maps": {
+      "bayhaven": "Bayhaven",
+      "dustfall": "Dustfall",
+      "mothlight": "Mothlight"
+    },
+    "guideTitle": "Portal bearings",
+    "distance": "{n} m",
+    "returnToQingyun": "Return to Qingyun",
+    "loading": "Loading {map}…",
+    "loadFailed": "Map load failed. Retrying…"
+  },
   "replay": {
     "launch": "Local replay",
     "launchHint": "Open local recording and replay. Shortcut: F9",
@@ -565,6 +579,13 @@
     "kicker": "SALTLINE / LOCAL REPLAY",
     "title": "Local replay",
     "intro": "Record the 3D battlefield and game audio on this device. Nothing is uploaded to the server; the microphone is not recorded.",
+    "wechatTitle": "Replays cannot be downloaded in WeChat",
+    "wechatWarning": "Open this page in your system browser first: tap ··· in the top-right corner and choose Open in browser. WeChat's built-in browser cannot save video files, so recorded replays cannot be downloaded.",
+    "wechatConfirm": "You are using WeChat's built-in browser. Replays recorded here cannot be downloaded.\n\nTap ··· in the top-right corner and choose Open in browser before recording.\n\nRecord anyway?",
+    "wechatContinue": "Record anyway",
+    "wechatCancel": "Not now",
+    "wechatStatus": "Downloads are blocked in WeChat. Record in your system browser.",
+    "wechatDownloadBlocked": "WeChat cannot download replays. Tap ··· and choose Open in browser.",
     "library": "Recordings",
     "empty": "No local recordings yet. Deploy, then choose Start recording or press F9.",
     "selectHint": "Select a local replay",
@@ -579,15 +600,28 @@
     "download": "Download",
     "delete": "Delete",
     "confirmDelete": "Delete this local replay?",
+    "deleteTitle": "Delete local replay",
+    "deleteMessage": "Permanently delete {name} from this device?\n\nThis cannot be undone.",
+    "deleteConfirm": "Delete replay",
+    "cancel": "Cancel",
     "deleted": "Local replay deleted",
     "clipDetails": "{duration} · {size} · {date}",
     "clipDetailsAudio": "{duration} · {size} · game audio · {date}",
     "unknownUnit": "Battlefield",
     "savedMp4": "MP4 replay saved on this device",
     "savedWebm": "WebM replay saved on this browser",
+    "savedMp4Wechat": "The MP4 replay is stored only inside WeChat and cannot be downloaded. Re-record in your system browser.",
+    "savedWebmWechat": "The WebM replay is stored only inside WeChat and cannot be downloaded. Re-record in your system browser.",
     "startFailed": "Recording could not start. Check browser permissions or storage space.",
     "emptyRecording": "The recording was empty and was not saved.",
     "downloaded": "Replay download started",
+    "close": "Close"
+  },
+  "modal": {
+    "kicker": "SALTLINE / SYSTEM NOTICE",
+    "notice": "Notice",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
     "close": "Close"
   }
 }

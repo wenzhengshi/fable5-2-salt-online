@@ -9,6 +9,8 @@ const deathReplay = require('../services/deathReplay');
 const playerAuthority = require('../services/playerAuthority');
 const qingyun = require('../public/js/qingyun-zone');
 const expeditions = require('../public/js/expedition-zones');
+const roadSigns = require('../services/roadSigns');
+const signRegistry = roadSigns.createRegistry();
 const sameMap = (a, b) => a.mapId === b.mapId && a.inQingyun === b.inQingyun;
 
 const TICK_MS = 100;
@@ -390,8 +392,10 @@ function flushBoard() {
     .slice(0, 300);
   try {
     storage.writeJson('leaderboard.json', rows);
+    return true;
   } catch (err) {
     console.error('[mp] leaderboard write failed', err && err.message);
+    return false;
   }
 }
 
@@ -952,6 +956,36 @@ function handleMessage(player, raw) {
       send(player.ws, { type: 'mapReturned', pos: player.pos });
       break;
     }
+    case 'signList': {
+      const map = roadSigns.mapOf(player);
+      if (!map || !player.joined || now - (player.signListAt || 0) < 600 && player.signListMap === map) break;
+      player.signListAt = now;
+      player.signListMap = map;
+      signRegistry.list(map, player.pos, player.signOwner).then(signs => {
+        if (roadSigns.mapOf(player) === map) send(player.ws, { type: 'signList', map, signs });
+      }).catch(error => {
+        console.error('[signs] load failed:', error.message);
+        send(player.ws, { type: 'signResult', reason: 'storage' });
+      });
+      break;
+    }
+    case 'signPlace':
+    case 'signRemove': {
+      if (!player.joined || player.signBusy || now - (player.signEditAt || 0) < 700) {
+        send(player.ws, { type: 'signResult', reason: 'busy' });
+        break;
+      }
+      player.signEditAt = now;
+      player.signBusy = true;
+      signRegistry.mutate(player, msg, now).then(({ sign, removed, reason }) => {
+        send(player.ws, { type: 'signResult', reason, removed: !!removed });
+        if (sign) broadcastSign(sign, removed);
+      }).catch(error => {
+        console.error('[signs] save failed:', error.message);
+        send(player.ws, { type: 'signResult', reason: 'storage' });
+      }).finally(() => { player.signBusy = false; });
+      break;
+    }
     case 'state': {
       if (player.boatSeat == null) {
         const map = expeditions.maps[player.mapId];
@@ -1192,6 +1226,7 @@ function addPlayer(ws, req) {
     joined: false,
     clientId,
     fingerprint,
+    signOwner: roadSigns.ownerFromRequest(req),
     ip,
     userAgent: String((req && req.headers && req.headers['user-agent']) || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 240),
     lang: query.get('lang') === 'en-US' ? 'en-US' : 'zh-CN',
@@ -1259,6 +1294,24 @@ function removePlayer(player, reason) {
   if (!players.size) resetBoat(true);
 }
 
+function broadcastSign(sign, removed) {
+  for (const other of players.values()) {
+    if (roadSigns.mapOf(other) !== sign.map || roadSigns.distance(other.pos, sign.pos) > roadSigns.viewRadius + 5) continue;
+    send(other.ws, { type: 'signChange', map: sign.map, id: sign.id, removed: !!removed,
+      sign: removed ? undefined : signRegistry.publicSign(sign, other.signOwner) });
+  }
+}
+
+async function flagRoadSign(id) {
+  const sign = await signRegistry.flag(id);
+  if (!sign) return false;
+  broadcastSign(sign, false);
+  for (const player of players.values()) {
+    if (player.signOwner === sign.owner) send(player.ws, { type: 'signFlagged' });
+  }
+  return true;
+}
+
 function tick() {
   const now = Date.now();
   if (!boatOccupantCount() && boat.emptySince && now - boat.emptySince > BOAT_EMPTY_RETURN_MS) {
@@ -1286,10 +1339,13 @@ function tick() {
   deathReplay.recordPlayers(players.values(), now);
   deathReplay.prune(now);
   const roster = rosterPayload();
-  const visible = [];
+  const visibleByMap = new Map();
+  const mapKey = player => player.inQingyun ? 'qingyun' : player.mapId || 'port';
   for (const player of players.values()) {
     if (!player.active || !player.alive) continue;
-    visible.push({
+    const key = mapKey(player);
+    if (!visibleByMap.has(key)) visibleByMap.set(key, []);
+    visibleByMap.get(key).push({
       id: player.id,
       name: player.name,
       color: player.color,
@@ -1305,16 +1361,19 @@ function tick() {
       shield: now < player.protectedUntil
     });
   }
+  const voice = voicePayload();
+  const boatState = publicBoat();
   for (const player of players.values()) {
-    if (player.ws.readyState !== 1) continue;
+    // This state is superseded by the next tick. Let slow clients catch up.
+    if (player.ws.readyState !== 1 || player.ws.bufferedAmount > 64 * 1024) continue;
     send(player.ws, {
       type: 'snapshot',
       t: now,
       online: players.size,
-      players: visible.filter(item => sameMap(players.get(item.id), player)),
+      players: visibleByMap.get(mapKey(player)) || [],
       roster,
-      voice: voicePayload(),
-      boat: publicBoat(),
+      voice,
+      boat: boatState,
       you: {
         id: player.id,
         name: player.name,
@@ -1422,6 +1481,15 @@ module.exports = {
   getLeaderboard,
   getOnlinePlayers,
   applyFocusLock,
+  listRoadSignsForReview: signRegistry.reviewList,
+  flagRoadSign,
+  async flushForBackup() {
+    await signRegistry.drain();
+    const boardSaved = flushBoard();
+    const chatSaved = chatHistory.flush();
+    const focusSaved = focusMode.flush();
+    return boardSaved && chatSaved && focusSaved;
+  },
   shutdownMultiplayer() {
     flushBoard();
     chatHistory.flush();

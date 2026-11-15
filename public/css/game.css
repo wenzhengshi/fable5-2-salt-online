@@ -120,13 +120,18 @@ body { background: var(--ink); color: var(--bone); overflow: hidden; font-family
 .h-relays i.cut { background: var(--signal); border-color: var(--signal); }
 .h-relays b { font: 500 11px/1 var(--f-mono); letter-spacing: .04em; color: var(--bone); margin-left: 5px; }
 @keyframes objflash { 0% { border-left-color: var(--bone); } 100% { border-left-color: var(--signal); } }
-.h-obj.flash { animation: objflash .9s ease-out; }
+@keyframes objflash-b { 0% { border-left-color: var(--bone); } 100% { border-left-color: var(--signal); } }
+.h-obj.flash-a { animation: objflash .9s ease-out; }
+.h-obj.flash-b { animation: objflash-b .9s ease-out; }
 
+/* Qingyun portal bearings */
 /* wave warning */
 .h-warn { position: absolute; left: 50%; top: 21%; transform: translateX(-50%); white-space: nowrap; opacity: 0; color: var(--signal);
   font: 700 clamp(20px, 3.6vw, 38px)/1 var(--f-display); letter-spacing: .24em; margin-right: -.24em; text-transform: uppercase; padding: 9px 0 8px; border-top: 1px solid currentColor; border-bottom: 1px solid currentColor; }
 @keyframes warn { 0% { opacity: 0; letter-spacing: .5em; } 8% { opacity: 1; letter-spacing: .24em; } 14% { opacity: .35; } 20%, 82% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes warn-b { 0% { opacity: 0; letter-spacing: .5em; } 8% { opacity: 1; letter-spacing: .24em; } 14% { opacity: .35; } 20%, 82% { opacity: 1; } 100% { opacity: 0; } }
 .h-warn.on { animation: warn 3.4s linear both; }
+.h-warn.on.flash-a { animation-name: warn-b; }
 
 /* crosshair + hit marker */
 .h-cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transition: opacity .1s; }
@@ -404,7 +409,7 @@ kbd { display: inline-block; font: 500 10px/1 var(--f-mono); color: var(--bone);
 /* ---- motion preferences ---- */
 @media (prefers-reduced-motion: reduce) {
   .menu *, .hud *, .comms, .loc-card, .loc-card *, #boot, .m-bars i { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-  .h-warn.on { animation: none; opacity: 1; }
+  .h-warn.on, .h-warn.on.flash-a { animation: none; opacity: 1; }
   .h-cue.urgent { animation: none; }
 }
 
@@ -526,4 +531,105 @@ body.sail-active .h-heading { opacity: 0 !important; visibility: hidden !importa
 .rifle-scope b {
   position: absolute; left: 50%; top: calc(50% + min(31vh, 30vw)); transform: translateX(-50%);
   padding: .2em .45em; color: #fff; background: #080a0ccc; font: 600 14px var(--f-mono);
+}
+
+.road-sign-tools {
+  position: fixed;
+  z-index: 33;
+  bottom: calc(15px + var(--sab));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+.road-sign-tools[hidden], .road-sign-tools button[hidden], .road-sign-dialog [hidden], .road-sign-message[hidden] { display: none; }
+.road-sign-tools button, .road-sign-dialog button {
+  color: #f3f8fb;
+  background: #14334a;
+  border: 1px solid #5d8aa7;
+  border-radius: 5px;
+  padding: 7px 12px;
+  font: 600 13px system-ui, sans-serif;
+  cursor: pointer;
+}
+.road-sign-tools button:first-child::after { content: ' B'; opacity: .62; margin-left: 4px; }
+.road-sign-dialog {
+  color: #f3f8fb;
+  background: #111c26;
+  border: 1px solid #5d8aa7;
+  border-radius: 10px;
+  width: min(370px, calc(100% - 32px));
+  max-height: calc(100% - 22px);
+  box-sizing: border-box;
+  padding: 17px;
+  font: 14px/1.45 system-ui, sans-serif;
+}
+.road-sign-dialog::backdrop { background: #071018b8; }
+.road-sign-dialog h2 { margin: 0 0 8px; font-size: 19px; }
+.road-sign-dialog p { margin: 0 0 10px; overflow-wrap: anywhere; color: #c9d9e4; }
+.road-sign-dialog label { display: grid; gap: 3px; }
+.road-sign-dialog input, .road-sign-dialog select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  color: #fff;
+  background: #0b141d;
+  border: 1px solid #617b8e;
+  border-radius: 4px;
+  padding: 5px 8px;
+  margin-bottom: 8px;
+  font: 16px system-ui, sans-serif;
+}
+.road-sign-dialog footer { display: flex; justify-content: flex-end; gap: 8px; }
+.road-sign-message {
+  position: fixed;
+  z-index: 70;
+  top: calc(31% + var(--sat));
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 75vw;
+  padding: 8px 12px;
+  border-radius: 5px;
+  background: #10202eeb;
+  color: white;
+  font: 600 14px system-ui, sans-serif;
+  pointer-events: none;
+}
+.is-touch .road-sign-tools { bottom: calc(22px + var(--sab)); }
+.is-touch .road-sign-tools button:first-child::after { content: none; }
+
+.scope-zoom-tools {
+  position: fixed;
+  bottom: calc(66px + var(--sab));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 34;
+  display: flex;
+  align-items: center;
+  color: #edf5fb;
+  background: #132332e8;
+  border: 1px solid #527794;
+  border-radius: 7px;
+  overflow: hidden;
+  font: 700 14px system-ui, sans-serif;
+}
+.scope-zoom-tools[hidden] { display: none; }
+.scope-zoom-tools button {
+  width: 44px;
+  height: 42px;
+  border: 0;
+  color: inherit;
+  background: #213b50;
+  font: 700 22px system-ui, sans-serif;
+  touch-action: manipulation;
+}
+.scope-zoom-tools button:disabled { opacity: .4; }
+.scope-zoom-tools output {
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+@media (orientation: portrait) {
+  .scope-zoom-tools { top: calc(54px + var(--sat)); bottom: auto; }
 }

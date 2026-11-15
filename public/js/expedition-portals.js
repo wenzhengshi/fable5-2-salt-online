@@ -1,6 +1,17 @@
 (() => {
   'use strict';
   const { maps, near } = window.SaltExpeditionZones;
+  const messages = (window.__SALT_I18N__ || {}).messages || {};
+
+  function t(key, vars) {
+    const value = String(key || '').split('.').reduce((acc, part) => (
+      acc && typeof acc === 'object' ? acc[part] : undefined
+    ), messages);
+    if (typeof value !== 'string') return key;
+    return value.replace(/\{(\w+)\}/g, (match, name) => (
+      vars && Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match
+    ));
+  }
 
   window.installExpeditionPortals = function (game) {
     const { THREE, scene, physics, player, camera, viewCamera, renderer } = game;
@@ -10,7 +21,10 @@
     const localCamera = camera.clone(false);
     localCamera.layers.set(0);
     const clearColor = new THREE.Color();
-    const down = new THREE.Vector3(0, -1, 0);
+    const up = new THREE.Vector3(0, 1, 0);
+    const zones = Object.values(maps);
+    const next = new THREE.Vector3();
+    const ceilingOrigin = new THREE.Vector3();
     const ray = new THREE.Ray();
     const hit = new THREE.Vector3();
     let active = null;
@@ -20,38 +34,18 @@
     status.setAttribute('role', 'status');
     status.style.cssText = 'display:none;position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:12;padding:9px 16px;background:#101d27dc;color:#fff;font:600 14px sans-serif;pointer-events:none';
     document.body.append(status);
-    function label(zh, en, color) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 96;
-      const ctx = canvas.getContext('2d');
-      ctx.font = 'bold 52px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#f3fbff';
-      ctx.fillText(document.documentElement.lang === 'en-US' ? en : zh, 256, 68);
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthWrite: false, color }));
-      sprite.position.y = 1.85;
-      sprite.scale.set(4.8, .9, 1);
-      return sprite;
-    }
 
-    function portal(name, en, point, color) {
-      const group = new THREE.Group();
+    function portal(nameKey, point, color) {
+      const group = game.qingyun.createTunnel(t(nameKey), color);
       group.position.set(point.x, point.y + 1.45, point.z);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.21, .09, 12, 56), new THREE.MeshBasicMaterial({ color }));
-      ring.scale.y = 1.13;
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(1.2, 56), new THREE.MeshBasicMaterial({
-        color, opacity: .38, transparent: true, side: THREE.DoubleSide, depthWrite: false
-      }));
-      disc.scale.y = 1.13;
-      group.add(ring, disc, label(name, en, color));
       group.visible = false;
       scene.add(group);
       return group;
     }
 
-    for (const zone of Object.values(maps)) gates.set(zone.id, portal(zone.title, zone.id.toUpperCase(), zone.gate, zone.color));
-    const exitGate = portal('返回青云宗', 'RETURN TO QINGYUN', { x: 0, y: 0, z: 0 }, 0x87eeff);
+    for (const zone of zones) gates.set(zone.id, portal(zone.titleKey, zone.gate, zone.color));
+    const exitPoint = {};
+    const exitGate = portal('expedition.returnToQingyun', { x: 0, y: 0, z: 0 }, 0x87eeff);
 
     function load(zone) {
       if (!loads.has(zone.id)) {
@@ -63,7 +57,7 @@
             script.onerror = () => { script.remove(); reject(new Error('Mothlight load failed')); };
             document.head.append(script);
           })
-          : import('/maps/' + zone.id + '-environment.mjs').then(module => module.createEnvironment()))
+          : import('/maps/' + zone.id + '-environment.mjs?v=2').then(module => module.createEnvironment()))
           .catch(error => { loads.delete(zone.id); throw error; });
         loads.set(zone.id, promise);
       }
@@ -107,9 +101,7 @@
     const baseGround = physics.groundHeight.bind(physics);
     const baseMove = physics.moveCapsule.bind(physics);
     const box3 = new THREE.Box3();
-    const terrainRay = new THREE.Raycaster();
-    const terrainHits = [];
-    let terrainMesh = null;
+    let castTerrain = null;
 
     function mapRay(origin, direction, range = 500) {
       const z = origin.z - active.offset;
@@ -132,22 +124,17 @@
         else normal.z = Math.abs(hit.z - box[2]) < .001 ? -1 : 1;
         result = { dist, point: new THREE.Vector3(hit.x, hit.y, hit.z + active.offset), normal, surface: 'concrete', box: null };
       }
-      if (terrainMesh && direction.y < 0) {
-        terrainHits.length = 0;
-        terrainRay.set(ray.origin, direction);
-        terrainRay.far = best;
-        terrainMesh.raycast(terrainRay, terrainHits);
-        for (const entry of terrainHits) {
-          if (entry.distance >= best) continue;
-          best = entry.distance;
-          entry.point.z += active.offset;
-          result = { dist: best, point: entry.point, normal: entry.face.normal, surface: 'dirt', box: null };
+      if (castTerrain && direction.y < 0) {
+        const terrain = castTerrain(ray, best);
+        if (terrain) {
+          terrain.point.z += active.offset;
+          result = terrain;
         }
       } else if (direction.y < -.0001) {
         const floor = environment.heightAt(origin.x, z);
         const dist = (floor - origin.y) / direction.y;
         if (dist > .001 && dist < best) result = {
-          dist, point: origin.clone().addScaledVector(direction, dist), normal: down.clone().negate(), surface: 'concrete', box: null
+          dist, point: origin.clone().addScaledVector(direction, dist), normal: up.clone(), surface: 'concrete', box: null
         };
       }
       return result;
@@ -160,7 +147,7 @@
       const state = { onGround: false, hitWall: false, hitCeil: false, surface: 'concrete' };
       const step = grounded ? .45 : .08;
       for (const axis of ['x', 'z']) {
-        const next = pos.clone();
+        next.copy(pos);
         next[axis] += vel[axis] * dt;
         const min = axis === 'x' ? active.minX : active.minZ;
         const max = axis === 'x' ? active.maxX : active.maxZ;
@@ -184,9 +171,9 @@
           state.onGround = true;
         }
       } else {
-        const origin = pos.clone();
-        origin.y += height;
-        const ceiling = mapRay(origin, down.clone().negate(), vel.y * dt);
+        ceilingOrigin.copy(pos);
+        ceilingOrigin.y += height;
+        const ceiling = mapRay(ceilingOrigin, up, vel.y * dt);
         if (ceiling) {
           y = pos.y + Math.max(0, ceiling.dist - .02);
           vel.y = 0;
@@ -197,15 +184,21 @@
       return state;
     };
 
+    let portRoots = [];
     function enter(zone, world, position) {
+      portRoots = [game.render.sky, game.level.root, game.backdrop.root, game.ground.root,
+        scene.getObjectByName('saltline-external-combat-zone'), scene.getObjectByName('saltline-boat-wake')];
       game.qingyun.suspend();
       active = zone;
       environment = world;
       for (const gate of gates.values()) gate.visible = false;
       const qingyunGate = scene.getObjectByName('qingyun-time-tunnel');
       if (qingyunGate) qingyunGate.visible = false;
-      terrainMesh = world.terrain ? new THREE.Mesh(world.terrain) : null;
+      castTerrain = world.terrain ? window.SaltTerrainRay(THREE, world.terrain) : null;
+      exitPoint.x = zone.exit.x;
+      exitPoint.z = zone.exit.z;
       const exitY = ground(zone.exit.x, zone.exit.z, zone.landing.y + 3);
+      exitPoint.y = exitY;
       exitGate.position.set(zone.exit.x, exitY + 1.45, zone.exit.z);
       land({ ...position, y: ground(position.x, position.z, zone.landing.y + 2) }, Math.PI);
     }
@@ -247,21 +240,22 @@
         const playing = game.game.state === 'playing' && player.alive;
         const inHub = !!game.qingyun?.active;
         const canUse = playing && !window.__saltBoat?.riding && (inHub || active);
-        for (const [id, gate] of gates) {
+        for (const gate of gates.values()) {
           gate.visible = playing && !active && inHub;
-          gate.children[1].material.opacity = .29 + .12 * Math.sin(game.time.t * 5 + id.length);
+          if (gate.visible) gate.children[1].material.uniforms.time.value = game.time.t;
         }
         exitGate.visible = !!active;
+        if (active) exitGate.children[1].material.uniforms.time.value = game.time.t;
         if (!canUse || game.time.t - lastRequest < 1.2) return;
         const mp = window.__mp;
         if (active) {
-          if (!near(player.pos, { ...active.exit, y: exitGate.position.y - 1.45 })) return;
+          if (!near(player.pos, exitPoint)) return;
           lastRequest = game.time.t;
           if (mp?.connected) { mp.syncState(); mp.send({ type: 'mapReturn' }); }
           else leave();
           return;
         }
-        const zone = Object.values(maps).find(item => near(player.pos, item.gate));
+        const zone = zones.find(item => near(player.pos, item.gate));
         if (!zone) { status.style.display = 'none'; return; }
         if (pending?.zone === zone && !pending.world) return;
         if (pending?.zone === zone) {
@@ -271,27 +265,28 @@
           return;
         }
         const attempt = pending = { zone };
-        status.textContent = document.documentElement.lang === 'en-US' ? 'Loading ' + zone.id + '…' : '正在加载' + zone.title + '…';
+        status.textContent = t('expedition.loading', { map: t(zone.titleKey) });
         status.style.display = 'block';
         load(zone).then(world => { if (pending === attempt) attempt.world = world; }).catch(error => {
           if (pending !== attempt) return;
           pending = null;
           lastRequest = game.time.t;
-          status.textContent = document.documentElement.lang === 'en-US' ? 'Map load failed. Retrying…' : '地图加载失败，正在重试…';
+          status.textContent = t('expedition.loadFailed');
           console.error('[expedition]', error);
         });
       },
-      render(dt, time) {
+      render(dt) {
         if (!active) return false;
-        const hidden = [game.render.sky, game.level.root, game.backdrop.root, game.ground.root,
-          scene.getObjectByName('saltline-external-combat-zone'), scene.getObjectByName('saltline-boat-wake')].filter(object => object?.visible);
+        const hidden = portRoots.filter(object => object?.visible);
         for (const object of hidden) object.visible = false;
         const alpha = renderer.getClearAlpha();
         renderer.getClearColor(clearColor);
+        renderer.info.reset();
         const auto = renderer.autoClear;
         const shadows = renderer.shadowMap.enabled;
         const fog = scene.fog;
         const background = scene.background;
+        const matrices = scene.matrixWorldAutoUpdate;
         try {
           localCamera.position.copy(camera.position);
           localCamera.position.z -= active.offset;
@@ -301,7 +296,7 @@
           localCamera.far = Math.max(camera.far, 4600);
           localCamera.updateProjectionMatrix();
           localCamera.updateMatrixWorld(true);
-          environment.update(localCamera, dt, time);
+          environment.update(localCamera, dt, game.time.t);
           renderer.setRenderTarget(null);
           renderer.shadowMap.enabled = false;
           renderer.autoClear = true;
@@ -316,6 +311,8 @@
           actorCamera.projectionMatrix.copy(localCamera.projectionMatrix);
           actorCamera.projectionMatrixInverse.copy(localCamera.projectionMatrixInverse);
           actorCamera.updateMatrixWorld(true);
+          scene.updateMatrixWorld();
+          scene.matrixWorldAutoUpdate = false;
           renderer.render(scene, actorCamera);
           renderer.clearDepth();
           camera.updateMatrixWorld(true);
@@ -325,6 +322,7 @@
           viewCamera.matrixWorldInverse.copy(camera.matrixWorldInverse);
           renderer.render(scene, viewCamera);
         } finally {
+          scene.matrixWorldAutoUpdate = matrices;
           scene.fog = fog;
           scene.background = background;
           renderer.autoClear = auto;

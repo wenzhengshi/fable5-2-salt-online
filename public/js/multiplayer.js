@@ -407,18 +407,22 @@
 
   setConnection('connecting');
 
+  function setText(node, value) {
+    if (node.textContent !== value) node.textContent = value;
+  }
+
   function updateChip() {
-    el.online.textContent = String(onlineCount);
-    el.kills.textContent = String(selfStats.kills || 0);
-    el.deaths.textContent = String(selfStats.deaths || 0);
-    el.ping.textContent = pingMs == null ? '—' : Math.round(pingMs) + 'ms';
+    setText(el.online, String(onlineCount));
+    setText(el.kills, String(selfStats.kills || 0));
+    setText(el.deaths, String(selfStats.deaths || 0));
+    setText(el.ping, pingMs == null ? '—' : Math.round(pingMs) + 'ms');
     el.ping.classList.toggle('bad', pingMs != null && pingMs > 160);
   }
 
   function updateTitleLine() {
     const line = document.querySelector('[data-mp-title]');
     if (!line) return;
-    line.textContent = t('titleLine') + ' · ' + t('titleOnline', { n: onlineCount });
+    setText(line, t('titleLine') + ' · ' + t('titleOnline', { n: onlineCount }));
   }
 
   function decorateTitle() {
@@ -568,8 +572,19 @@
 
   /* --------------------------------------------------------------- roster */
 
+  let renderedRoster = [];
+  let renderedSelf;
   function renderRoster() {
-    el.rosterList.innerHTML = '';
+    setText(el.rosterOnline, t('titleOnline', { n: onlineCount }));
+    if (renderedSelf === myId && renderedRoster.length === rosterData.length &&
+      rosterData.every((item, index) => {
+        const row = renderedRoster[index];
+        return row.id === item.id && row.name === item.name && row.color === item.color &&
+          row.kills === item.kills && row.deaths === item.deaths && row.alive === item.alive;
+      })) return;
+    renderedSelf = myId;
+    renderedRoster = rosterData;
+    const rows = document.createDocumentFragment();
     let others = 0;
     for (const item of rosterData) {
       const isSelf = item.id === myId;
@@ -592,11 +607,11 @@
       state.className = 'mp-rr-state' + (item.alive ? ' alive' : '');
       state.title = item.alive ? '' : t('respawningShort');
       row.append(name, kd, state);
-      el.rosterList.appendChild(row);
+      rows.appendChild(row);
     }
+    el.rosterList.replaceChildren(rows);
     el.rosterEmpty.hidden = others > 0;
-    el.rosterEmpty.textContent = t('emptyRoster');
-    el.rosterOnline.textContent = t('titleOnline', { n: onlineCount });
+    setText(el.rosterEmpty, t('emptyRoster'));
   }
 
   async function loadBoard() {
@@ -2031,6 +2046,10 @@
   }
 
   function updateAvatars(dt) {
+    const now = performance.now();
+    const alpha = 1 - Math.exp(-dt * 16);
+    const turn = Math.min(1, dt * 14);
+    const pose = Math.min(1, dt * 10);
     for (const avatar of avatars.values()) {
       if (!avatar.group.visible) continue;
       if (avatar.wreck && !avatar.wreck.done) {
@@ -2041,13 +2060,11 @@
       }
       const distanceSq = avatar.group.position.distanceToSquared(avatar.target);
       if (distanceSq > 64) avatar.group.position.copy(avatar.target);
-      else {
-        const alpha = 1 - Math.exp(-dt * 16);
-        avatar.group.position.lerp(avatar.target, alpha);
-      }
+      else if (distanceSq > 1e-8) avatar.group.position.lerp(avatar.target, alpha);
+      else if (distanceSq > 0) avatar.group.position.copy(avatar.target);
       let delta = avatar.targetYaw - avatar.group.rotation.y;
       delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-      avatar.group.rotation.y += delta * Math.min(1, dt * 14);
+      avatar.group.rotation.y += delta * turn;
 
       const moving = !!(avatar.data && avatar.data.moving);
       if (avatar.rig) {
@@ -2066,7 +2083,6 @@
         if (avatar.legs[0]) avatar.legs[0].rotation.x *= 0.9;
         if (avatar.legs[1]) avatar.legs[1].rotation.x *= 0.9;
       }
-      const pose = Math.min(1, dt * 10);
       const kind = avatar.soldierKind || normalizeSoldier(avatar.data && avatar.data.soldier);
       try { updateAvatarDroneLight(avatar, kind); } catch (err) { /* ignore */ }
       const targetLabelY = isMachine(kind) ? (kind === 'drone' ? 1.35 : 1.05) : 2.28;
@@ -2076,7 +2092,7 @@
         avatar.body.position.y += (0 - avatar.body.position.y) * pose;
       }
       avatar.label.position.y += (targetLabelY - avatar.label.position.y) * pose;
-      if (avatar.hitAt && performance.now() - avatar.hitAt < 140) {
+      if (avatar.hitAt && now - avatar.hitAt < 140) {
         avatar.group.position.x += (Math.random() - 0.5) * 0.06;
       }
     }
@@ -2453,12 +2469,14 @@
       const mapCollision = G.qingyun?.active && G.qingyun.collision;
       const collision = window.SaltFlightCollision;
       if (G.expedition?.active) {
-        const resolved = G.expedition.moveDrone(unitFlightPrev, candidate);
+        let resolved = G.expedition.moveDrone(unitFlightPrev, candidate);
+        resolved = G.roadSigns?.clipDrone(unitFlightPrev, resolved) || resolved;
         player.pos.copy(resolved);
         unitFlightY = player.pos.y = Math.max(minY, resolved.y);
       } else if (mapCollision) {
         const previous = unitFlightPrev && qingyun.contains(unitFlightPrev) ? unitFlightPrev : player.pos;
-        const resolved = mapCollision.moveDrone(previous, candidate, .42);
+        let resolved = mapCollision.moveDrone(previous, candidate, .42);
+        resolved = G.roadSigns?.clipDrone(previous, resolved) || resolved;
         player.pos.copy(resolved);
         unitFlightY = player.pos.y = Math.max(minY, resolved.y);
       } else if (collision && G.physics && Array.isArray(G.physics.boxes)) {

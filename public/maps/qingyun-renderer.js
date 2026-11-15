@@ -4355,11 +4355,12 @@ const presets = {
   ultra:  { scale: 1,   pixels: 2073600, reflection: .44, cloud: .5,  steps: 30, rays: 30, shadowEvery: 3 },
   high:   { scale: .9,  pixels: 1440000, reflection: .38, cloud: .42, steps: 24, rays: 24, shadowEvery: 4 },
   medium: { scale: .8,  pixels:  960000, reflection: .33, cloud: .36, steps: 18, rays: 16, shadowEvery: 6 },
-  low:    { scale: .68, pixels:  600000, reflection: .27, cloud: .3,  steps: 13, rays: 0,  shadowEvery: 8 }
+  low:    { scale: .68, pixels:  600000, reflection: .27, cloud: .3,  steps: 13, rays: 0,  shadowEvery: 8 },
+  minimal:{ scale: .52, pixels:  360000, reflection: .18, cloud: .22, steps: 8,  rays: 0,  shadowEvery: 12 }
 };
 let viewWidth = 0, viewHeight = 0, applied = null;
 let qualityName, tier, frame = 0, frameAverage = 0, samples = 0, cooldown = 1;
-const levels = ['low','medium','high','ultra'];
+const levels = ['minimal','low','medium','high','ultra'];
 
 function resetFrameHistory() {
   qualityName = undefined;

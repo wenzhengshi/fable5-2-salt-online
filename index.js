@@ -4,15 +4,17 @@ const http = require('http');
 const express = require('express');
 const compression = require('compression');
 const apiRouter = require('./routes/api');
+const adminRouter = require('./routes/admin');
 const chatHistory = require('./services/chatHistory');
 const focusMode = require('./services/focusMode');
+const roadSigns = require('./services/roadSigns');
 const { attachMultiplayer, shutdownMultiplayer } = require('./realtime/multiplayer');
 const { version: RELEASE_VERSION } = require('./package.json');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const ASSET_VERSION = '20261115-qingyun-hub-music-v' + RELEASE_VERSION;
+const ASSET_VERSION = '20261115-sign-clock-v' + RELEASE_VERSION;
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -80,6 +82,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/admin', adminRouter);
 app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -97,6 +100,7 @@ app.use('/api', (req, res, next) => {
 app.use('/api', apiRouter);
 
 app.get('/', (req, res) => {
+  roadSigns.issueCookie(req, res);
   const queryLang = req.query && req.query.lang;
   const lang = queryLang === 'en-US' || queryLang === 'zh-CN' ? queryLang : req.lang;
   if (lang !== req.lang) {

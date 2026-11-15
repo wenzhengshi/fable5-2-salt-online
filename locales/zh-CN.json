@@ -306,6 +306,18 @@
     "chipValid": "7 天有效",
     "chipTalk": "玩家交流"
   },
+  "expedition": {
+    "maps": {
+      "bayhaven": "湾城",
+      "dustfall": "西部荒原",
+      "mothlight": "霓虹雨城"
+    },
+    "guideTitle": "传送门方位",
+    "distance": "{n} 米",
+    "returnToQingyun": "返回青云宗",
+    "loading": "正在加载{map}…",
+    "loadFailed": "地图加载失败，正在重试…"
+  },
   "replay": {
     "launch": "本地回放",
     "launchHint": "打开本地录制与回放，快捷键 F9",
@@ -315,6 +327,13 @@
     "kicker": "SALTLINE / LOCAL REPLAY",
     "title": "本地回放",
     "intro": "录制当前三维战场画面与游戏音效，并保存在本机。不会上传服务器；不录制麦克风。",
+    "wechatTitle": "微信内置浏览器无法下载回放",
+    "wechatWarning": "请先点击右上角「···」选择「在浏览器打开」，再开始录制。微信内置浏览器不允许保存视频文件，录制完成后将无法下载。",
+    "wechatConfirm": "当前为微信内置浏览器，录制完成后将无法下载回放。\n\n请点击右上角「···」，选择「在浏览器打开」后再录制。\n\n仍要现在录制吗？",
+    "wechatContinue": "仍要录制",
+    "wechatCancel": "先不录制",
+    "wechatStatus": "微信内无法下载，请改用系统浏览器录制",
+    "wechatDownloadBlocked": "微信内置浏览器无法下载回放，请点击右上角「···」选择「在浏览器打开」",
     "library": "录制列表",
     "empty": "还没有本地录制。进入战场后点击“开始录制”，或按 F9。",
     "selectHint": "选择一段本地回放",
@@ -329,15 +348,28 @@
     "download": "下载文件",
     "delete": "删除",
     "confirmDelete": "确定删除这段本地回放吗？",
+    "deleteTitle": "删除本地回放",
+    "deleteMessage": "{name}\n\n将从当前设备永久删除，此操作无法撤销。",
+    "deleteConfirm": "确认删除",
+    "cancel": "取消",
     "deleted": "本地回放已删除",
     "clipDetails": "{duration} · {size} · {date}",
     "clipDetailsAudio": "{duration} · {size} · 含游戏音效 · {date}",
     "unknownUnit": "综合战场",
     "savedMp4": "MP4 回放已保存到本机",
     "savedWebm": "当前浏览器已保存 WebM 回放",
+    "savedMp4Wechat": "MP4 回放仅保存在微信内，无法下载；请改用系统浏览器重新录制",
+    "savedWebmWechat": "WebM 回放仅保存在微信内，无法下载；请改用系统浏览器重新录制",
     "startFailed": "录制启动失败，请检查浏览器权限或存储空间",
     "emptyRecording": "录制内容为空，未保存",
     "downloaded": "回放文件已开始下载",
+    "close": "关闭"
+  },
+  "modal": {
+    "kicker": "SALTLINE / 系统提示",
+    "notice": "提示",
+    "confirm": "确认",
+    "cancel": "取消",
     "close": "关闭"
   }
 }

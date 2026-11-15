@@ -35,6 +35,11 @@ const required = [
   'index.js',
   'API.md',
   'routes/api.js',
+  'routes/admin.js',
+  'services/serverBackup.js',
+  'services/adminCredentials.js',
+  'views/admin.ejs',
+  'public/css/admin-backup.css',
   'controllers/userController.js',
   'views/index.ejs',
   'public/css/style.css',
@@ -47,8 +52,17 @@ const required = [
   'public/js/boot-gate.js',
   'public/js/audio-tap.js',
   'public/js/replay.js',
+  'public/js/modal.js',
+  'public/css/modal.css',
   'public/js/multiplayer.js',
-  'realtime/multiplayer.js'
+  'realtime/multiplayer.js',
+  'services/roadSigns.js',
+  'public/js/road-sign-rules.js',
+  'public/js/road-sign-physics.js',
+  'public/js/road-signs.js',
+  'public/js/terrain-ray.js',
+  'public/js/expedition-zones.js',
+  'public/js/expedition-portals.js'
 ];
 
 for (const relative of required) {

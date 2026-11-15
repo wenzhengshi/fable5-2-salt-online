@@ -8,6 +8,11 @@
 body { margin: 0; padding: clamp(18px, 7vw, 72px) 18px; }
 main { max-width: 570px; margin: auto; }
 header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; }
+.admin-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 10px; }
+.lang-switch { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #496268; border-radius: 999px; background: #0e171c; }
+.lang-switch button { min-height: 32px; padding: 4px 10px; border: 0; border-radius: 999px; color: #a5b7ba; background: transparent; font-size: 13px; }
+.lang-switch button.active { color: #07191a; background: #91e1d5; font-weight: 750; }
+.lang-switch button:hover:not(.active) { color: #ecf3f4; background: #1c3037; }
 a { color: #afe0d8; text-decoration: none; font-weight: 700; }
 a:hover { text-decoration: underline; }
 section { background: #16242a; border: 1px solid #34484c; border-radius: 14px; padding: clamp(20px, 6vw, 38px); }
@@ -32,3 +37,8 @@ code { overflow-wrap: anywhere; }
 .review-sign strong { display: block; overflow-wrap: anywhere; }
 .review-sign .caption { margin: 3px 0 0; }
 .review-sign form { margin-top: 8px; }
+
+@media (max-width: 430px) {
+  header { align-items: flex-start; }
+  .admin-tools { flex-direction: column; align-items: flex-end; }
+}

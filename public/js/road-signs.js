@@ -32,6 +32,7 @@
         text: tr('请输入可公开展示的文字，最多 32 字。', 'Enter up to 32 characters suitable for public display.'),
         map: tr('请在青云宗或远征地图内操作。', 'Road signs are available in Qingyun and the expedition maps.'),
         identity: tr('请启用本站 Cookie 后刷新。', 'Enable cookies for this site and reload.'),
+        checkFailed: tr('位置检查超时，请重试。', 'The location check timed out. Try again.'),
         storage: tr('路牌保存暂时失败，请重试。', 'Could not save the sign. Try again.'),
         busy: tr('操作过快，请稍等。', 'Wait a moment and try again.'),
         cooldown: tr('立牌间隔太短，请稍后再试。', 'You are placing signs too quickly. Try again shortly.'),
@@ -105,6 +106,8 @@
     let map = null;
     let target = null;
     let editor = null;
+    let pendingCheck = null;
+    let nextCheckId = 0;
     let mp;
     let unsubscribe;
     let lastCheck = 0;
@@ -216,6 +219,22 @@
         notice(text.flagged);
         return;
       }
+      if (msg.type === 'signCheckResult') {
+        if (!pendingCheck || msg.requestId !== pendingCheck.id) return;
+        const check = pendingCheck;
+        cancelCheck();
+        if (check.map !== currentMap() || !player.alive || !mp?.connected ||
+            game.game.state !== 'playing' || editor) return;
+        if (msg.reason) { notice(text.reason[msg.reason] || text.reason.storage); return; }
+        if (occupied(check.entry)) { notice(text.reason.occupied); return; }
+        if (!player.onGround || mp.soldier === 'drone' || planarDistance(player.pos, check.entry) > 5 ||
+            Math.abs(player.pos.y - check.entry.y) > 2.5) {
+          notice(text.reason.range);
+          return;
+        }
+        showEditor('place', check.entry);
+        return;
+      }
       if (msg.type === 'signResult') {
         let message = msg.reason ? (text.reason[msg.reason] || text.reason.storage) : (msg.removed ? text.removed : text.placed);
         if (!msg.reason && !msg.removed && Number.isFinite(Number(msg.remaining))) {
@@ -235,13 +254,14 @@
       }
     }
 
-    function coords() {
+    function coords(onSignHit) {
       if (!map || !player.onGround || mp?.soldier === 'drone') return null;
       camera.getWorldPosition(origin);
       camera.getWorldDirection(direction);
       if (direction.y > -.13) return null;
       const hit = physics.raycast(origin, direction, 7);
-      if (!hit || hit.surface === 'road-sign' || hit.normal.y < .65 || planarDistance(hit.point, player.pos) > 5 ||
+      if (hit?.surface === 'road-sign') { onSignHit?.(); return null; }
+      if (!hit || hit.normal.y < .65 || planarDistance(hit.point, player.pos) > 5 ||
           Math.abs(hit.point.y - player.pos.y) > 2.5) return null;
       const floor = physics.groundHeight(hit.point.x, hit.point.z, hit.point.y + .35);
       if (Math.abs(floor - hit.point.y) > .75) return null;
@@ -260,12 +280,51 @@
       return nearest;
     }
 
+    function occupied(point) {
+      for (const sign of entries.values()) {
+        if (planarDistance(sign.pos, point) < 3) return true;
+      }
+      return false;
+    }
+
+    function cancelCheck() {
+      if (!pendingCheck) return;
+      clearTimeout(pendingCheck.timer);
+      pendingCheck = null;
+    }
+
     function open(mode) {
-      if (!map || game.game.state !== 'playing' || editor) return;
+      if (!map || !player.alive || game.game.state !== 'playing' || editor || pendingCheck) return;
       if (!mp?.connected) { notice(text.offline); return; }
-      const entry = mode === 'place' ? coords() : ownsNearby();
-      if (!entry) { notice(mode === 'place' ? text.help : text.reason.range); return; }
-      if (mode === 'place' && protectedSpot(map, entry)) { notice(text.reason.gate); return; }
+      if (mode === 'remove') {
+        const sign = ownsNearby();
+        if (sign) showEditor(mode, sign);
+        else notice(text.reason.range);
+        return;
+      }
+
+      let hitSign = false;
+      const point = coords(() => { hitSign = true; });
+      if (!point) { notice(hitSign ? text.reason.occupied : text.help); return; }
+      if (occupied(point)) { notice(text.reason.occupied); return; }
+      if (protectedSpot(map, point)) { notice(text.reason.gate); return; }
+
+      const entry = { x: point.x, y: point.y, z: point.z };
+      const id = ++nextCheckId;
+      mp.syncState();
+      if (!mp.send({ type: 'signCheck', requestId: id, pos: entry })) {
+        notice(text.offline);
+        return;
+      }
+      const timer = setTimeout(() => {
+        cancelCheck();
+        notice(mp?.connected ? text.reason.checkFailed : text.offline);
+      }, 3500);
+      pendingCheck = { id, entry, map, timer };
+    }
+
+    function showEditor(mode, entry) {
+      notices.hidden = true;
       editor = { mode, entry, map, relock: input.locked };
       heading.textContent = mode === 'place' ? text.place : text.confirm;
       detail.textContent = mode === 'place' ? text.rules : entry.text;
@@ -405,6 +464,7 @@
       update() {
         const nextMap = currentMap();
         if (nextMap !== map) {
+          cancelCheck();
           close(false);
           for (const id of entries.keys()) erase(id);
           map = nextMap;
@@ -416,11 +476,13 @@
         holder.visible = !!map;
         toolbar.hidden = !playing;
         if (!playing) {
+          cancelCheck();
           close(false);
           marker.visible = false;
           return;
         }
         if (mp !== window.__mp) {
+          cancelCheck();
           unsubscribe?.();
           mp = window.__mp;
           unsubscribe = mp?.onMessage(receive);
@@ -439,7 +501,7 @@
           target = editor?.mode === 'place' ? editor.entry : coords();
           remove.hidden = !ownsNearby();
           const eligible = target && !protectedSpot(map, target) &&
-            !Array.from(entries.values()).some(sign => planarDistance(sign.pos, target) < 3);
+            !occupied(target);
           marker.visible = !!eligible;
           if (eligible) marker.position.set(target.x, target.y + .024, target.z);
         }

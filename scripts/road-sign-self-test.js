@@ -130,7 +130,26 @@ async function mapCapacity() {
   assert.equal(blocked.reason, 'mapFull', '单地图总容量必须拒绝继续写入');
 }
 
+async function placementPrecheck() {
+  const store = await registry();
+  const now = Date.UTC(2026, 10, 15, 2, 0, 0);
+  const author = player(now);
+  const visitor = player(now, 1);
+  const point = { ...author.pos };
+  assert.equal((await store.checkPlacement(visitor, point)).reason, undefined);
+  assert.deepEqual(await store.list('qingyun', point, visitor.signOwner), []);
+  assert.ok((await place(store, author, point, now)).sign);
+
+  const occupied = { ...point, x: point.x + 2.5 };
+  assert.equal((await store.checkPlacement(visitor, occupied)).reason, 'occupied');
+  assert.equal((await store.checkPlacement(visitor, { ...point, x: point.x + 3 })).reason, undefined);
+  assert.equal((await store.checkPlacement(visitor, { ...point, x: point.x + 6 })).reason, 'range');
+  // The check never reserves the point. A later submission must still reject a new conflict.
+  assert.equal((await place(store, visitor, occupied, now + 2000)).reason, 'occupied');
+}
+
 async function main() {
+  await placementPrecheck();
   await dailyAndBurstable();
   await shortTermRateLimit();
   await networkAreaLimit();
@@ -145,7 +164,7 @@ async function main() {
     networkMapLimit: LIMITS.networkMapLimit,
     networkAreaSigns: LIMITS.densityNetwork,
     mapTotal: LIMITS.mapTotal,
-    checks: ['daily-limit', 'cookie-rotation', 'cooldown', 'burst', 'network-density', 'network-map', 'map-capacity']
+    checks: ['placement-precheck', 'daily-limit', 'cookie-rotation', 'cooldown', 'burst', 'network-density', 'network-map', 'map-capacity']
   }, null, 2));
 }
 

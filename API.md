@@ -38,6 +38,30 @@
 - 路径：`/css/*`、`/js/*`、`/models/*`
 - 说明：游戏样式、Three.js 游戏 bundle、`audio-tap.js` WebAudio 分流、多人对战、`sail.js` 多人撤离船与外海交战区、`death-replay-3d.js` 三维死亡回放、全服开麦语音与大字客户端脚本、男女士兵 GLB 模型、PAC-9 步枪模型，以及机器狗/无人机单位模型脚本。机器狗和无人机直接复用游戏 bundle 内的 `hound` / `gull` 敌人建模与材质；死亡回放和船只系统复用游戏 bundle 暴露的 Three.js，不新增服务端依赖或模型请求。
 
+## 管理后台
+
+管理后台使用独立的管理员会话 Cookie `salt_backup_admin`、CSRF 校验和 60 分钟会话有效期；所有页面返回 `Cache-Control: no-store` 与 `X-Robots-Tag: noindex, nofollow`。页面右上角提供中英文切换表单，提交到 `POST /api/lang` 后以 `303` 返回当前后台页面。
+
+### 后台首页与登录
+
+- `GET /admin`：未登录时显示管理员登录页；首次登录显示修改默认密码页；已登录显示全服备份页。
+- `POST /admin/login`：表单字段 `username`、`password`。成功返回 `303 /admin` 并写入管理员会话；凭据错误返回 `401`，登录尝试过多返回 `429`。
+- `POST /admin/logout`：表单字段 `csrf`；清除管理员会话并返回 `303 /admin`。
+
+### 修改管理员密码
+
+- `GET /admin/password`：已登录时显示修改密码表单。
+- `POST /admin/password`：表单字段 `csrf`、`current`、`password`、`confirm`。新密码至少 12 个字符，不能等于默认密码或当前密码；成功后清空所有管理员会话并返回登录页。
+
+### 路牌审核
+
+- `GET /admin/signs`：需要管理员会话且已完成首次密码修改；支持 `?page=<n>` 分页，列出各地图路牌及其坐标、归属状态。
+- `POST /admin/signs/:id/flag`：表单字段 `csrf`、`page`。将指定路牌标记为违规并返回 `303 /admin/signs?page=<n>...`；游戏中牌面文字会替换为违规提示。
+
+### 全服备份
+
+- `POST /admin/backup`：表单字段 `csrf`。先刷新排行榜、路牌、聊天、专注与游玩时长等持久化数据，再生成 ZIP 下载；同一时间仅允许一份备份任务。失败时返回后台错误页。
+
 ## 内容安全与敏感词拦截
 
 - 生效范围：`join` / `rename` 的玩家代号、`chat` 全服大字、从 `data/chat-history.jsonl` 载入的历史大字，以及从 `data/leaderboard.json` 载入的历史排行榜代号。
@@ -173,8 +197,8 @@
 
 - 方法：`POST`
 - 路径：`/api/lang`
-- Body：`{"lang":"zh-CN"}` 或 `{"lang":"en-US"}`
-- 说明：写入有效期一年的 `lang` cookie；非法值回退为 `zh-CN`。
+- Body：JSON `{"lang":"zh-CN"}` / `{"lang":"en-US"}`，或后台语言表单的 `application/x-www-form-urlencoded` 字段 `lang`、`redirect`
+- 说明：写入有效期一年的 `lang` cookie；非法值回退为 `zh-CN`。JSON 请求返回当前语言的确认消息；表单请求可在 `redirect` 为站内绝对路径时返回 `303` 重定向，供无脚本后台页切换语言。
 
 ## WebSocket `/ws`
 

@@ -113,7 +113,7 @@ if (!/server\.listen\(PORT,\s*HOST/.test(indexSource)) {
 
 for (const [name, dictionary] of [['zh-CN', zh], ['en-US', en]]) {
   if (!dictionary) continue;
-  for (const section of ['meta', 'nav', 'ui', 'msg']) {
+  for (const section of ['meta', 'nav', 'ui', 'msg', 'admin']) {
     if (!dictionary[section] || typeof dictionary[section] !== 'object') {
       fail('locales/' + name + '.json 缺少 i18n 分区: ' + section);
     }

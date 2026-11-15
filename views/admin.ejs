@@ -1,85 +1,92 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="<%= lang %>">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title><%= view === 'signs' ? '路牌审核' : '全服备份' %> · 盐线行动</title>
-  <link rel="stylesheet" href="/css/admin-backup.css?v=2">
+  <title><%= t(view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %> · <%= t('nav.title') %></title>
+  <link rel="stylesheet" href="/css/admin-backup.css?v=3">
 </head>
 <body>
   <main>
     <header>
-      <a href="/">盐线行动</a>
-      <% if (csrf) { %>
-        <form action="/admin/logout" method="post">
-          <input name="csrf" type="hidden" value="<%= csrf %>">
-          <button type="submit" class="plain">退出登录</button>
+      <a href="/"><%= t('nav.title') %></a>
+      <div class="admin-tools">
+        <form action="/api/lang" method="post" class="lang-switch" aria-label="<%= t('nav.language') %>">
+          <input name="redirect" type="hidden" value="<%= returnTo || '/admin' %>">
+          <button type="submit" name="lang" value="zh-CN" class="<%= lang === 'zh-CN' ? 'active' : '' %>" aria-pressed="<%= lang === 'zh-CN' %>"><%= t('lang.zh') %></button>
+          <button type="submit" name="lang" value="en-US" class="<%= lang === 'en-US' ? 'active' : '' %>" aria-pressed="<%= lang === 'en-US' %>"><%= t('lang.en') %></button>
         </form>
-      <% } %>
+        <% if (csrf) { %>
+          <form action="/admin/logout" method="post">
+            <input name="csrf" type="hidden" value="<%= csrf %>">
+            <button type="submit" class="plain"><%= t('admin.logout') %></button>
+          </form>
+        <% } %>
+      </div>
     </header>
     <section aria-labelledby="title">
-      <h1 id="title"><%= view === 'signs' ? '路牌审核' : '全服备份' %></h1>
+      <h1 id="title"><%= t(view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
       <% if (message) { %><p class="<%= view === 'signs' ? 'caption' : 'error' %>" role="status"><%= message %></p><% } %>
       <% if (view === 'backup') { %>
-        <p>将服务器已保存的游戏数据打包成 ZIP，直接下载到这台设备。</p>
+        <p><%= t('admin.backupIntro') %></p>
         <ul>
-          <li>各地图路牌及其归属记录</li>
-          <li>击杀排行榜和聊天记录</li>
-          <li>专注记录、游玩时长及其他持久化游戏数据</li>
+          <li><%= t('admin.backupSigns') %></li>
+          <li><%= t('admin.backupScores') %></li>
+          <li><%= t('admin.backupFocus') %></li>
         </ul>
         <form action="/admin/backup" method="post">
           <input name="csrf" type="hidden" value="<%= csrf %>">
-          <button type="submit" class="primary">生成并下载 ZIP</button>
+          <button type="submit" class="primary"><%= t('admin.backupGenerate') %></button>
         </form>
-        <p class="caption">数据量越大，生成时间越长。浏览器会在打包完成后开始下载。</p>
-        <nav class="admin-links" aria-label="管理功能"><a href="/admin/signs">路牌审核</a><a href="/admin/password">修改管理员密码</a></nav>
+        <p class="caption"><%= t('admin.backupNote') %></p>
+        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
       <% } else if (view === 'signs') { %>
-        <p>路牌提交后直接发布。标记违规会替换牌面文字，牌子仍留在原处。</p>
-        <p><a href="/admin">返回全服备份</a></p>
-        <% if (!result.total) { %><p>当前没有路牌。</p><% } %>
+        <p><%= t('admin.signsIntro') %></p>
+        <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
+        <% if (!result.total) { %><p><%= t('admin.signsEmpty') %></p><% } %>
         <% for (const sign of result.rows) { %>
           <article class="review-sign">
             <strong><%= sign.text %></strong>
             <p class="caption"><%= mapNames[sign.map] %> · X <%= sign.pos.x %> · Z <%= sign.pos.z %></p>
             <% if (sign.flaggedAt) { %>
-              <p class="caption">已标记违规 · 游戏中显示「该牌子违规」</p>
+              <p class="caption"><%= t('admin.signFlagged') %></p>
             <% } else { %>
               <form action="/admin/signs/<%= sign.id %>/flag" method="post">
                 <input name="csrf" type="hidden" value="<%= csrf %>">
                 <input name="page" type="hidden" value="<%= result.page %>">
-                <button class="plain" type="submit">标记违规</button>
+                <button class="plain" type="submit"><%= t('admin.signFlag') %></button>
               </form>
             <% } %>
           </article>
         <% } %>
         <% if (result.pages > 1) { %>
-          <nav class="admin-links" aria-label="路牌列表分页">
-            <% if (result.page > 1) { %><a href="?page=<%= result.page - 1 %>">上一页</a><% } %>
+          <nav class="admin-links" aria-label="<%= t('admin.paginationLabel') %>">
+            <% if (result.page > 1) { %><a href="?page=<%= result.page - 1 %>"><%= t('admin.previous') %></a><% } %>
             <span><%= result.page %> / <%= result.pages %></span>
-            <% if (result.page < result.pages) { %><a href="?page=<%= result.page + 1 %>">下一页</a><% } %>
+            <% if (result.page < result.pages) { %><a href="?page=<%= result.page + 1 %>"><%= t('admin.next') %></a><% } %>
           </nav>
         <% } %>
       <% } else if (view === 'password') { %>
-        <p><%= firstLogin ? '首次登录，请先修改默认密码。' : '修改密码后，所有管理员会话都需要重新登录。' %></p>
+        <p><%= t(firstLogin ? 'admin.firstLogin' : 'admin.passwordIntro') %></p>
         <form action="/admin/password" method="post" class="login">
           <input name="csrf" type="hidden" value="<%= csrf %>">
-          <label for="current">当前密码</label>
+          <label for="current"><%= t('admin.currentPassword') %></label>
           <input id="current" name="current" type="password" autocomplete="current-password" required>
-          <label for="new-password">新密码（至少 12 个字符）</label>
+          <label for="new-password"><%= t('admin.newPassword') %></label>
           <input id="new-password" name="password" type="password" autocomplete="new-password" minlength="12" required>
-          <label for="confirm">确认新密码</label>
+          <label for="confirm"><%= t('admin.confirmPassword') %></label>
           <input id="confirm" name="confirm" type="password" autocomplete="new-password" minlength="12" required>
-          <button type="submit" class="primary">保存新密码</button>
+          <button type="submit" class="primary"><%= t('admin.savePassword') %></button>
         </form>
       <% } else { %>
-        <p>登录管理员账号以管理全服备份。</p>
+        <p><%= t('admin.loginIntro') %></p>
         <form action="/admin/login" method="post" class="login">
-          <label for="username">账号</label>
+          <label for="username"><%= t('admin.username') %></label>
           <input id="username" name="username" value="admin" autocomplete="username" required>
-          <label for="password">密码</label>
+          <label for="password"><%= t('admin.password') %></label>
           <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
-          <button type="submit" class="primary">登录</button>
+          <button type="submit" class="primary"><%= t('admin.login') %></button>
         </form>
       <% } %>
     </section>

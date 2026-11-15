@@ -23,6 +23,11 @@ router.post('/lang', (req, res) => {
     sameSite: 'lax',
     maxAge: 365 * 24 * 3600 * 1000
   });
+  const redirect = req.body && typeof req.body.redirect === 'string' ? req.body.redirect : '';
+  const formSubmission = req.is('application/x-www-form-urlencoded') || req.accepts(['json', 'html']) === 'html';
+  if (formSubmission && redirect.startsWith('/') && !redirect.startsWith('//')) {
+    return res.redirect(303, redirect);
+  }
   res.json({ ok: true, message: locales[lang].msg.langSet, lang });
 });
 

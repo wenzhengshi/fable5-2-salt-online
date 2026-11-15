@@ -969,6 +969,20 @@ function handleMessage(player, raw) {
       });
       break;
     }
+    case 'signCheck': {
+      if (!Number.isSafeInteger(msg.requestId) || msg.requestId < 1) break;
+      const respond = reason => send(player.ws, { type: 'signCheckResult', requestId: msg.requestId, reason });
+      if (!player.joined || now - (player.signCheckAt || 0) < 400) {
+        respond('busy');
+        break;
+      }
+      player.signCheckAt = now;
+      signRegistry.checkPlacement(player, msg.pos).then(({ reason }) => respond(reason)).catch(error => {
+        console.error('[signs] placement check failed:', error.message);
+        respond('storage');
+      });
+      break;
+    }
     case 'signPlace':
     case 'signRemove': {
       if (!player.joined || player.signBusy || now - (player.signEditAt || 0) < 700) {

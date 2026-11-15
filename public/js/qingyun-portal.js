@@ -17,7 +17,7 @@
       const renderer = new Promise((resolve, reject) => {
         script.onload = resolve;
         script.onerror = reject;
-        script.src = assets + 'qingyun-renderer.js?v=3';
+        script.src = assets + 'qingyun-renderer.js?v=5';
         document.head.appendChild(script);
       });
       loading = Promise.all([
@@ -35,6 +35,7 @@
 
   window.installQingyunPortal = function (game) {
     const { THREE, scene, camera, viewCamera, physics, player, renderer } = game;
+    const preloadDistance = 52;
     const gate = new THREE.Group();
     gate.name = 'qingyun-time-tunnel';
     gate.position.set(zone.gate.x, zone.gate.y, zone.gate.z);
@@ -95,6 +96,8 @@
     gate.add(label);
     gate.visible = false;
     scene.add(gate);
+    const gateTitle = label.material.map;
+    const connectingTitle = signTexture('正在连接…', 'CONNECTING…');
 
     const returnLabel = label.material.clone();
     returnLabel.map = signTexture('返回港口', 'RETURN TO PORT');
@@ -122,8 +125,16 @@
       if (map || preparing || game.time.t < retryAfter) return;
       preparing = true;
       loadMap().then(async ([, models, meta]) => {
-        const nextMap = window.createQingyunMap(renderer, models, meta);
+        const nextMap = await window.createQingyunMap(renderer, models, meta);
         collision = await window.createQingyunCollision(THREE, nextMap.collisionGeometry, zone.offsetZ, nextMap.terrainHeight);
+        const landingCamera = camera.clone(false);
+        landingCamera.position.set(zone.landing.x, zone.landing.y + 1.68, zone.landing.z - zone.offsetZ);
+        landingCamera.lookAt(zone.landing.x, landingCamera.position.y, landingCamera.position.z + 1);
+        try {
+          await nextMap.warmup(landingCamera, game.quality.name);
+        } catch (error) {
+          console.warn('[qingyun] render warmup failed', error);
+        }
         map = nextMap;
       }).catch(error => {
         retryAfter = game.time.t + 5;
@@ -141,6 +152,7 @@
       player.yaw = Math.PI;
       player.pitch = 0;
       crossing = false;
+      label.material.map = gateTitle;
       inQingyun = zone.contains(pos);
       lastRequest = game.time.t;
       if (inQingyun) map?.resetFrameHistory();
@@ -291,6 +303,7 @@
         ringMaterial.color.setRGB(.16, 1.45 + Math.sin(game.time.t * 3) * .4, 2.4);
         if (game.game.state !== 'playing' || !player.alive || window.__saltBoat?.riding) {
           crossing = false;
+          label.material.map = gateTitle;
           return;
         }
         if (active) {
@@ -307,9 +320,10 @@
           return;
         }
         const distance = Math.hypot(player.pos.x - zone.gate.x, player.pos.z - zone.gate.z);
-        if (distance < 25) prepare();
+        if (distance < preloadDistance) prepare();
         const inside = zone.atGate(player.pos);
         crossing = inside || (crossing && distance < 2.5);
+        label.material.map = !map && preparing && distance < 5 ? connectingTitle : gateTitle;
         if (!crossing || !map || game.time.t - lastRequest < .8) return;
         const mp = window.__mp;
         if (mp?.connected) {

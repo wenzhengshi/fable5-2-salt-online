@@ -16,8 +16,14 @@ let backingUp = false;
 let changingPassword = false;
 let loginsInFlight = 0;
 
-function page(res, status, view, session, message = '') {
-  return res.status(status).render('admin', { view, csrf: session?.csrf || '', firstLogin: !!session?.firstLogin, message });
+function page(req, res, status, view, session, messageKey = '') {
+  return res.status(status).render('admin', {
+    view,
+    csrf: session?.csrf || '',
+    firstLogin: !!session?.firstLogin,
+    message: messageKey ? req.t(messageKey) : '',
+    returnTo: view === 'signs' ? '/admin/signs' : '/admin'
+  });
 }
 
 router.use((req, res, next) => {
@@ -38,10 +44,10 @@ function sessionView(session) {
   return session ? (session.firstLogin ? 'password' : 'backup') : 'login';
 }
 
-router.get('/', (req, res) => page(res, 200, sessionView(req.backupSession), req.backupSession));
+router.get('/', (req, res) => page(req, res, 200, sessionView(req.backupSession), req.backupSession));
 router.get('/password', (req, res) => {
   if (!req.backupSession) return res.redirect(303, '/admin');
-  return page(res, 200, 'password', req.backupSession);
+  return page(req, res, 200, 'password', req.backupSession);
 });
 
 router.post('/login', async (req, res, next) => {
@@ -52,17 +58,17 @@ router.post('/login', async (req, res, next) => {
   }
   if (failedAttempts >= 20 || loginsInFlight >= 4 || changingPassword) {
     res.set('Retry-After', String(Math.max(1, Math.ceil((retryAt - now) / 1000))));
-    return page(res, 429, 'login', null, '暂时无法登录，请稍后再试。');
+    return page(req, res, 429, 'login', null, 'admin.rateLimited');
   }
   loginsInFlight += 1;
   try {
     const record = await credentials.read();
     if (req.body?.username !== credentials.username || !await credentials.matches(req.body?.password, record)) {
       failedAttempts += 1;
-      return page(res, 401, 'login', null, '账号或密码不正确。');
+      return page(req, res, 401, 'login', null, 'admin.invalidCredentials');
     }
     const latest = await credentials.read();
-    if (changingPassword || latest?.hash !== record?.hash) return page(res, 409, 'login', null, '密码刚刚修改，请重新登录。');
+    if (changingPassword || latest?.hash !== record?.hash) return page(req, res, 409, 'login', null, 'admin.passwordChanged');
     sessions.delete(req.cookies[cookie]);
     if (sessions.size >= 32) sessions.delete(sessions.keys().next().value);
     const token = randomBytes(32).toString('hex');
@@ -79,7 +85,7 @@ router.post('/login', async (req, res, next) => {
 function requireSession(req, res, next) {
   const session = req.backupSession;
   if (!session) return res.redirect(303, '/admin');
-  if (req.body?.csrf !== session.csrf) return page(res, 403, sessionView(session), session, '请求已失效，请刷新后重试。');
+  if (req.body?.csrf !== session.csrf) return page(req, res, 403, sessionView(session), session, 'admin.csrfExpired');
   next();
 }
 
@@ -93,19 +99,19 @@ router.post('/password', requireSession, async (req, res, next) => {
   const session = req.backupSession;
   const { current, password, confirm } = req.body;
   if (!credentials.validLength(password) || password === credentials.defaultPassword || password === current) {
-    return page(res, 400, 'password', session, '请输入至少 12 个字符的新密码，且与当前密码不同。');
+    return page(req, res, 400, 'password', session, 'admin.passwordPolicy');
   }
-  if (password !== confirm) return page(res, 400, 'password', session, '两次输入的新密码不一致。');
-  if (changingPassword) return page(res, 409, 'password', session, '正在修改密码，请稍后再试。');
+  if (password !== confirm) return page(req, res, 400, 'password', session, 'admin.passwordMismatch');
+  if (changingPassword) return page(req, res, 409, 'password', session, 'admin.passwordBusy');
   changingPassword = true;
   try {
     const record = await credentials.read();
-    if (!await credentials.matches(current, record)) return page(res, 401, 'password', session, '当前密码不正确。');
+    if (!await credentials.matches(current, record)) return page(req, res, 401, 'password', session, 'admin.currentPasswordInvalid');
     await credentials.save(password);
     sessions.clear();
     failedAttempts = 0;
     res.clearCookie(cookie, { path: '/admin', httpOnly: true, sameSite: 'strict', secure: req.secure });
-    return page(res, 200, 'login', null, '密码已更新，请用新密码登录。');
+    return page(req, res, 200, 'login', null, 'admin.passwordUpdated');
   } catch (error) {
     next(error);
   } finally {
@@ -120,11 +126,11 @@ router.get('/signs', async (req, res, next) => {
   try {
     const { listRoadSignsForReview } = require('../realtime/multiplayer');
     const result = await listRoadSignsForReview(req.query.page);
-    const mapNames = { qingyun: '青云宗',
+    const mapNames = { qingyun: req.t('expedition.maps.qingyun'),
       bayhaven: req.t('expedition.maps.bayhaven'), dustfall: req.t('expedition.maps.dustfall'),
       mothlight: req.t('expedition.maps.mothlight') };
     return res.render('admin', { view: 'signs', csrf: session.csrf, result, mapNames,
-      message: req.query.flagged === '1' ? '已标记违规，牌面已替换为「该牌子违规」。' : '' });
+      message: req.query.flagged === '1' ? req.t('admin.flaggedSuccess') : '', returnTo: '/admin/signs' });
   } catch (error) {
     next(error);
   }
@@ -145,7 +151,7 @@ router.post('/signs/:id/flag', requireSession, async (req, res, next) => {
 
 router.post('/backup', requireSession, async (req, res) => {
   if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
-  if (backingUp) return page(res, 409, 'backup', req.backupSession, '有一份备份正在生成或下载，请稍后再试。');
+  if (backingUp) return page(req, res, 409, 'backup', req.backupSession, 'admin.backupBusy');
   backingUp = true;
   const controller = new AbortController();
   res.once('close', () => controller.abort());
@@ -164,7 +170,7 @@ router.post('/backup', requireSession, async (req, res) => {
       console.error('[backup]', error.message);
       if (!res.headersSent) {
         res.removeHeader('Content-Disposition');
-        page(res, 500, 'backup', req.backupSession, '备份失败。请检查服务器存储和日志后重试。');
+        page(req, res, 500, 'backup', req.backupSession, 'admin.backupFailed');
       } else res.destroy(error);
     }
   } finally {

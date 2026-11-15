@@ -215,13 +215,37 @@ function createRegistry(options = {}) {
     return task;
   }
 
+  function placement(player, map, point) {
+    if (!inside(map, point) || distance(point, player.pos) > 5 ||
+        Math.abs(point.y - player.pos.y) > 2.5 || player.soldier === 'drone') return { reason: 'range' };
+    const pos = Object.fromEntries(['x', 'y', 'z'].map(axis => [axis, Math.round(point[axis] * 100) / 100]));
+    if (protectedSpot(map.id, pos)) return { reason: 'gate' };
+    if (nearby(map.id, pos, spacing - .001).length) return { reason: 'occupied' };
+    return { pos };
+  }
+
+  function eligibleMap(player, requestMap) {
+    if (mapOf(player) !== requestMap || !player.alive || !player.active || player.focusUntil > Date.now()) return null;
+    return signZones[requestMap];
+  }
+
+  async function checkPlacement(player, point) {
+    const requestMap = mapOf(player);
+    await init();
+    if (!player.signOwner) return { reason: 'identity' };
+    const map = eligibleMap(player, requestMap);
+    if (!map) return { reason: 'map' };
+    const { reason } = placement(player, map, point);
+    return { reason };
+  }
+
   function mutate(player, msg, now) {
     const requestMap = mapOf(player);
     return enqueue(async () => {
       await init();
       if (!player.signOwner) return { reason: 'identity' };
-      const map = signZones[requestMap];
-      if (!map || mapOf(player) !== requestMap || !player.alive || !player.active || player.focusUntil > Date.now()) return { reason: 'map' };
+      const map = eligibleMap(player, requestMap);
+      if (!map) return { reason: 'map' };
       if (msg.type === 'signRemove') {
         const sign = signs.get(msg.id);
         if (!sign || sign.map !== map.id || distance(sign.pos, player.pos) > 5 ||
@@ -231,16 +255,12 @@ function createRegistry(options = {}) {
         await remove(sign);
         return { sign, removed: true };
       }
+      const { pos, reason } = placement(player, map, msg.pos);
+      if (reason) return { reason };
       const text = typeof msg.text === 'string'
         ? msg.text.replace(/[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu, ' ').replace(/\s+/g, ' ').trim() : '';
       if (!text || Array.from(text).length > 32 || isBlocked(text)) return { reason: 'text' };
       if (msg.style !== 'blue' && msg.style !== 'yellow') return { reason: 'style' };
-      const point = msg.pos;
-      if (!inside(map, point) || distance(point, player.pos) > 5 ||
-          Math.abs(point.y - player.pos.y) > 2.5 || player.soldier === 'drone') return { reason: 'range' };
-      const pos = Object.fromEntries(['x', 'y', 'z'].map(axis => [axis, Math.round(point[axis] * 100) / 100]));
-      if (protectedSpot(map.id, pos)) return { reason: 'gate' };
-      if (nearby(map.id, pos, spacing - .001).length) return { reason: 'occupied' };
 
       const identities = playerIdentities(player);
       const today = dayWindow(now);
@@ -320,7 +340,7 @@ function createRegistry(options = {}) {
     });
   }
 
-  return { list, mutate, publicSign, flag, reviewList, drain: () => queue };
+  return { list, checkPlacement, mutate, publicSign, flag, reviewList, drain: () => queue };
 }
 
 module.exports = { createRegistry, issueCookie, ownerFromRequest, viewRadius, distance, mapOf, LIMITS };

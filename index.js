@@ -14,7 +14,7 @@ const { version: RELEASE_VERSION } = require('./package.json');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const ASSET_VERSION = '20261115-sign-limit-v' + RELEASE_VERSION;
+const ASSET_VERSION = '20261115-sign-precheck-v' + RELEASE_VERSION;
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -75,10 +75,13 @@ app.use((req, res, next) => {
     lang = accepted === 'en-us' || accepted.startsWith('en') ? 'en-US' : 'zh-CN';
   }
   req.lang = lang;
+  const dictionary = locales[lang] || locales['zh-CN'];
   req.t = (key) => {
-    const dict = locales[req.lang] || locales['zh-CN'];
-    return String(key || '').split('.').reduce((acc, part) => (acc == null ? acc : acc[part]), dict) || String(key || '');
+    return String(key || '').split('.').reduce((acc, part) => (acc == null ? acc : acc[part]), dictionary) || String(key || '');
   };
+  res.locals.lang = lang;
+  res.locals.t = req.t;
+  res.locals.messages = dictionary;
   next();
 });
 

@@ -23,6 +23,7 @@
     const clearColor = new THREE.Color();
     const up = new THREE.Vector3(0, 1, 0);
     const zones = Object.values(maps);
+    const patrols = new Map();
     const next = new THREE.Vector3();
     const ceilingOrigin = new THREE.Vector3();
     const ray = new THREE.Ray();
@@ -30,6 +31,7 @@
     let active = null;
     let environment = null;
     let lastLocalRespawn = null;
+    let returnLoad = null;
     let lastRequest = -Infinity;
     const status = document.createElement('div');
     status.setAttribute('role', 'status');
@@ -80,6 +82,7 @@
     function leave(position) {
       if (!active) return;
       const target = position || active.hub;
+      clearPatrol();
       active = null;
       environment = null;
       exitGate.visible = false;
@@ -185,8 +188,107 @@
       return state;
     };
 
+    const nav = physics.nav;
+    const baseWalkable = nav.isWalkable.bind(nav);
+    const baseRandomPoint = nav.randomPoint.bind(nav);
+    const basePath = nav.findPath.bind(nav);
+    function walkable(x, z) {
+      if (x < active.minX + .5 || x > active.maxX - .5 ||
+          z < active.minZ + .5 || z > active.maxZ - .5) return false;
+      const localZ = z - active.offset;
+      const y = environment.heightAt(x, localZ);
+      return y > -.75 && !environment.boxes(x - .45, localZ - .45, x + .45, localZ + .45)
+        .some(box => box[4] > y + .35 && box[1] < y + 1.15 &&
+          box[0] < x + .45 && box[3] > x - .45 && box[2] < localZ + .45 && box[5] > localZ - .45);
+    }
+    nav.isWalkable = (x, z) => active ? walkable(x, z) : baseWalkable(x, z);
+    nav.randomPoint = (origin, radius) => {
+      if (!active) return baseRandomPoint(origin, radius);
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = radius * Math.sqrt(Math.random());
+        const x = origin.x + Math.cos(angle) * distance;
+        const z = origin.z + Math.sin(angle) * distance;
+        if (walkable(x, z)) return new THREE.Vector3(x, environment.heightAt(x, z - active.offset), z);
+      }
+      return origin.clone();
+    };
+    function clearPath(from, to) {
+      const steps = Math.ceil(Math.hypot(from.x - to.x, from.z - to.z));
+      let lastY = from.y;
+      for (let i = 1; i <= steps; i++) {
+        const x = THREE.MathUtils.lerp(from.x, to.x, i / steps);
+        const z = THREE.MathUtils.lerp(from.z, to.z, i / steps);
+        if (!walkable(x, z)) return false;
+        const y = environment.heightAt(x, z - active.offset);
+        if (Math.abs(y - lastY) > .65) return false;
+        lastY = y;
+      }
+      return true;
+    }
+    nav.findPath = (from, to) => {
+      if (!active) return basePath(from, to);
+      if (!walkable(to.x, to.z) || from.distanceToSquared(to) > 65 ** 2) return null;
+      const destination = to.clone();
+      destination.y = environment.heightAt(to.x, to.z - active.offset);
+      if (clearPath(from, destination)) return [destination];
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const waypoint = nav.randomPoint(from, 8);
+        if (waypoint.distanceToSquared(from) > 1 && clearPath(from, waypoint) && clearPath(waypoint, destination)) {
+          return [waypoint, destination];
+        }
+      }
+      return null;
+    };
+
+    function clearPatrol() {
+      const patrol = active && patrols.get(active.id);
+      if (!patrol) return;
+      for (const unit of game.enemies.list.slice()) {
+        if (patrol.ids.includes(unit.id)) game.enemies.despawn(unit);
+      }
+      patrols.delete(active.id);
+    }
+
+    // Place the same combat units used by Salt Port beyond the immediate landing area.
+    function updatePatrol(dt) {
+      let patrol = patrols.get(active.id);
+      if (!patrol) {
+        patrol = { ids: [], time: 0 };
+        patrols.set(active.id, patrol);
+      }
+      if (patrol.ids.some(id => game.enemies.list.some(unit => unit.id === id && unit.alive))) {
+        patrol.time = 12;
+        return;
+      }
+      patrol.time -= dt;
+      if (patrol.time > 0) return;
+      const anchor = active.landing;
+      const candidates = [[-15, -13], [15, -13], [-21, -7], [21, -7], [-15, 14], [15, 14]];
+      const points = candidates.map(([dx, dz]) => new THREE.Vector3(anchor.x + dx, 0, anchor.z + dz))
+        .filter(point => walkable(point.x, point.z));
+      if (!points.length) {
+        for (let step = 0; step < 16; step++) {
+          const angle = step * Math.PI / 8;
+          const point = new THREE.Vector3(anchor.x + Math.cos(angle) * 12, 0, anchor.z + Math.sin(angle) * 12);
+          if (walkable(point.x, point.z)) { points.push(point); break; }
+        }
+      }
+      patrol.ids = patrol.ids.filter(id => game.enemies.list.some(unit => unit.id === id));
+      for (const kind of ['hound', 'gull']) {
+        const point = kind === 'hound' ? points[0] : points[1] || points[0];
+        if (!point && kind === 'hound') continue;
+        const origin = point || new THREE.Vector3(anchor.x - 10, 0, anchor.z - 12);
+        origin.y = environment.heightAt(origin.x, origin.z - active.offset) + (kind === 'gull' ? 5 : 0);
+        const unit = game.enemies.spawn(kind, origin, { patrolRadius: 6 });
+        if (unit) patrol.ids.push(unit.id);
+      }
+      patrol.time = 12;
+    }
+
     let portRoots = [];
     function enter(zone, world, position) {
+      if (active !== zone) clearPatrol();
       portRoots = [game.render.sky, game.level.root, game.backdrop.root, game.ground.root,
         scene.getObjectByName('saltline-external-combat-zone'), scene.getObjectByName('saltline-boat-wake')];
       game.qingyun.suspend();
@@ -208,6 +310,7 @@
     game.events.on('game:state', event => {
       if (event.state === 'title' || event.state === 'intro') {
         active = environment = pending = null;
+        patrols.clear();
         exitGate.visible = false;
         status.style.display = 'none';
       }
@@ -215,6 +318,11 @@
 
     game.expedition = {
       get active() { return active; },
+      async prepareEntry(mapId) {
+        const zone = maps[mapId];
+        const world = await load(zone);
+        return position => enter(zone, world, position);
+      },
       async restore(mapId, position, current) {
         const zone = zones.find(candidate => candidate.id === mapId);
         if (!zone) return false;
@@ -257,6 +365,7 @@
       update(dt) {
         const playing = game.game.state === 'playing' && player.alive;
         const inHub = !!game.qingyun?.active;
+        if (playing && active) updatePatrol(dt);
         const canUse = playing && !window.__saltBoat?.riding && (inHub || active);
         for (const gate of gates.values()) {
           gate.visible = playing && !active && inHub;
@@ -267,7 +376,25 @@
         if (!canUse || game.time.t - lastRequest < 1.2) return;
         const mp = window.__mp;
         if (active) {
-          if (!near(player.pos, exitPoint)) return;
+          if (!near(player.pos, exitPoint)) {
+            status.style.display = 'none';
+            return;
+          }
+          if (!game.qingyun.collision) {
+            if (!returnLoad) {
+              status.textContent = t('expedition.loading', { map: t('deployment.qingyun') });
+              status.style.display = 'block';
+              returnLoad = game.qingyun.preload({ warmup: false }).catch(error => {
+                lastRequest = game.time.t;
+                if (active) {
+                  status.textContent = t('expedition.loadFailed');
+                  status.style.display = 'block';
+                }
+                console.warn('[expedition] Qingyun return load failed', error);
+              }).finally(() => { returnLoad = null; });
+            }
+            return;
+          }
           lastRequest = game.time.t;
           if (mp?.connected) { mp.syncState(); mp.send({ type: 'mapReturn' }); }
           else leave();

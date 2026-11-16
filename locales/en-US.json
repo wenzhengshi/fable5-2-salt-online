@@ -1,4 +1,13 @@
 {
+  "deployment": {
+    "title": "Choose a spawn map",
+    "hint": "Travel between maps through the Qingyun portals.",
+    "port": "Salt Port",
+    "qingyun": "Qingyun",
+    "loading": "Deploying to {map}…",
+    "failed": "Could not enter the map. Retry or choose another map.",
+    "premise": "Five connected battlefields. Choose where to deploy."
+  },
   "meta": {
     "title": "Saltline · Online Free-for-All",
     "description": "Saltline: an online 3D port firefight in your browser. Free-for-all combat, 5-second respawns, server-wide voice, per-player mute, big-text chat and blocked-language filtering."

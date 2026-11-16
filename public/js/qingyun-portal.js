@@ -113,7 +113,7 @@
 
     let map = null;
     let collision = null;
-    let preparing = false;
+    let preparing = null;
     let lastRequest = -Infinity;
     let retryAfter = 0;
     let crossing = false;
@@ -121,26 +121,34 @@
     let encounterCooldown = 0;
     let combatants = [];
 
+    function preload({ warmup = true } = {}) {
+      if (map) return Promise.resolve(map);
+      if (preparing) return preparing;
+      preparing = loadMap().then(async ([, models, meta]) => {
+        const nextMap = await window.createQingyunMap(renderer, models, meta);
+        const nextCollision = await window.createQingyunCollision(THREE, nextMap.collisionGeometry, zone.offsetZ, nextMap.terrainHeight);
+        if (warmup) {
+          const landingCamera = camera.clone(false);
+          landingCamera.position.set(zone.landing.x, zone.landing.y + 1.68, zone.landing.z - zone.offsetZ);
+          landingCamera.lookAt(zone.landing.x, landingCamera.position.y, zone.landing.z - zone.offsetZ + 1);
+          try {
+            await nextMap.warmup(landingCamera, game.quality.name);
+          } catch (error) {
+            console.warn('[qingyun] render warmup failed', error);
+          }
+        }
+        collision = nextCollision;
+        map = nextMap;
+        return map;
+      }).finally(() => { preparing = null; });
+      return preparing;
+    }
+
     function prepare() {
       if (map || preparing || game.time.t < retryAfter) return;
-      preparing = true;
-      loadMap().then(async ([, models, meta]) => {
-        const nextMap = await window.createQingyunMap(renderer, models, meta);
-        collision = await window.createQingyunCollision(THREE, nextMap.collisionGeometry, zone.offsetZ, nextMap.terrainHeight);
-        const landingCamera = camera.clone(false);
-        landingCamera.position.set(zone.landing.x, zone.landing.y + 1.68, zone.landing.z - zone.offsetZ);
-        landingCamera.lookAt(zone.landing.x, landingCamera.position.y, landingCamera.position.z + 1);
-        try {
-          await nextMap.warmup(landingCamera, game.quality.name);
-        } catch (error) {
-          console.warn('[qingyun] render warmup failed', error);
-        }
-        map = nextMap;
-      }).catch(error => {
+      preload().catch(error => {
         retryAfter = game.time.t + 5;
         console.error('[qingyun] map load failed', error);
-      }).finally(() => {
-        preparing = false;
       });
     }
 
@@ -291,6 +299,7 @@
         return tunnel;
       },
       get collision() { return collision; },
+      preload,
       land,
       suspend() {
         inQingyun = false;

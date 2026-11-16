@@ -7,6 +7,8 @@
 
   const EPSILON = 0.001;
   const MAX_CONTACTS = 12;
+  const AIR_WALL = Object.freeze({ minX: -40, maxX: 40, minZ: -30, maxZ: 30, padding: 0.4 });
+  const PORT_PLAYER_START = Object.freeze({ x: -32, y: 0, z: 6 });
 
   function finite(value, fallback) {
     const number = Number(value);
@@ -157,5 +159,11 @@
     };
   }
 
-  return Object.freeze({ resolve, clampToBounds });
+  function isInsideAirWall(position) {
+    if (!validVector(position)) return false;
+    const bounded = clampToBounds(position, AIR_WALL, AIR_WALL.padding);
+    return !bounded.clampedX && !bounded.clampedZ;
+  }
+
+  return Object.freeze({ resolve, clampToBounds, isInsideAirWall, AIR_WALL, PORT_PLAYER_START });
 });

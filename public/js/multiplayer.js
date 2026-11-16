@@ -154,6 +154,7 @@
   const qingyun = window.SaltQingyunZone;
   let unitFlightY = 0;
   let unitFlightPrev = null;
+  let unitFlightMap;
   let flightGuardBoxes = [];
   let flightCollisionBoxes = null;
   let flightCollisionBase = null;
@@ -165,13 +166,7 @@
     top: 1.2,
     maxIterations: 5
   };
-  const FLIGHT_AIR_WALL = Object.freeze({
-    minX: -40,
-    maxX: 40,
-    minZ: -30,
-    maxZ: 30,
-    padding: 0.4
-  });
+  const { AIR_WALL: FLIGHT_AIR_WALL, PORT_PLAYER_START, isInsideAirWall } = window.SaltFlightCollision;
   const DRONE_AIRBORNE_CLEARANCE = 1.8;
   const virtualUnitInput = {
     ascend: false,
@@ -1508,7 +1503,12 @@
     const chatComposer = captureChatComposer();
     disposeLocalDroneLight();
     const zoneSpawn = G?.expedition?.spawn(spawn);
-    const point = zoneSpawn || spawn || defaultSpawn();
+    let point = zoneSpawn || spawn || defaultSpawn();
+    if (!G.expedition?.active && !G.qingyun?.active &&
+        normalizeSoldier(mySoldier) === 'drone' && !isInsideAirWall(point)) {
+      const start = defaultSpawn();
+      point = { ...(isInsideAirWall(start) ? start : PORT_PLAYER_START), yaw: point.yaw };
+    }
     const yaw = typeof point.yaw === 'number' ? point.yaw : Math.random() * Math.PI * 2;
     try {
       G.player.reset({
@@ -2500,6 +2500,12 @@
     }
 
     if (kind === 'drone') {
+      const map = G.expedition?.active?.id || (G.qingyun?.active ? 'qingyun' : 'port');
+      if (unitFlightMap !== map) {
+        unitFlightMap = map;
+        unitFlightY = 0;
+        unitFlightPrev = null;
+      }
       try {
         ground = Number(G.physics.groundHeight(player.pos.x, player.pos.z, player.pos.y + 3)) || 0;
       } catch (err) {
@@ -2631,6 +2637,32 @@
     sendState(true);
   }
 
+  function requestSpawnMap(map) {
+    const socket = ws;
+    if (!socket || socket.readyState !== 1) return Promise.resolve(null);
+    return new Promise((resolve, reject) => {
+      const finish = (error, point) => {
+        clearTimeout(timer);
+        unsubscribe();
+        socket.removeEventListener('close', closed);
+        if (error) reject(error);
+        else resolve(point);
+      };
+      const closed = () => finish(new Error('Connection closed'));
+      const unsubscribe = onMessage(message => {
+        if (ws !== socket || message.type !== 'spawnMapResult' || message.map !== map) return;
+        if (message.ok) finish(null, message.pos);
+        else finish(new Error('Deployment rejected'));
+      });
+      const timer = setTimeout(() => {
+        finish(new Error('Deployment timed out'));
+        socket.close();
+      }, 5000);
+      socket.addEventListener('close', closed, { once: true });
+      if (!send({ type: 'spawnMap', map })) closed();
+    });
+  }
+
   async function restoreConnectionMap(resume, socket) {
     const game = G;
     if (!game?.player || ws !== socket) return;
@@ -2643,12 +2675,35 @@
     }
 
     if (!resume) {
+      const map = expedition?.active?.id || (qingyun?.active ? 'qingyun' : null);
+      if (map) {
+        try {
+          const point = await requestSpawnMap(map);
+          if (point && ws === socket && socket.readyState === 1 && inMatch()) {
+            if (expedition?.active?.id === map) {
+              const spawn = expedition.spawn(point);
+              player.pos.set(spawn.x, spawn.y, spawn.z);
+              player.lastSafe.copy(player.pos);
+              player.vel.set(0, 0, 0);
+              player.syncView();
+            } else if (qingyun?.active) qingyun.land(point);
+            unitFlightY = 0;
+            unitFlightPrev = null;
+            return;
+          }
+        } catch (error) {
+          if (ws !== socket || socket.readyState !== 1) return;
+          console.warn('[mp] could not sync initial map', error);
+        }
+      }
       const spawn = game.level.playerStart.pos;
       if (expedition?.active) expedition.leave(spawn);
       if (qingyun?.active) qingyun.land(spawn);
       return;
     }
 
+    if (resume.map === 'qingyun') await qingyun?.preload({ warmup: false });
+    if (ws !== socket || socket.readyState !== 1 || !inMatch()) return;
     if (resume.map !== 'port' && resume.map !== 'qingyun') {
       const current = () => ws === socket && socket.readyState === 1 && inMatch();
       try {
@@ -3028,6 +3083,7 @@
     try {
       game.events.on('game:state', (event) => {
         if (!event || event.state !== 'playing') disposeLocalDroneLight();
+        else sendState(true);
         if (event && (event.state === 'title' || event.state === 'intro')) {
           stopRespawnAudio();
           if (event.state === 'title') {
@@ -3174,6 +3230,7 @@
     onMessage,
     onBinary,
     syncState: () => sendState(true),
+    requestSpawnMap,
     send,
     sendBinary,
     refreshSpawns() {

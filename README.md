@@ -1,5 +1,28 @@
 # 盐线行动 · Saltline
 
+## 在线游玩
+
+无需下载或安装，使用支持 WebGL 的现代浏览器直接进入：
+
+[立即进入盐线行动在线版 →](https://web-jjuuxm.tulingai.com/)
+
+## Android 客户端
+
+[前往安卓应用市场下载盐线行动](https://tulingai.com/app-market.html?id=49)
+
+[下载盐线行动 Android v1.0 APK（支持应用内连麦）](https://github.com/wenzhengshi/fable5-2-salt-online/releases/download/android-v1.0-voice/saltline-android-v1.0-voice.apk)
+
+- 支持 Android 5.0 及以上版本
+- APK 大小约 5.83 MiB
+- 首次启动需要联网，应用会加载当前在线版游戏
+- 支持应用内连麦，首次使用时需要授予麦克风权限
+- 包名：`cn.jicreate.web_jjuuxm.a6b6b281d9f`
+- SHA-256：`91a3069646b6f412c892912d774c233bc884c85c0f64cf67e7335b55d1d1dea5`
+
+> 本次构建的包名与旧版 Android v1.0 不同，因此会作为独立应用安装；设备中的旧版客户端不会自动覆盖。
+
+版本说明与后续构建见 [Android v1.0（应用内连麦）发布页](https://github.com/wenzhengshi/fable5-2-salt-online/releases/tag/android-v1.0-voice)。
+
 一款运行在浏览器中的多人在线 3D 港口枪战游戏。所有进入战场的玩家互为敌人，被击倒后等待 5 秒即可重新加入对战。
 
 项目基于 Node.js、Express、WebSocket 与 Three.js 构建，无需数据库。排行榜保存在本地 `data/` 目录中。
@@ -103,29 +126,6 @@
 > 本项目的原始作品是 [Felix Rieseberg 发布的 Claude Artifact](https://claude.ai/artifact/BGY1SztrAYcJQHSsnHHGmp)，由作者以 Fable 5.2 单次提示生成并公开展示。
 >
 > 当前仓库由维护者整理并增加多人联机能力，**不是** Felix Rieseberg 或 Anthropic 的官方仓库，也未获得其官方背书。原作品及原平台内容遵循其自身条款；本仓库的 MIT License 仅适用于维护者有权授权的新增与整理内容。
-
-## 在线游玩
-
-无需下载或安装，使用支持 WebGL 的现代浏览器直接进入：
-
-[立即进入盐线行动在线版 →](https://web-jjuuxm.tulingai.com/)
-
-## Android 客户端
-
-[前往安卓应用市场下载盐线行动](https://tulingai.com/app-market.html?id=49)
-
-[下载盐线行动 Android v1.0 APK（支持应用内连麦）](https://github.com/wenzhengshi/fable5-2-salt-online/releases/download/android-v1.0-voice/saltline-android-v1.0-voice.apk)
-
-- 支持 Android 5.0 及以上版本
-- APK 大小约 5.83 MiB
-- 首次启动需要联网，应用会加载当前在线版游戏
-- 支持应用内连麦，首次使用时需要授予麦克风权限
-- 包名：`cn.jicreate.web_jjuuxm.a6b6b281d9f`
-- SHA-256：`91a3069646b6f412c892912d774c233bc884c85c0f64cf67e7335b55d1d1dea5`
-
-> 本次构建的包名与旧版 Android v1.0 不同，因此会作为独立应用安装；设备中的旧版客户端不会自动覆盖。
-
-版本说明与后续构建见 [Android v1.0（应用内连麦）发布页](https://github.com/wenzhengshi/fable5-2-salt-online/releases/tag/android-v1.0-voice)。
 
 ## 游戏画面
 

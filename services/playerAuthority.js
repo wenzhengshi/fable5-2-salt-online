@@ -5,13 +5,7 @@ const WEAPON_EMPTY_RELOAD_MS = 3040;
 const WEAPON_IDLE_RESET_MS = 2000;
 const SHOT_CREDIT_TTL_MS = 400;
 const MAX_SHOT_CREDITS = 3;
-const AIR_WALL = Object.freeze({
-  minX: -40,
-  maxX: 40,
-  minZ: -30,
-  maxZ: 30,
-  padding: 0.4
-});
+const { AIR_WALL } = require('../public/js/flight-collision');
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));

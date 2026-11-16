@@ -20,6 +20,7 @@
     'expedition-music.js',
     'qingyun-collision.js',
     'qingyun-portal.js',
+    'map-select.js',
     'game.bundle.js',
     'flight-collision.js',
     'ammo.js',

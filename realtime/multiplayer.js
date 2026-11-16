@@ -7,6 +7,7 @@ const chatHistory = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
 const deathReplay = require('../services/deathReplay');
 const playerAuthority = require('../services/playerAuthority');
+const { isInsideAirWall, PORT_PLAYER_START } = require('../public/js/flight-collision');
 const { randomUUID } = require('node:crypto');
 const moderation = require('../services/moderation').createModeration();
 moderation.ready.catch(error => console.error('[moderation] load failed:', error.message));
@@ -364,7 +365,12 @@ function pickSpawn(player, now) {
   const spawns = player.spawns && player.spawns.length ? player.spawns : [{ x: 0, y: 0, z: 4 }];
   const external = player.pos && Number(player.pos.x) > 65;
   const zoneSpawns = spawns.filter((spawn) => (Number(spawn.x) > 65) === external);
-  const candidates = player.inQingyun ? qingyun.spawns : zoneSpawns.length ? zoneSpawns : spawns;
+  let candidates = player.inQingyun ? qingyun.spawns : zoneSpawns.length ? zoneSpawns : spawns;
+  if (!player.inQingyun && player.soldier === 'drone') {
+    // Filter before scoring. Projecting an offshore spawn onto the wall can put it inside a prop.
+    const inside = spawns.filter(isInsideAirWall);
+    candidates = inside.length ? inside : [PORT_PLAYER_START];
+  }
   const enemies = [...players.values()].filter((item) => item !== player && item.active && item.alive &&
     sameMap(item, player));
   let best = null;
@@ -705,6 +711,11 @@ function handleMessage(player, raw) {
   const now = Date.now();
 
 
+  if (player.focusUntil > now && msg.type === 'spawnMap') {
+    send(player.ws, { type: 'spawnMapResult', map: msg.map, ok: false });
+    return;
+  }
+
   if (player.focusUntil > now && FOCUS_BLOCKED_TYPES.has(msg.type)) {
     if (msg.type === 'chat') {
       send(player.ws, { type: 'chatDenied', reason: 'focus', retryIn: Math.max(0, player.focusUntil - now) });
@@ -985,6 +996,24 @@ function handleMessage(player, raw) {
       send(player.ws, { type: 'boatInviteSent', boat: publicBoat() });
       break;
     }
+    case 'spawnMap': {
+      const map = typeof msg.map === 'string' && Object.hasOwn(expeditions.maps, msg.map) ? expeditions.maps[msg.map] : null;
+      const isQingyun = msg.map === 'qingyun';
+      if ((!map && !isQingyun) || !player.joined || !player.alive || player.active ||
+          player.hasDeployed || player.boatSeat != null) {
+        send(player.ws, { type: 'spawnMapResult', map: msg.map, ok: false });
+        break;
+      }
+      player.inQingyun = isQingyun;
+      player.mapId = map?.id || null;
+      player.pos = { ...pickSpawn(player, now) };
+      player.yaw = Math.PI;
+      player.pitch = 0;
+      player.moving = player.sprint = false;
+      player.motionBudget = null;
+      send(player.ws, { type: 'spawnMapResult', map: msg.map, ok: true, pos: player.pos });
+      break;
+    }
     case 'qingyunEnter': {
       if (!player.joined || !player.alive || !player.active || player.boatSeat != null ||
           player.inQingyun || player.mapId || !qingyun.atGate(player.pos, 1.25)) break;
@@ -1140,6 +1169,7 @@ function handleMessage(player, raw) {
       if (Number.isFinite(Number(msg.yaw))) player.yaw = Number(msg.yaw);
       if (Number.isFinite(Number(msg.pitch))) player.pitch = clamp(Number(msg.pitch), -1.6, 1.6);
       if (typeof msg.active === 'boolean') player.active = msg.active;
+      if (player.active && player.alive) player.hasDeployed = true;
       player.moving = !!msg.moving;
       player.sprint = !!msg.sprint;
       player.prone = false;
@@ -1397,6 +1427,7 @@ function addPlayer(ws, req, signOwner) {
     voice: { enabled: false, muted: true, speaking: false, windowAt: 0, windowBytes: 0 },
     lastSeen: Date.now(),
     joined: false,
+    hasDeployed: false,
     clientId,
     fingerprint,
     signOwner,

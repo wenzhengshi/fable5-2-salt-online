@@ -2,8 +2,10 @@
 
 const { randomBytes } = require('node:crypto');
 const express = require('express');
+const multer = require('multer');
 const credentials = require('../services/adminCredentials');
 const { createBackup } = require('../services/serverBackup');
+const groupQr = require('../services/groupQr');
 const router = express.Router();
 
 const cookie = 'salt_backup_admin';
@@ -16,13 +18,20 @@ let backingUp = false;
 let changingPassword = false;
 let loginsInFlight = 0;
 
-function page(req, res, status, view, session, messageKey = '') {
+const uploadQr = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: groupQr.MAX_IMAGE_BYTES, files: 1 }
+});
+
+function page(req, res, status, view, session, messageKey = '', qr = null) {
   return res.status(status).render('admin', {
     view,
     csrf: session?.csrf || '',
     firstLogin: !!session?.firstLogin,
     message: messageKey ? req.t(messageKey) : '',
-    returnTo: view === 'signs' ? '/admin/signs' : view === 'moderation' ? '/admin/moderation' : '/admin'
+    qr: qr || groupQr.info(),
+    returnTo: view === 'signs' ? '/admin/signs' : view === 'moderation' ? '/admin/moderation'
+      : view === 'qr' ? '/admin/qr' : '/admin'
   });
 }
 
@@ -31,7 +40,7 @@ router.use((req, res, next) => {
     'Cache-Control': 'no-store',
     'X-Robots-Tag': 'noindex, nofollow',
     'X-Frame-Options': 'DENY',
-    'Content-Security-Policy': "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+    'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
   });
   const now = Date.now();
   for (const [token, session] of sessions) if (session.until <= now) sessions.delete(token);
@@ -82,11 +91,15 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
-function requireSession(req, res, next) {
+function checkCsrf(req, res, next) {
   const session = req.backupSession;
   if (!session) return res.redirect(303, '/admin');
   if (req.body?.csrf !== session.csrf) return page(req, res, 403, sessionView(session), session, 'admin.csrfExpired');
   next();
+}
+
+function requireSession(req, res, next) {
+  checkCsrf(req, res, next);
 }
 
 router.post('/logout', requireSession, (req, res) => {
@@ -192,6 +205,54 @@ router.post('/moderation/revoke/:id', requireSession, async (req, res, next) => 
     return res.redirect(303, '/admin/moderation?result=' + (record ? 'revoked' : 'unavailable'));
   } catch (error) {
     next(error);
+  }
+});
+
+router.get('/qr', (req, res) => {
+  const session = req.backupSession;
+  if (!session) return res.redirect(303, '/admin');
+  if (session.firstLogin) return res.redirect(303, '/admin/password');
+  return page(req, res, 200, 'qr', session);
+});
+
+function qrErrorKey(err) {
+  if (err && err.code === 'LIMIT_FILE_SIZE') return 'admin.qrTooLarge';
+  if (err && err.code === 'LIMIT_UNEXPECTED_FILE') return 'admin.qrMissingFile';
+  if (err && err.code === 'EMPTY') return 'admin.qrMissingFile';
+  if (err && err.code === 'SIZE') return 'admin.qrTooLarge';
+  if (err && err.code === 'TYPE') return 'admin.qrInvalidType';
+  return 'admin.qrUploadFailed';
+}
+
+router.post('/qr', (req, res, next) => {
+  const session = req.backupSession;
+  if (!session) return res.redirect(303, '/admin');
+  if (session.firstLogin) return res.redirect(303, '/admin/password');
+  uploadQr.single('image')(req, res, (uploadError) => {
+    if (uploadError) return page(req, res, 400, 'qr', session, qrErrorKey(uploadError));
+    checkCsrf(req, res, () => {
+      try {
+        const qr = groupQr.save({
+          buffer: req.file && req.file.buffer,
+          originalName: req.file && req.file.originalname
+        });
+        return page(req, res, 200, 'qr', session, 'admin.qrUploaded', qr);
+      } catch (error) {
+        if (!error.code) console.error('[group-qr]', error.message);
+        return page(req, res, error.code ? 400 : 500, 'qr', session, qrErrorKey(error));
+      }
+    });
+  });
+});
+
+router.post('/qr/reset', requireSession, (req, res) => {
+  if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
+  try {
+    const qr = groupQr.reset();
+    return page(req, res, 200, 'qr', req.backupSession, 'admin.qrResetDone', qr);
+  } catch (error) {
+    console.error('[group-qr] reset:', error.message);
+    return page(req, res, 500, 'qr', req.backupSession, 'admin.qrUploadFailed');
   }
 });
 

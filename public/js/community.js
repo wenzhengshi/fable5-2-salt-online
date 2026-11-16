@@ -4,8 +4,13 @@
   const config = window.__SALT_I18N__ || {};
   const messages = config.messages || {};
   const copy = messages.community || {};
-  const QR_SRC = '/img/saltline-wechat-group.svg';
-  const QR_FILE = 'saltline-wechat-group.svg';
+  const currentQr = config.groupQr || {};
+  let qrSrc = typeof currentQr.url === 'string' && currentQr.url
+    ? currentQr.url
+    : '/api/community/qr/image';
+  let qrFile = typeof currentQr.fileName === 'string' && currentQr.fileName
+    ? currentQr.fileName.split(/[\\/]/).pop()
+    : 'saltline-wechat-group.svg';
 
   const t = (key) => (typeof copy[key] === 'string' ? copy[key] : key);
   const QR_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 3h8v8H3V3Zm2 2v4h4V5H5Zm8-2h8v8h-8V3Zm2 2v4h4V5h-4ZM3 13h8v8H3v-8Zm2 2v4h4v-4H5Zm8-2h3v3h-3v-3Zm5 0h3v3h-3v-3Zm-5 5h3v3h-3v-3Zm5 0h3v3h-3v-3Z"/></svg>';
@@ -17,6 +22,42 @@
   let lastFocus = null;
   let closeTimer = 0;
   let scanTimer = 0;
+  let qrCheckedAt = 0;
+  let qrCheckPending = false;
+
+  // 管理员换码后，仍开着页面的玩家在下次打开弹窗或切回标签页时也能拿到新图片。
+  async function refreshQr(force) {
+    const now = Date.now();
+    if (qrCheckPending || (!force && now - qrCheckedAt < 30000)) return;
+    qrCheckedAt = now;
+    qrCheckPending = true;
+    try {
+      if (typeof fetch !== 'function') return;
+      const response = await fetch('/api/community/qr', { cache: 'no-store' });
+      if (!response.ok) return;
+      const data = await response.json();
+      const next = data && data.qr && typeof data.qr.url === 'string' ? data.qr.url : '';
+      if (!next || next === qrSrc) return;
+      qrSrc = next;
+      if (data.qr.fileName) qrFile = String(data.qr.fileName).split(/[\\/]/).pop();
+      document.querySelectorAll('[data-community-open] .community-launch-thumb img').forEach((image) => {
+        image.src = qrSrc;
+      });
+      if (modal) {
+        const image = modal.querySelector('.community-qr-frame img');
+        const save = modal.querySelector('.community-save');
+        if (image) image.src = qrSrc;
+        if (save) {
+          save.href = qrSrc;
+          save.setAttribute('download', qrFile);
+        }
+      }
+    } catch (err) {
+      // 网络异常时继续使用页面初始化时注入的二维码。
+    } finally {
+      qrCheckPending = false;
+    }
+  }
 
   function createLaunch(variant) {
     const button = document.createElement('button');
@@ -33,7 +74,7 @@
     thumb.className = 'community-launch-thumb';
     thumb.setAttribute('aria-hidden', 'true');
     const image = document.createElement('img');
-    image.src = QR_SRC;
+    image.src = qrSrc;
     image.alt = '';
     image.width = 52;
     image.height = 52;
@@ -83,7 +124,7 @@
       '      </ul>',
       '      <p class="community-validity"></p>',
       '      <div class="community-actions">',
-      '        <a class="community-save" download="' + QR_FILE + '"></a>',
+      '        <a class="community-save" download="' + qrFile + '"></a>',
       '      </div>',
       '      <p class="community-save-hint"></p>',
       '      <p class="community-expired"></p>',
@@ -104,7 +145,7 @@
     modal.querySelector('#community-desc').textContent = t('desc');
 
     const image = modal.querySelector('.community-qr-frame img');
-    image.src = QR_SRC;
+    image.src = qrSrc;
     image.alt = t('qrAlt');
 
     modal.querySelector('.community-qr-card figcaption strong').textContent = t('groupName');
@@ -117,8 +158,8 @@
 
     modal.querySelector('.community-validity').textContent = t('validity');
     const save = modal.querySelector('.community-save');
-    save.href = QR_SRC;
-    save.setAttribute('download', QR_FILE);
+    save.href = qrSrc;
+    save.setAttribute('download', qrFile);
     save.innerHTML = QR_ICON + '<span></span>';
     save.querySelector('span').textContent = t('save');
     modal.querySelector('.community-save-hint').textContent = t('saveHint');
@@ -133,6 +174,7 @@
 
   function openModal(trigger) {
     buildModal();
+    refreshQr(false);
     window.clearTimeout(closeTimer);
     lastFocus = trigger || document.activeElement;
     modal.hidden = false;
@@ -255,6 +297,9 @@
     });
 
     document.addEventListener('keydown', trapKeys, true);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshQr(true);
+    });
 
     const app = document.getElementById('app');
     if (app && window.MutationObserver) {

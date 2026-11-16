@@ -215,6 +215,16 @@
 
     game.expedition = {
       get active() { return active; },
+      async restore(mapId, position, current) {
+        const zone = zones.find(candidate => candidate.id === mapId);
+        if (!zone) return false;
+        pending = null;
+        if (active?.id === mapId) return true;
+        const world = await load(zone);
+        if (!current() || !world) return false;
+        enter(zone, world, position);
+        return true;
+      },
       spawn(point) {
         if (!active) return null;
         if (!point) {

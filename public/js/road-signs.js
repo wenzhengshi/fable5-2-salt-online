@@ -22,6 +22,7 @@
       flaggedSign: tr('该牌子违规', 'Flagged sign'),
       placed: tr('路牌已立好。', 'Sign planted.'),
       removed: tr('路牌已拔除。', 'Sign removed.'),
+      removeTimeout: tr('拔除结果未确认，正在重新同步路牌。', 'Removal was not confirmed. Refreshing signs.'),
       remaining: tr('今日还可立 {n} 块', '{n} signs remaining today'),
       confirm: tr('拔除这块路牌？', 'Remove this sign?'),
       reason: {
@@ -108,6 +109,7 @@
     let target = null;
     let editor = null;
     let pendingCheck = null;
+    let pendingRemove = null;
     let nextCheckId = 0;
     let mp;
     let unsubscribe;
@@ -119,6 +121,7 @@
     const entries = new Map();
     const models = new Map();
     const buildQueue = new Set();
+    const hiddenSigns = new Set();
     const planarDistance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
     const signClock = new Intl.DateTimeFormat('en-GB', {
@@ -210,11 +213,60 @@
     }
 
     function accept(sign) {
+      if (hiddenSigns.has(sign.id)) return;
       const previous = entries.get(sign.id);
       if (previous && (previous.text !== sign.text || previous.flagged !== sign.flagged ||
           previous.submittedAt !== sign.submittedAt || previous.suppressed !== sign.suppressed)) erase(sign.id);
       entries.set(sign.id, sign);
       if (!sign.suppressed && !models.has(sign.id)) buildQueue.add(sign.id);
+    }
+
+    function completeRemoval(id) {
+      if (!id) return false;
+      hiddenSigns.add(id);
+      erase(id);
+      if (pendingRemove && pendingRemove.id === id) {
+        clearTimeout(pendingRemove.timer);
+        pendingRemove = null;
+      }
+      marker.visible = false;
+      target = null;
+      lastCheck = 0;
+      listAt = -Infinity;
+      return true;
+    }
+
+    function failRemoval(message) {
+      if (!pendingRemove) return false;
+      const pending = pendingRemove;
+      pendingRemove = null;
+      clearTimeout(pending.timer);
+      hiddenSigns.delete(pending.id);
+      if (pending.map === map) accept(pending.entry);
+      listAt = -Infinity;
+      lastCheck = 0;
+      notice(message);
+      return true;
+    }
+
+    function beginRemoval(entry) {
+      if (pendingRemove) failRemoval(text.removeTimeout);
+      pendingRemove = {
+        id: entry.id,
+        map,
+        entry: { ...entry, pos: { ...entry.pos } },
+        timer: 0
+      };
+      pendingRemove.timer = setTimeout(() => {
+        if (!pendingRemove || pendingRemove.id !== entry.id) return;
+        failRemoval(text.removeTimeout);
+      }, 5000);
+      hiddenSigns.add(entry.id);
+      erase(entry.id);
+      marker.visible = false;
+      target = null;
+      lastCheck = 0;
+      listAt = -Infinity;
     }
 
     function receive(msg) {
@@ -239,11 +291,19 @@
         return;
       }
       if (msg.type === 'signResult') {
+        const removeResult = msg.action === 'remove' || msg.removed ||
+          (!!pendingRemove && msg.id === pendingRemove.id);
+        if (removeResult && msg.reason && failRemoval(msg.reason ? (text.reason[msg.reason] || text.reason.storage) : text.reason.storage)) return;
+        if (removeResult && msg.removed) completeRemoval(msg.id || pendingRemove?.id);
         let message = msg.reason ? (text.reason[msg.reason] || text.reason.storage) : (msg.removed ? text.removed : text.placed);
         if (!msg.reason && !msg.removed && Number.isFinite(Number(msg.remaining))) {
           message += ' · ' + text.remaining.replace('{n}', String(msg.remaining));
         }
         notice(message);
+        return;
+      }
+      if (msg.type === 'signChange' && msg.removed) {
+        completeRemoval(msg.id);
         return;
       }
       if (msg.map !== map) return;
@@ -252,8 +312,7 @@
         for (const id of entries.keys()) if (!ids.has(id)) erase(id);
         for (const sign of msg.signs) accept(sign);
       } else if (msg.type === 'signChange') {
-        if (msg.removed) erase(msg.id);
-        else if (msg.sign) accept(msg.sign);
+        if (msg.sign) accept(msg.sign);
       }
     }
 
@@ -297,7 +356,7 @@
     }
 
     function open(mode) {
-      if (!map || !player.alive || game.game.state !== 'playing' || editor || pendingCheck) return;
+      if (!map || !player.alive || game.game.state !== 'playing' || editor || pendingCheck || pendingRemove) return;
       if (!mp?.connected) { notice(text.offline); return; }
       if (mode === 'remove') {
         const sign = ownsNearby();
@@ -370,8 +429,12 @@
         return;
       }
       mp.syncState();
-      if (mode === 'place') mp.send({ type: 'signPlace', pos: { x: entry.x, y: entry.y, z: entry.z }, text: words, style: style.value });
-      else mp.send({ type: 'signRemove', id: entry.id });
+      if (mode === 'place') {
+        mp.send({ type: 'signPlace', pos: { x: entry.x, y: entry.y, z: entry.z }, text: words, style: style.value });
+      } else {
+        beginRemoval(entry);
+        if (!mp.send({ type: 'signRemove', id: entry.id })) failRemoval(text.offline);
+      }
       close(true);
     });
     window.addEventListener('keydown', event => {
@@ -468,6 +531,11 @@
         const nextMap = currentMap();
         if (nextMap !== map) {
           cancelCheck();
+          if (pendingRemove) {
+            clearTimeout(pendingRemove.timer);
+            hiddenSigns.delete(pendingRemove.id);
+            pendingRemove = null;
+          }
           close(false);
           for (const id of entries.keys()) erase(id);
           map = nextMap;

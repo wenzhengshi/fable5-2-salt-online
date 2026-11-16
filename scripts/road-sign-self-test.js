@@ -148,8 +148,30 @@ async function placementPrecheck() {
   assert.equal((await place(store, visitor, occupied, now + 2000)).reason, 'occupied');
 }
 
+async function removalAndRelist() {
+  const store = await registry();
+  const start = Date.UTC(2026, 10, 17, 2, 0, 0);
+  const author = player(start, 50);
+  const point = { ...author.pos };
+  const placed = await place(store, author, point, start);
+  assert.ok(placed.sign, '测试路牌应先创建成功');
+  assert.equal((await store.list('qingyun', point, author.signOwner)).length, 1);
+
+  // The production rule opens removal at the next Beijing midnight. The test
+  // moves the in-memory record into the past so the removal path can run now.
+  placed.sign.removeAt = 0;
+  const removed = await store.mutate(author, { type: 'signRemove', id: placed.sign.id }, start + 2000);
+  assert.equal(removed.removed, true, '到期路牌必须拔除成功');
+  assert.equal(removed.sign.id, placed.sign.id, '拔除结果必须带回路牌 ID');
+  assert.deepEqual(await store.list('qingyun', point, author.signOwner), [],
+    '拔除后重新拉取路牌列表必须立即为空');
+  assert.equal((await store.mutate(author, { type: 'signRemove', id: placed.sign.id }, start + 4000)).reason,
+    'range', '已删除的路牌不能再次拔除');
+}
+
 async function main() {
   await placementPrecheck();
+  await removalAndRelist();
   await dailyAndBurstable();
   await shortTermRateLimit();
   await networkAreaLimit();
@@ -164,7 +186,7 @@ async function main() {
     networkMapLimit: LIMITS.networkMapLimit,
     networkAreaSigns: LIMITS.densityNetwork,
     mapTotal: LIMITS.mapTotal,
-    checks: ['placement-precheck', 'daily-limit', 'cookie-rotation', 'cooldown', 'burst', 'network-density', 'network-map', 'map-capacity']
+    checks: ['placement-precheck', 'removal-relist', 'daily-limit', 'cookie-rotation', 'cooldown', 'burst', 'network-density', 'network-map', 'map-capacity']
   }, null, 2));
 }
 

@@ -13,7 +13,6 @@
     classic: 'unitClassic'
   };
   const MANUAL_DURATION_MS = 30 * 60 * 1000;
-  const AUTO_DURATION_MS = 20 * 60 * 1000;
 
   function t(key, vars) {
     const raw = COPY[key];
@@ -130,9 +129,7 @@
     lastEndAt: 0,
     finishFallbackAt: 0,
     statusAt: 0,
-    kind: 'manual',
-    durationMs: MANUAL_DURATION_MS,
-    play: null
+    durationMs: MANUAL_DURATION_MS
   };
 
   window.__SALT_FOCUS__ = {
@@ -140,7 +137,7 @@
     fingerprint: identity.fingerprint,
     get active() { return state.active; },
     get until() { return state.until; },
-    get kind() { return state.kind; },
+    get kind() { return 'manual'; },
     get targetId() { return state.targetId; },
     get targetManual() { return state.targetManual; },
     switchTarget(direction) { return stepTarget(Number(direction) || 1); },
@@ -152,10 +149,6 @@
     const minutes = Math.floor(total / 60);
     const seconds = total % 60;
     return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
-  }
-
-  function formatMinutes(ms) {
-    return String(Math.max(0, Math.floor((Number(ms) || 0) / 60000)));
   }
 
   function toast(text) {
@@ -279,11 +272,7 @@
       });
       if (!res.ok) return null;
       const data = await res.json();
-      return data && data.focus ? {
-        focus: data.focus,
-        play: data.play || null,
-        now: Number(data.now) || Date.now()
-      } : null;
+      return data?.focus ? { focus: data.focus } : null;
     } catch (err) {
       return null;
     }
@@ -293,8 +282,7 @@
     if (!record) return;
     state.record = record;
     state.until = Number(record.expiresAt) || state.until;
-    state.kind = record.kind === 'auto' ? 'auto' : 'manual';
-    state.durationMs = Number(record.durationMs) || (state.kind === 'auto' ? AUTO_DURATION_MS : MANUAL_DURATION_MS);
+    state.durationMs = Number(record.durationMs) || MANUAL_DURATION_MS;
     const parts = [];
     if (record.id) parts.push(record.id);
     if (record.fingerprint) parts.push(record.fingerprint);
@@ -358,14 +346,13 @@
   }
 
   function activate(focus) {
-    const record = focus && focus.record ? focus.record : state.record;
+    const record = focus && 'record' in focus ? focus.record : state.record;
     const until = Number(focus && focus.until) || Number(record && record.expiresAt) || 0;
-    if (!until || until <= Date.now() + 500) {
+    if (!until || until <= Date.now()) {
       refreshStatus();
       return;
     }
     const wasActive = state.active;
-    const kind = (focus && focus.kind) || (record && record.kind) || state.kind || 'manual';
     if (!state.active) detectResumeGameplay();
     if (!wasActive) {
       state.targetId = null;
@@ -380,9 +367,7 @@
     state.ending = false;
     state.finishFallbackAt = 0;
     state.until = until;
-    state.kind = kind === 'auto' ? 'auto' : 'manual';
-    state.durationMs = Number(focus && focus.durationMs) || Number(record && record.durationMs) ||
-      (state.kind === 'auto' ? AUTO_DURATION_MS : MANUAL_DURATION_MS);
+    state.durationMs = Number(focus && focus.durationMs) || Number(record && record.durationMs) || MANUAL_DURATION_MS;
     if (record) applyRecord(record);
     document.body.classList.add('focus-mode-on');
     root.hidden = false;
@@ -391,12 +376,10 @@
     muteClientMic();
     enforceLock();
     renderFocus();
-    if (!wasActive && state.kind === 'auto') toast(t('autoStarted'));
   }
 
   function finishFocus(message) {
     const wasActive = state.active;
-    const endedKind = state.kind;
     state.active = false;
     state.ending = false;
     state.targetId = null;
@@ -407,7 +390,6 @@
     state.renderedTargetId = '';
     state.until = 0;
     state.finishFallbackAt = 0;
-    state.kind = 'manual';
     state.durationMs = MANUAL_DURATION_MS;
     state.record = null;
     root.hidden = true;
@@ -419,7 +401,7 @@
     state.resumeGameplay = false;
     state.preFocusState = '';
     updateSettingsRow();
-    if (wasActive) toast(t(endedKind === 'auto' ? 'autoEnded' : 'ended'));
+    if (wasActive) toast(t('ended'));
   }
 
   function requestFocusEnd() {
@@ -437,14 +419,12 @@
     const status = await fetchStatus();
     state.statusAt = Date.now();
     if (!status) return;
-    state.play = status.play;
     const focus = status.focus;
     if (focus.active && focus.record) {
       if (!state.active) {
         activate(focus);
       } else {
         state.until = Number(focus.record.expiresAt) || state.until;
-        state.kind = focus.record.kind === 'auto' ? 'auto' : 'manual';
         state.durationMs = Number(focus.record.durationMs) || state.durationMs;
         applyRecord(focus.record);
         updateSettingsRow();
@@ -700,18 +680,10 @@
     game.game.update = wrapped;
   }
 
-  function renderModeChrome() {
-    const automatic = state.kind === 'auto';
-    setText(ui.kicker, t(automatic ? 'autoActiveKicker' : 'activeKicker'));
-    setText(ui.footer, t(automatic ? 'autoFooter' : 'footer'));
-    root.classList.toggle('focus-auto', automatic);
-  }
-
   function renderFocus() {
     if (!state.active) return;
     const left = Math.max(0, state.until - Date.now());
     const duration = Math.max(1000, Number(state.durationMs) || MANUAL_DURATION_MS);
-    renderModeChrome();
     ui.clock.textContent = formatClock(left);
     ui.progress.style.transform = 'scaleX(' + Math.max(0, Math.min(1, left / duration)).toFixed(4) + ')';
     renderTarget(pickTarget(Date.now()));
@@ -810,19 +782,11 @@
 
   function updateSettingsRow() {
     const left = Math.max(0, state.until - Date.now());
-    const play = state.play;
-    const playMeta = play && play.enabled
-      ? t('settingMetaPlay', {
-        minutes: formatMinutes(play.continuousMs),
-        limit: formatMinutes(play.limitMs),
-        focus: formatMinutes(play.autoDurationMs)
-      })
-      : t('settingMetaOff');
     if (settingRow) {
       settingButton.setAttribute('aria-pressed', state.active ? 'true' : 'false');
       settingButton.classList.toggle('is-active', state.active);
       setText(settingState, state.active ? t('settingActive') : t('settingOff'));
-      setText(settingMeta, state.active ? t('settingMetaActive', { time: formatClock(left) }) : playMeta);
+      setText(settingMeta, state.active ? t('settingMetaActive', { time: formatClock(left) }) : t('settingMetaOff'));
     }
   }
 
@@ -932,15 +896,14 @@
     if (mpAttached || !window.__mp || typeof window.__mp.onMessage !== 'function') return;
     mpAttached = true;
     window.__mp.onMessage(function (msg) {
+      if (msg?.type === 'joined' && msg.focus?.active) msg = msg.focus;
       if (!msg || msg.type !== 'focusState') return;
       if (msg.active) {
         activate({
           active: true,
           until: Number(msg.until) || state.until,
-          record: state.record,
-          kind: msg.kind,
-          durationMs: msg.durationMs,
-          trigger: msg.trigger
+          record: state.record?.id === msg.recordId ? state.record : null,
+          durationMs: msg.durationMs
         });
         if (!state.record) refreshStatus();
       } else if (state.active) {

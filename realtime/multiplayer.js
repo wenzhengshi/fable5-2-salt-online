@@ -69,6 +69,8 @@ const FOCUS_BLOCKED_TYPES = new Set([
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
 
 const players = new Map();
+const reconnectPlayers = new Map();
+const RECONNECT_GRACE_MS = 120000;
 const announcedFocusEvents = new Map();
 const boat = {
   id: BOAT_ID,
@@ -637,9 +639,7 @@ function setFocusLock(player, until, recordId, options) {
   player.focusUntil = expiresAt;
   player.focusRecordId = String(recordId || player.focusRecordId || '');
   player.focusKind = meta.kind === 'auto' ? 'auto' : 'manual';
-  player.focusDurationMs = Number(meta.durationMs) || (player.focusKind === 'auto'
-    ? focusMode.AUTO_DURATION_MS
-    : focusMode.MANUAL_DURATION_MS);
+  player.focusDurationMs = Number(meta.durationMs) || focusMode.MANUAL_DURATION_MS;
   player.focusTrigger = String(meta.trigger || (player.focusKind === 'auto' ? 'continuous_play' : 'manual')).slice(0, 40);
   removeFromBoat(player, true);
   player.active = false;
@@ -681,32 +681,6 @@ function applyFocusLock({ clientId, fingerprint, until, recordId, kind, duration
   return matched;
 }
 
-function beginAutomaticFocus(player, play) {
-  if (!player || player.focusUntil > Date.now()) return false;
-  try {
-    const result = focusMode.startAutomatic({
-      clientId: player.clientId,
-      fingerprint: player.fingerprint,
-      ip: player.ip,
-      userAgent: player.userAgent,
-      lang: player.lang,
-      playMs: play && play.playMs
-    });
-    const record = result.record;
-    const recordKind = record.kind === 'auto' ? 'auto' : 'manual';
-    setFocusLock(player, record.expiresAt, record.id, {
-      kind: recordKind,
-      durationMs: record.durationMs,
-      trigger: record.trigger || (recordKind === 'auto' ? 'continuous_play' : 'manual'),
-      playMs: record.playMs
-    });
-    return true;
-  } catch (err) {
-    console.error('[focus] automatic focus failed', err && err.stack ? err.stack : err);
-    return false;
-  }
-}
-
 function handleMessage(player, raw) {
   if (player.moderationBlocked) return;
   let msg;
@@ -730,6 +704,7 @@ function handleMessage(player, raw) {
 
   const now = Date.now();
 
+
   if (player.focusUntil > now && FOCUS_BLOCKED_TYPES.has(msg.type)) {
     if (msg.type === 'chat') {
       send(player.ws, { type: 'chatDenied', reason: 'focus', retryIn: Math.max(0, player.focusUntil - now) });
@@ -746,12 +721,16 @@ function handleMessage(player, raw) {
   switch (msg.type) {
     case 'join': {
       if (player.joined) { monitor(player, 'repeatJoin', now); break; }
+      const resumed = player.reconnecting === true;
+      player.reconnecting = false;
       const requested = sanitizeName(msg.name);
-      const filtered = !!requested && contentFilter.isBlocked(requested);
-      player.name = uniqueName(filtered ? '' : requested, player);
+      const filtered = !resumed && !!requested && contentFilter.isBlocked(requested);
+      if (!resumed) player.name = uniqueName(filtered ? '' : requested, player);
       player.spawns = sanitizeSpawns(msg.spawns);
-      player.soldier = normalizeSoldier(msg.soldier);
-      playerAuthority.resetWeaponState(player);
+      if (!resumed) {
+        player.soldier = normalizeSoldier(msg.soldier);
+        playerAuthority.resetWeaponState(player);
+      }
       player.joined = true;
       const focused = player.focusUntil > now;
       if (focused) {
@@ -766,9 +745,15 @@ function handleMessage(player, raw) {
         color: player.color,
         soldier: player.soldier,
         filtered,
+        resume: resumed ? {
+          map: player.mapId || (player.inQingyun ? 'qingyun' : 'port'),
+          pos: player.pos,
+          yaw: player.yaw,
+          pitch: player.pitch
+        } : null,
         focus: focusPayload(player)
       });
-      if (!focused) broadcast({ type: 'notice', kind: 'join', name: player.name, id: player.id });
+      if (!focused && !resumed) broadcast({ type: 'notice', kind: 'join', name: player.name, id: player.id });
       break;
     }
     case 'soldier': {
@@ -1031,7 +1016,7 @@ function handleMessage(player, raw) {
       break;
     }
     case 'qingyunLeave': {
-      // The normal redeploy/reconnect flow can bring a player back to the port.
+      // The normal redeploy flow can bring a player back to the port.
       if (!player.inQingyun) break;
       player.inQingyun = false;
       player.pos = { ...player.spawns[0] };
@@ -1102,18 +1087,23 @@ function handleMessage(player, raw) {
     }
     case 'signPlace':
     case 'signRemove': {
+      const action = msg.type === 'signRemove' ? 'remove' : 'place';
+      const actionId = action === 'remove' && typeof msg.id === 'string' ? msg.id : undefined;
       if (!player.joined || player.signBusy || now - (player.signEditAt || 0) < 700) {
-        send(player.ws, { type: 'signResult', reason: 'busy' });
+        send(player.ws, { type: 'signResult', action, id: actionId, reason: 'busy' });
         break;
       }
       player.signEditAt = now;
       player.signBusy = true;
       signRegistry.mutate(player, msg, now).then(({ sign, removed, reason, remaining }) => {
-        send(player.ws, { type: 'signResult', reason, removed: !!removed, remaining });
-        if (sign) broadcastSign(sign, removed);
+        const id = sign?.id || actionId;
+        send(player.ws, { type: 'signResult', action, id, reason, removed: !!removed, remaining });
+        // The player who removed the sign must receive the change even if the
+        // positional snapshot moved outside the normal view radius meanwhile.
+        if (sign) broadcastSign(sign, removed, player);
       }).catch(error => {
         console.error('[signs] save failed:', error.message);
-        send(player.ws, { type: 'signResult', reason: 'storage' });
+        send(player.ws, { type: 'signResult', action, id: actionId, reason: 'storage' });
       }).finally(() => { player.signBusy = false; });
       break;
     }
@@ -1158,13 +1148,6 @@ function handleMessage(player, raw) {
         monitor(player, 'healthClaim', now);
         if (player.moderationBlocked) break;
       }
-      const play = focusMode.trackPlay({
-        clientId: player.clientId,
-        fingerprint: player.fingerprint,
-        active: player.joined && msg.active === true && msg.visible !== false,
-        now
-      });
-      if (play.triggered) beginAutomaticFocus(player, play);
       break;
     }
     case 'shot': {
@@ -1347,16 +1330,46 @@ function requestIp(req) {
 }
 
 function addPlayer(ws, req, signOwner) {
-  const numId = nextId;
-  const id = 'p' + numId;
-  nextId += 1;
   const query = new URLSearchParams(String((req && req.url) || '').split('?')[1] || '');
   const clientId = focusMode.normalizeClientId(query.get('clientId'));
   const fingerprint = focusMode.normalizeFingerprint(query.get('fingerprint'));
   const ip = requestIp(req);
+  const token = query.get('reconnect') || '';
+  const reconnectToken = /^[a-f0-9]{32}$/.test(token) ? token : '';
+  const previous = reconnectPlayers.get(reconnectToken);
+  if (previous?.clientId === clientId &&
+      (!previous.reconnectUntil || previous.reconnectUntil > Date.now())) {
+    const old = previous.ws;
+    const retained = players.get(previous.id) === previous;
+    previous.ws = ws;
+    if (retained) {
+      removeFromBoat(previous, true);
+      old.terminate();
+    }
+    previous.active = false;
+    previous.moving = previous.sprint = false;
+    previous.voice = { enabled: false, muted: true, speaking: false, windowAt: 0, windowBytes: 0 };
+    previous.pendingShot = null;
+    previous.shotCredits = 0;
+    previous.motionBudget = null;
+    previous.lastSeen = Date.now();
+    previous.ip = ip;
+    previous.reconnectUntil = 0;
+    previous.reconnecting = previous.joined || previous.reconnecting;
+    previous.joined = false;
+    players.set(previous.id, previous);
+    const activeFocus = focusMode.findActive(clientId, fingerprint);
+    if (activeFocus && activeFocus.id !== previous.focusRecordId) {
+      setFocusLock(previous, activeFocus.expiresAt, activeFocus.id, activeFocus);
+    }
+    sendWelcome(previous);
+    return previous;
+  }
   const focusRecord = focusMode.findActive(clientId, fingerprint);
   const focusUntil = focusRecord ? Number(focusRecord.expiresAt) || 0 : 0;
   const focusKind = focusRecord && focusRecord.kind === 'auto' ? 'auto' : 'manual';
+  const numId = nextId++;
+  const id = 'p' + numId;
   const player = {
     id,
     numId,
@@ -1387,6 +1400,7 @@ function addPlayer(ws, req, signOwner) {
     clientId,
     fingerprint,
     signOwner,
+    reconnectToken,
     modToken: randomUUID(),
     modIdentityPair: clientId && fingerprint ? 'pair:' + clientId + ':' + fingerprint : '',
     ip,
@@ -1396,7 +1410,7 @@ function addPlayer(ws, req, signOwner) {
     focusRecordId: focusRecord ? focusRecord.id : '',
     focusKind: focusRecord ? focusKind : '',
     focusDurationMs: focusRecord
-      ? Number(focusRecord.durationMs) || (focusKind === 'auto' ? focusMode.AUTO_DURATION_MS : focusMode.MANUAL_DURATION_MS)
+      ? Number(focusRecord.durationMs) || focusMode.MANUAL_DURATION_MS
       : 0,
     focusTrigger: focusRecord ? String(focusRecord.trigger || (focusKind === 'auto' ? 'continuous_play' : 'manual')).slice(0, 40) : '',
     msgWindow: Math.floor(Date.now() / 1000),
@@ -1408,9 +1422,20 @@ function addPlayer(ws, req, signOwner) {
     isAlive: true
   };
   players.set(id, player);
-  send(ws, {
+  if (reconnectToken) reconnectPlayers.set(reconnectToken, player);
+  if (focusUntil > Date.now()) {
+    player.active = false;
+    player.alive = false;
+    player.hp = 0;
+  }
+  sendWelcome(player);
+  return player;
+}
+
+function sendWelcome(player) {
+  send(player.ws, {
     type: 'welcome',
-    id,
+    id: player.id,
     name: player.name,
     color: player.color,
     soldier: player.soldier,
@@ -1425,12 +1450,6 @@ function addPlayer(ws, req, signOwner) {
     },
     focus: focusPayload(player)
   });
-  if (focusUntil > Date.now()) {
-    player.active = false;
-    player.alive = false;
-    player.hp = 0;
-  }
-  return player;
 }
 
 function removePlayer(player, reason) {
@@ -1438,6 +1457,14 @@ function removePlayer(player, reason) {
   removeFromBoat(player, true);
   const hadVoice = player.voice.enabled;
   players.delete(player.id);
+  if (reconnectPlayers.get(player.reconnectToken) === player) {
+    if ((player.joined || player.reconnecting) && ['close', 'timeout', 'error'].includes(reason)) {
+      player.reconnectUntil = Date.now() + RECONNECT_GRACE_MS;
+      player.joined = true;
+    } else {
+      reconnectPlayers.delete(player.reconnectToken);
+    }
+  }
   if (hadVoice) {
     broadcast({
       type: 'voiceState',
@@ -1456,9 +1483,10 @@ function removePlayer(player, reason) {
   if (!players.size) resetBoat(true);
 }
 
-function broadcastSign(sign, removed) {
+function broadcastSign(sign, removed, actor) {
   for (const other of players.values()) {
-    if (roadSigns.mapOf(other) !== sign.map || roadSigns.distance(other.pos, sign.pos) > roadSigns.viewRadius + 5) continue;
+    if (other !== actor &&
+        (roadSigns.mapOf(other) !== sign.map || roadSigns.distance(other.pos, sign.pos) > roadSigns.viewRadius + 5)) continue;
     send(other.ws, { type: 'signChange', map: sign.map, id: sign.id, removed: !!removed,
       sign: removed ? undefined : signRegistry.publicSign(sign, other.signOwner) });
   }
@@ -1476,6 +1504,9 @@ async function flagRoadSign(id) {
 
 function tick() {
   const now = Date.now();
+  for (const [token, player] of reconnectPlayers) {
+    if (player.reconnectUntil && player.reconnectUntil <= now) reconnectPlayers.delete(token);
+  }
   if (!boatOccupantCount() && boat.emptySince && now - boat.emptySince > BOAT_EMPTY_RETURN_MS) {
     resetBoat();
   }
@@ -1649,13 +1680,14 @@ function attachMultiplayer(server) {
     ws.isAlive = true;
     const player = addPlayer(ws, req, owner);
 
+    const isCurrent = () => player.ws === ws && players.get(player.id) === player;
     ws.on('pong', () => {
       ws.isAlive = true;
     });
 
     ws.on('message', (data, isBinary) => {
       try {
-        if (player.moderationBlocked) return;
+        if (!isCurrent() || player.moderationBlocked) return;
         if (isBinary) {
           relayPlayerAudio(player, data);
           return;
@@ -1666,10 +1698,10 @@ function attachMultiplayer(server) {
       }
     });
 
-    ws.on('close', () => removePlayer(player, 'close'));
+    ws.on('close', () => { if (isCurrent()) removePlayer(player, 'close'); });
     ws.on('error', (err) => {
       console.error('[mp] socket error', err && err.message);
-      removePlayer(player, 'error');
+      if (isCurrent()) removePlayer(player, 'error');
     });
   });
 

@@ -184,13 +184,19 @@ function createRegistry(options = {}) {
   }
 
   async function remove(sign) {
-    await fs.unlink(path.join(dir, sign.id + '.json'));
+    // A missing record must not leave the in-memory registry stale. Treat it as
+    // an already-removed file so the caller can still broadcast the removal.
+    await fs.unlink(path.join(dir, sign.id + '.json')).catch(error => {
+      if (error && error.code !== 'ENOENT') throw error;
+    });
     signs.delete(sign.id);
     const grid = zones.get(sign.map);
     const key = bucketKey(bucket(sign.pos.x), bucket(sign.pos.z));
-    const local = grid.get(key);
-    local.delete(sign);
-    if (!local.size) grid.delete(key);
+    const local = grid && grid.get(key);
+    if (local) {
+      local.delete(sign);
+      if (!local.size) grid.delete(key);
+    }
   }
 
   async function reviewList(requestedPage) {

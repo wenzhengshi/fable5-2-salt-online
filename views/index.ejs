@@ -57,7 +57,7 @@
     </noscript>
 
     <script>
-      window.__SALT_I18N__ = <%- JSON.stringify({ lang: lang, messages: messages }).replace(/</g, '\\u003c') %>;
+      window.__SALT_I18N__ = <%- JSON.stringify({ lang: lang, messages: messages, groupQr: groupQr }).replace(/</g, '\\u003c') %>;
     </script>
     <script src="/js/webgl-guard.js?v=<%= assetVersion %>"></script>
     <script src="/js/i18n.js?v=<%= assetVersion %>"></script>

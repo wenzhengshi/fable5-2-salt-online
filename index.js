@@ -7,6 +7,7 @@ const apiRouter = require('./routes/api');
 const adminRouter = require('./routes/admin');
 const chatHistory = require('./services/chatHistory');
 const focusMode = require('./services/focusMode');
+const groupQr = require('./services/groupQr');
 const roadSigns = require('./services/roadSigns');
 const { attachMultiplayer, shutdownMultiplayer } = require('./realtime/multiplayer');
 const { version: RELEASE_VERSION } = require('./package.json');
@@ -14,7 +15,7 @@ const { version: RELEASE_VERSION } = require('./package.json');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const ASSET_VERSION = '20261116-focus-exit-restore-v' + RELEASE_VERSION;
+const ASSET_VERSION = '20261116-manual-focus-v' + RELEASE_VERSION;
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -117,6 +118,7 @@ app.get('/', (req, res) => {
     },
     lang,
     messages: locales[lang] || locales['zh-CN'],
+    groupQr: groupQr.info(),
     assetVersion: ASSET_VERSION
   });
 });
@@ -155,17 +157,11 @@ server.listen(PORT, HOST, () => {
     ' · pending=' + chatStorage.pending +
     ' · writable=' + chatStorage.writable);
   const focusStorage = focusMode.persistence();
-  const playStorage = focusMode.playPersistence();
   console.log('[focus] records file data/' + focusMode.FILE +
     ' · dataDir=' + focusStorage.dataDir +
     ' (' + focusStorage.dataSource + ')' +
     ' · pending=' + focusStorage.pending +
     ' · writable=' + focusStorage.writable);
-  console.log('[focus] play time file data/' + focusMode.PLAY_FILE +
-    ' · dataDir=' + playStorage.dataDir +
-    ' (' + playStorage.dataSource + ')' +
-    ' · pending=' + playStorage.pending +
-    ' · writable=' + playStorage.writable);
 });
 
 let shuttingDown = false;
@@ -180,6 +176,7 @@ function shutdown(signal) {
   }
   chatHistory.flush();
   focusMode.flush();
+  groupQr.flush();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref();
 }

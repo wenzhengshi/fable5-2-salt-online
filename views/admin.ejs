@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title><%= t(view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %> · <%= t('nav.title') %></title>
-  <link rel="stylesheet" href="/css/admin-backup.css?v=4">
+  <title><%= t(view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %> · <%= t('nav.title') %></title>
+  <link rel="stylesheet" href="/css/admin-backup.css?v=5">
 </head>
 <body>
   <main>
@@ -26,8 +26,8 @@
       </div>
     </header>
     <section aria-labelledby="title">
-      <h1 id="title"><%= t(view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
-      <% if (message) { %><p class="<%= view === 'signs' || view === 'moderation' ? 'caption' : 'error' %>" role="status"><%= message %></p><% } %>
+      <h1 id="title"><%= t(view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
+      <% if (message) { %><p class="<%= view === 'signs' || view === 'moderation' || view === 'qr' ? 'caption' : 'error' %>" role="status"><%= message %></p><% } %>
       <% if (view === 'backup') { %>
         <p><%= t('admin.backupIntro') %></p>
         <ul>
@@ -40,7 +40,7 @@
           <button type="submit" class="primary"><%= t('admin.backupGenerate') %></button>
         </form>
         <p class="caption"><%= t('admin.backupNote') %></p>
-        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/moderation"><%= t('admin.modTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
+        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/qr"><%= t('admin.qrTitle') %></a><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/moderation"><%= t('admin.modTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
       <% } else if (view === 'signs') { %>
         <p><%= t('admin.signsIntro') %></p>
         <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
@@ -128,6 +128,36 @@
             </form>
           </article>
         <% } %>
+      <% } else if (view === 'qr') { %>
+        <p><%= t('admin.qrIntro') %></p>
+        <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
+        <div class="qr-manager">
+          <figure class="qr-preview">
+            <img id="qr-preview" src="<%= qr.url %>" alt="<%= t('admin.qrPreviewAlt') %>" width="220" height="220" />
+            <figcaption id="qr-source"><%= t(qr.custom ? 'admin.qrCustom' : 'admin.qrDefault') %></figcaption>
+          </figure>
+          <% if (qr.custom) { %>
+            <dl class="qr-meta">
+              <div><dt><%= t('admin.qrFileName') %></dt><dd><%= qr.fileName %></dd></div>
+              <div><dt><%= t('admin.qrSize') %></dt><dd><%= Math.ceil(qr.bytes / 1024) %> <%= t('admin.qrKiloByte') %></dd></div>
+              <div><dt><%= t('admin.qrUpdated') %></dt><dd><%= qr.updatedAt %></dd></div>
+            </dl>
+          <% } %>
+        </div>
+        <form action="/admin/qr" method="post" enctype="multipart/form-data" class="login qr-form" id="qr-form"
+          data-too-large="<%= t('admin.qrTooLarge') %>" data-invalid-type="<%= t('admin.qrInvalidType') %>">
+          <input name="csrf" type="hidden" value="<%= csrf %>">
+          <label for="qr-image"><%= t('admin.qrUploadLabel') %></label>
+          <input id="qr-image" name="image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required>
+          <p class="caption" id="qr-feedback" role="status" aria-live="polite"></p>
+          <button type="submit" class="primary" id="qr-submit" data-uploading="<%= t('admin.qrUploading') %>"><%= t('admin.qrUpload') %></button>
+        </form>
+        <% if (qr.custom) { %>
+          <form action="/admin/qr/reset" method="post" class="qr-reset">
+            <input name="csrf" type="hidden" value="<%= csrf %>">
+            <button type="submit" class="plain"><%= t('admin.qrReset') %></button>
+          </form>
+        <% } %>
       <% } else if (view === 'password') { %>
         <p><%= t(firstLogin ? 'admin.firstLogin' : 'admin.passwordIntro') %></p>
         <form action="/admin/password" method="post" class="login">
@@ -152,5 +182,6 @@
       <% } %>
     </section>
   </main>
+  <% if (view === 'qr') { %><script src="/js/admin-qr.js?v=5" defer></script><% } %>
 </body>
 </html>

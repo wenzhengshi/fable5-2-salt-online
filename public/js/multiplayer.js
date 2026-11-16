@@ -7,6 +7,9 @@
   const uiRoot = document.getElementById('ui');
   if (!uiRoot) return;
 
+  // Kept in this page only so separate tabs remain separate players.
+  const reconnectToken = Array.from(crypto.getRandomValues(new Uint8Array(16)),
+    value => value.toString(16).padStart(2, '0')).join('');
   const STORAGE_NAME = 'saltline.multiplayer.name';
   const STORAGE_SOLDIER = 'saltline.multiplayer.soldier';
   const UNIT_KINDS = ['male', 'female', 'hound', 'drone', 'classic'];
@@ -2238,7 +2241,7 @@
 
   function wsUrl() {
     const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ reconnect: reconnectToken });
     const identity = window.__SALT_FOCUS__ || {};
     if (identity.clientId) params.set('clientId', identity.clientId);
     if (identity.fingerprint) params.set('fingerprint', identity.fingerprint);
@@ -2299,7 +2302,7 @@
   }
 
   function sendState(force) {
-    if (!G || !G.player || !send) return;
+    if (!G?.player || !everJoined) return;
     const now = performance.now();
     if (!force && now - lastStateAt < 90) return;
     lastStateAt = now;
@@ -2628,6 +2631,53 @@
     sendState(true);
   }
 
+  async function restoreConnectionMap(resume, socket) {
+    const game = G;
+    if (!game?.player || ws !== socket) return;
+    const { player, expedition, qingyun } = game;
+    const inMatch = () => !['title', 'intro'].includes(game.game?.state);
+    if (!inMatch()) {
+      if (resume?.map === 'qingyun') send({ type: 'qingyunLeave' });
+      else if (resume && resume.map !== 'port') send({ type: 'mapLeave' });
+      return;
+    }
+
+    if (!resume) {
+      const spawn = game.level.playerStart.pos;
+      if (expedition?.active) expedition.leave(spawn);
+      if (qingyun?.active) qingyun.land(spawn);
+      return;
+    }
+
+    if (resume.map !== 'port' && resume.map !== 'qingyun') {
+      const current = () => ws === socket && socket.readyState === 1 && inMatch();
+      try {
+        if (!await expedition?.restore(resume.map, resume.pos, current)) return;
+      } catch (err) {
+        if (!current()) return;
+        console.error('[mp] could not load the reconnect map', err);
+        send({ type: 'mapLeave' });
+        const spawn = game.level.playerStart.pos;
+        if (expedition?.active) expedition.leave(spawn);
+        if (qingyun) qingyun.land(spawn);
+        return;
+      }
+    } else {
+      if (expedition?.active) expedition.leave(resume.pos);
+      if (qingyun && qingyun.active !== (resume.map === 'qingyun')) qingyun.land(resume.pos);
+    }
+    if (ws !== socket || socket.readyState !== 1 || !inMatch()) return;
+    const { x, y, z } = resume.pos;
+    player.pos.set(x, y, z);
+    player.lastSafe.copy(player.pos);
+    player.vel.set(0, 0, 0);
+    player.yaw = resume.yaw;
+    player.pitch = resume.pitch;
+    unitFlightY = 0;
+    unitFlightPrev = null;
+    player.syncView();
+  }
+
   function connect() {
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
     window.clearTimeout(reconnectTimer);
@@ -2648,13 +2698,6 @@
       reconnectDelay = 1200;
       setConnection('online');
       everJoined = false;
-      if (G?.expedition?.active) G.expedition.leave(G.level.playerStart.pos);
-      if (G?.qingyun?.active) {
-        const start = G.level.playerStart.pos;
-        G.qingyun.land(start);
-        unitFlightY = 0;
-        unitFlightPrev = null;
-      }
       send({ type: 'join', name: myName, soldier: mySoldier, spawns: spawnsFromLevel() });
       window.clearInterval(pingTimer);
       pingTimer = window.setInterval(() => {
@@ -2665,6 +2708,7 @@
     });
 
     socket.addEventListener('message', (event) => {
+      if (ws !== socket) return;
       if (event.data instanceof ArrayBuffer) {
         notifyBinary(event.data);
         return;
@@ -2679,6 +2723,7 @@
     });
 
     socket.addEventListener('close', event => {
+      if (ws !== socket) return;
       connected = false;
       myId = null;
       pendingRename = null;
@@ -2703,6 +2748,7 @@
     });
 
     socket.addEventListener('error', () => {
+      if (ws !== socket) return;
       setConnection('offline');
     });
   }
@@ -2741,8 +2787,16 @@
         saveSoldier(mySoldier);
         el.nameInput.value = myName;
         saveName(myName);
-        everJoined = true;
-        applyUnitSelection();
+        if (msg.renamed) {
+          applyUnitSelection();
+        } else {
+          const joinedSocket = ws;
+          restoreConnectionMap(msg.resume, joinedSocket).then(() => {
+            if (ws !== joinedSocket || joinedSocket.readyState !== 1) return;
+            everJoined = true;
+            applyUnitSelection();
+          }).catch(err => console.error('[mp] could not restore map on reconnect', err));
+        }
         if (filtered) toast(t('nameFiltered'));
         else if (acceptedRename) toast(t('nameSaved'));
         break;
@@ -2902,6 +2956,7 @@
         break;
       }
       case 'respawned': {
+        if (window.__SALT_FOCUS__?.active || G?.game?.state === 'title') break;
         if (msg.pos) {
           const spawn = {
             x: Number(msg.pos.x) || 0,
@@ -2975,6 +3030,16 @@
         if (!event || event.state !== 'playing') disposeLocalDroneLight();
         if (event && (event.state === 'title' || event.state === 'intro')) {
           stopRespawnAudio();
+          if (event.state === 'title') {
+            respawn.active = false;
+            respawn.by = null;
+            respawn.requestedAt = 0;
+            serverDeathNotified = false;
+            pendingDeathBy = null;
+            pendingDeathMeta = null;
+            pendingServerDeath = null;
+            hideRespawnOverlay();
+          }
           send({ type: 'mapLeave' });
           send({ type: 'qingyunLeave' });
         }

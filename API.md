@@ -13,7 +13,7 @@
 - 落盘策略：正常时同步追加并 `fsync` 后再广播；若部署目录暂时不可写，大字仍会立即广播，同时进入进程内重试队列，每 4 秒自动重试并通过 `chatWarning` 提醒发送者。历史接口会返回尚未落盘的 `pending` 记录。进程收到 `SIGTERM` / `SIGINT` 时会最后重试一次并同步排行榜与大字文件。
 - API 缓存：`/api/*` 统一返回 `Cache-Control: no-store`，避免历史分页被浏览器或代理缓存成空列表。
 - 内容安全：玩家代号与全服大字在服务端统一做敏感词过滤；拆字、全角、零宽字符、符号替代与常见同形字规避同样会被识别。
-- 当前版本：`1.26.9`，仅保留 WebGL2 + Three.js 三维渲染；客户端会先在实际游戏画布上异步重试并预热 WebGL2 上下文，再加载游戏 bundle，成功上下文由 Three.js 主渲染器直接复用。渲染器、单位预览与死亡回放继续优先请求 `high-performance`，上下文创建失败时按兼容属性回退。画质提供五档：极低档将内部渲染比例降至 50%、手机 DPR 上限设为 1，并关闭阴影、泛光、体积光、环境光遮蔽和平面反射；低内存、少核心或小屏手机会自动进入极低档，动态降档链路也会从低档继续降至极低档。远端玩家操控的机器狗与无人机稳定复用游戏内骨骼单位模型，模型模块晚于首个快照加载时也会自动升级，不再永久回退为方块模型。撤离船升级为任务前置可用的四人多人载具，服务端同步船位、舵手、乘客、坐标、朝向和速度；外海新增带碰撞与复活点的交战平台。青云宗的三座传送门位于入口东西两侧草坡与正前方石阶平台，距落点约 31–32 米，并显示实时方位与距离；从传送门地图返回时会落在对应门户旁。路牌创建由服务端按身份、浏览器指纹与网络来源执行每日额度、短时冷却、突发限流、单地图容量和区域密度限制；拔除操作会在客户端即时移除牌面，并以服务端确认和列表重拉兜底，迟到的旧列表不会把已拔除路牌重新加回。死亡回放仍由服务端以 10 Hz 录制双方真实轨迹、枪口弹道与命中事件，再通过 `youDied.replay` 下发给被击杀者。复活时若聊天面板打开或输入框聚焦，客户端会保留输入内容、光标位置与面板状态，不再自动请求鼠标锁定；指针锁定事件也不会抢走聊天输入焦点。专注模式开始与结束时，服务端会向全服公屏写入结构化系统播报并广播，实时名单显示“专注”徽章；在线玩家接口和 10 Hz 快照同时返回 `focused` 与 `focus` 详情，便于观战者和其他客户端识别专注玩家。专注观战层支持用上一位 / 下一位按钮、玩家列表和键盘方向键切换目标，手动锁定后保持视角，目标离开时回退自动轮播；该切换完全由客户端基于现有快照完成，不新增 WebSocket 消息。本地回放通过 WebAudio 分流同时录制游戏音效，音轨仅进入本机 `MediaRecorder`，不读取麦克风、不上传服务器；客户端会通过 UA 与微信 JS Bridge 自动识别微信内置浏览器，在回放面板显示下载限制提示、录制前二次确认，并拦截微信内下载，引导玩家改在系统浏览器中录制。录制提醒与删除回放均使用 `public/js/modal.js` 提供的自定义模态框，不再调用浏览器原生 `confirm`。群聊二维码可由管理员在后台上传并持久保存，游戏内标题页、暂停菜单与士兵选择页的入口统一读取当前二维码，客户端在打开弹窗或切回标签页时会重新校验版本；版本号统一从 `package.json` 读取，发布前可运行 `npm run release:check` 检查托管完整性。
+- 当前版本：`1.28.0`，仅保留 WebGL2 + Three.js 三维渲染；客户端会先在实际游戏画布上异步重试并预热 WebGL2 上下文，再加载游戏 bundle，成功上下文由 Three.js 主渲染器直接复用。渲染器、单位预览与死亡回放继续优先请求 `high-performance`，上下文创建失败时按兼容属性回退。画质提供五档：极低档将内部渲染比例降至 50%、手机 DPR 上限设为 1，并关闭阴影、泛光、体积光、环境光遮蔽和平面反射；低内存、少核心或小屏手机会自动进入极低档，动态降档链路也会从低档继续降至极低档。远端玩家操控的机器狗与无人机稳定复用游戏内骨骼单位模型，模型模块晚于首个快照加载时也会自动升级，不再永久回退为方块模型。撤离船升级为任务前置可用的四人多人载具，服务端同步船位、舵手、乘客、坐标、朝向和速度；外海新增带碰撞与复活点的交战平台。青云宗的三座传送门位于入口东西两侧草坡与正前方石阶平台，距落点约 31–32 米，并显示实时方位与距离；从传送门地图返回时会落在对应门户旁。路牌创建由服务端按身份、浏览器指纹与网络来源执行每日额度、短时冷却、突发限流、单地图容量和区域密度限制；拔除操作会在客户端即时移除牌面，并以服务端确认和列表重拉兜底，迟到的旧列表不会把已拔除路牌重新加回。西部荒原共享轿车离开地图时会继续载人前往目标地图，同时服务端立即在荒原出生点补充一辆空车，每张地图最多保留一辆可用车。轿车按 `H` 时会先自动驻车，再补发零速姿态并请求下车；服务端允许 1.8 米/秒以内的低速下车，非法落点自动回退到安全车门，下车后车辆保持驻车。驾驶席前进最高 22 米/秒、倒车最高 9 米/秒，松开油门自动驻车，低速转向更灵敏、高速转向更稳定；HUD 同步显示 D/R/N 挡位、实时 km/h 与可长按刹车按钮。死亡回放仍由服务端以 10 Hz 录制双方真实轨迹、枪口弹道与命中事件，再通过 `youDied.replay` 下发给被击杀者。复活时若聊天面板打开或输入框聚焦，客户端会保留输入内容、光标位置与面板状态，不再自动请求鼠标锁定；指针锁定事件也不会抢走聊天输入焦点。专注模式开始与结束时，服务端会向全服公屏写入结构化系统播报并广播，实时名单显示“专注”徽章；在线玩家接口和 10 Hz 快照同时返回 `focused` 与 `focus` 详情，便于观战者和其他客户端识别专注玩家。专注观战层支持用上一位 / 下一位按钮、玩家列表和键盘方向键切换目标，手动锁定后保持视角，目标离开时回退自动轮播；该切换完全由客户端基于现有快照完成，不新增 WebSocket 消息。本地回放通过 WebAudio 分流同时录制游戏音效，音轨仅进入本机 `MediaRecorder`，不读取麦克风、不上传服务器；客户端会通过 UA 与微信 JS Bridge 自动识别微信内置浏览器，在回放面板显示下载限制提示、录制前二次确认，并拦截微信内下载，引导玩家改在系统浏览器中录制。录制提醒与删除回放均使用 `public/js/modal.js` 提供的自定义模态框，不再调用浏览器原生 `confirm`。群聊二维码可由管理员在后台上传并持久保存，游戏内标题页、暂停菜单与士兵选择页的入口统一读取当前二维码，客户端在打开弹窗或切回标签页时会重新校验版本；版本号统一从 `package.json` 读取，发布前可运行 `npm run release:check` 检查托管完整性。
 
 ## 页面
 
@@ -237,10 +237,10 @@
 | `boatLeave` | 无 | 请求下船；仅允许船速低于 2.4 米/秒，且船位于撤离码头或外海平台附近 |
 | `boatPose` | `pos`, `heading`, `speed` | 舵手以不超过 20 Hz 的频率同步船只坐标、朝向和速度；服务端校验舵手身份、单步位移和海面半径 |
 | `boatInvite` | 无 | 舵手向全服发送船只集合广播，冷却 2200 ms |
-| `sedanBoard` | 无 | 请求登上共享轿车；仅允许存活、未上船、未处于专注模式且靠近轿车的玩家，车内满员或车速超过 1.5 米/秒时会拒绝 |
-| `sedanLeave` | `index` | 任意乘客请求从指定车门下车；车速不得超过 1.5 米/秒，`index` 为服务端确认的安全落点序号 |
-| `sedanPose` | `revision`, `pose{x,y,z,heading,speed}` | 驾驶席约每 85 ms 同步一次轿车坐标、朝向与速度；服务端最小接收间隔 45 ms，并校验驾驶资格、地图边界、最高 15 米/秒以及单帧位移 |
-| `sedanPortal` | `revision`, `destination` | 轿车进入传送门后请求跨地图行驶；服务端校验车门位置、目标地图与 1800 ms 冷却后广播 `sedanTravel` |
+| `sedanBoard` | `carId?` | 请求登上当前地图的共享轿车；`carId` 为快照中的车辆 ID，省略时由服务端选择最近车辆。仅允许存活、未上船、未处于专注模式且靠近轿车的玩家，车内满员或车速超过 2 米/秒时会拒绝 |
+| `sedanLeave` | `index`, `speed?` | 任意乘客请求下车；客户端会先自动驻车并补发一帧零速姿态，车速不超过 1.8 米/秒即可离开。非法 `index` 自动回退到最近安全车门，成功后车辆保持驻车；未乘车或状态失效时也会返回 `not-riding`，不会静默丢弃请求 |
+| `sedanPose` | `revision`, `pose{x,y,z,heading,speed}` | 驾驶席约每 85 ms 同步一次轿车坐标、朝向与速度；服务端最小接收间隔 45 ms，并校验驾驶资格、地图边界、前进最高 22 米/秒、倒车最高 9 米/秒以及单帧位移 |
+| `sedanPortal` | `revision`, `destination` | 轿车进入传送门后请求跨地图行驶；服务端校验车门位置、目标地图与 1800 ms 冷却后广播 `sedanTravel`。原车继续载人前往目标地图，若原车离开西部荒原，服务端会立即在荒原出生点生成一辆空车 |
 | `sedanReady` | `revision` | 乘客完成目标地图加载后由驾驶席确认，服务端恢复接收 `sedanPose` |
 | `qingyunEnter` | 无 | 请求穿过港口时空隧道进入青云宗；仅允许存活、未上船且未处于青云宗或传送门地图的玩家在隧道口附近发送 |
 | `qingyunReturn` | 无 | 请求从青云宗返回港口；仅允许存活玩家在任一回港门附近发送 |
@@ -251,10 +251,16 @@
 | `signList` | 无 | 请求当前地图 52 米内的路牌；同一连接 600 ms 内重复请求会被忽略 |
 | `signPlace` | `text`, `style`, `pos` | 在玩家 5 米内的平坦地面创建路牌，文字最多 32 字，颜色为 `blue` 或 `yellow`。服务端强制执行每日 10 块、短时冷却、突发、身份节点、网络来源、地图容量和区域密度限制 |
 | `signRemove` | `id` | 拔除自己的路牌；必须位于牌子 5 米内，且北京时间已到次日零点 |
+| `goldList` | 无 | 请求当前地图的金标目标、地面掉落、当日配额和随身余额；同一连接 700 ms 内重复请求会被忽略 |
+| `goldPick` | `id` | 拾取地面盐线币掉落；服务端校验地图、有效期、距离和身份，220 ms 冷却内重复请求会被忽略 |
+| `goldHit` | `id` | 对金标目标射击；仅使用服务端记录的最近一帧权威弹道判定命中与伤害，不信任客户端造成的伤害 |
+| `ordinaryGoldHit` | `id`, `kind`, `point`, `killed`, `weak`, `floor` | 上报普通机器狗 / 无人机的权威击毁信息；服务端结合弹道、落点和独立抽签决定是否有 5% 幸运掉落，每日本类掉落最多 8 份 |
+| `containerList` | 无 | 请求当前地图附近的集装箱；同一连接 1200 ms 内重复请求会被忽略 |
+| `containerAction` | `request`, `action`, 可选 `password`, `id`, `point`, `color`, `text`, `item` | 集装箱操作。`action` 为 `issue`、`create`、`open`、`close`、`move`、`sign`、`deposit`、`withdraw`、`locate` 或 `depositGold`；密码由服务器生成，成功 / 失败结果通过同名 `request` 关联 |
 | `focusEnd` | 无 | 手动 30 分钟或自动 20 分钟到期后请求结束只读观战并恢复出生；未到期时返回 `focusState.denied: true` |
 | `ping` | `t` | 延迟探测，服务端回 `pong` |
 
-专注锁定期间，`state`、`soldier`、`spawns`、`chat`、`voiceState`、`rename`、`shot`、`hit`、`died`、`respawn`、`boatBoard`、`boatLeave`、`boatPose`、`boatInvite`、`sedanBoard`、`sedanLeave`、`sedanPose`、`sedanPortal`、`sedanReady`、`qingyunEnter`、`qingyunReturn`、`qingyunLeave`、`mapEnter`、`mapReturn`、`mapLeave` 均被服务端拒绝；只允许 `join`、`focusEnd` 与 `ping`。二进制语音帧同样不会转发。
+专注锁定期间，`state`、`soldier`、`spawns`、`chat`、`voiceState`、`rename`、`shot`、`hit`、`died`、`respawn`、`boatBoard`、`boatLeave`、`boatPose`、`boatInvite`、`sedanBoard`、`sedanLeave`、`sedanPose`、`sedanPortal`、`sedanReady`、`qingyunEnter`、`qingyunReturn`、`qingyunLeave`、`mapEnter`、`mapReturn`、`mapLeave`、`goldList`、`goldPick`、`goldHit`、`ordinaryGoldHit`、`containerList`、`containerAction` 均被服务端拒绝；只允许 `join`、`focusEnd` 与 `ping`。二进制语音帧同样不会转发。
 
 专注观战的切换目标完全在客户端完成：从最新 `snapshot.players` 中筛选同一地图内可见、存活的玩家，支持上一位 / 下一位按钮、目标列表点击与键盘 `ArrowLeft` / `ArrowRight`。切换不会发送新的 WebSocket 消息，也不会改变服务端专注锁定或专注记录；手动目标离开或阵亡后，客户端自动回退到 9 秒轮播。
 专注结束时，客户端会恢复进入专注前的战局状态；若从暂停菜单进入，会自动继续行动并同步 HUD、输入和第一人称镜头。即使本地超时兜底先结束观战层，后续到达的 `focusState.ended` 复活点仍会写入本地玩家位置，不需要刷新页面。
@@ -274,13 +280,13 @@
 | `soldierAck` | `soldier` | 操控单位已生效 |
 | `soldierState` | `id`, `soldier` | 某位在线玩家的操控单位发生变化；客户端据此实时替换远端模型 |
 | `nameDenied` | `reason` | `filtered`（敏感词）或 `invalid`（空代号）；改代号失败时原代号不变 |
-| `snapshot` | `t`, `online`, `players[]`, `roster[]`, `voice[]`, `boat`, `sedan`, `you` | 10 Hz 状态帧；`players[]` 每项含 `x,y,z,yaw,pitch,hp,moving,sprint,shield,soldier,carSeat`，`roster[]` 每项含 `soldier`、`focused`、`focusUntil`、`focusKind` 与 `focus{active,until,remainingMs,kind,durationMs,trigger}`，`voice[]` 只包含已开麦玩家，`boat` 为共享撤离船状态，`sedan` 为共享轿车状态（含四个座位与当前玩家座位），跨地图玩家为 `null`，`you` 含 `active`、`focusUntil`、`focusKind` 与 `focusDurationMs` |
+| `snapshot` | `t`, `online`, `players[]`, `roster[]`, `voice[]`, `boat`, `sedan`, `you` | 10 Hz 状态帧；`players[]` 每项含 `x,y,z,yaw,pitch,hp,moving,sprint,shield,soldier,carSeat,carId`，`roster[]` 每项含 `soldier`、`focused`、`focusUntil`、`focusKind` 与 `focus{active,until,remainingMs,kind,durationMs,trigger}`，`voice[]` 只包含已开麦玩家，`boat` 为共享撤离船状态，`sedan` 为当前地图的共享轿车状态（含唯一 `id`、四个座位与当前玩家座位），跨地图玩家为 `null`，`you` 含 `active`、`focusUntil`、`focusKind` 与 `focusDurationMs` |
 | `boatAck` | `aboard`, `seat`, `pos`, `boat` | 登船或下船确认；登船时含座位，下船时含安全落点 |
 | `boatDenied` | `reason` | 船只操作拒绝；`range`、`full`、`helm`、`moving`、`landing`、`notAboard`、`rate`、`helmOnly` 或 `unavailable` |
 | `boatState` | `boat` | 船只成员或状态变化；`boat.seats` 固定为四个槽位，空位为 `null` |
 | `boatInvite` | `from`, `boat`, `at` | 舵手发起全服集合；`from` 为玩家公开信息，`boat` 含当前坐标与容量 |
 | `boatInviteSent` | `boat` | 集合邀请已成功广播给其他在线玩家 |
-| `sedanResult` | `reason`, `position`, `car` | 轿车操作结果；`reason` 为 `board`、`leave`、`full` 或 `moving`，成功下车时 `position` 为安全落点 |
+| `sedanResult` | `reason`, `position`, `car` | 轿车操作结果；`reason` 为 `board`、`leave`、`full`、`moving` 或 `not-riding`，成功下车时 `position` 为安全落点，`car` 含车辆唯一 `id` 与实时车速 |
 | `sedanTravel` | `car` | 轿车跨地图成功；客户端预载目标地图并按服务端轿车状态重新落位 |
 | `qingyunEntered` | `pos` | 已通过服务端校验进入青云宗；`pos` 为服务器指定的落点 |
 | `qingyunReturned` | `pos` | 已从青云宗返回港口；`pos` 为港口回程落点 |
@@ -290,6 +296,13 @@
 | `signChange` | `map`, `id`, `removed`, `sign` | 路牌新增、更新或拔除通知；`removed: true` 时不带 `sign` |
 | `signResult` | `action`, `id`, `reason`, `removed`, `remaining` | 路牌操作结果；`action` 为 `place` 或 `remove`，`id` 为对应路牌 ID。成功放置时 `remaining` 为今日剩余额度；失败原因可为 `cooldown`、`burst`、`daily`、`density`、`ownerLimit`、`networkLimit`、`mapFull`、`occupied`、`gate`、`range`、`text`、`style`、`owner`、`tomorrow`、`identity`、`storage` 或 `busy` |
 | `signFlagged` | 无 | 自己创建的路牌被管理员标记为违规，客户端显示牌面已替换提示 |
+| `goldList` | `map`, `targets[]`, `drops[]`, `reward`, `issued`, `remaining`, `carried` | 当前地图的金标目标和地面掉落列表；`reward` 与 `carried` 使用微盐线币整数，1 盐线币 = 1,000,000 微盐线币 |
+| `goldPicked` | `amount` | 拾取成功；`amount` 为本次入账的微盐线币整数 |
+| `goldDestroyed` | `id`, `pos` | 金标目标被击毁；同地图玩家据此移除目标模型 |
+| `goldBonus` | 无 | 普通机器狗 / 无人机触发 5% 幸运掉落 |
+| `containerList` | `map`, `containers[]` | 附近集装箱快照；每项含 `id`、`color`、`pos`、`yaw`、`sign` 和 `open` |
+| `containerResult` | `request`, 可选 `password`, `id`, `open`, `items`, `gold`, `location`, `error` | 与客户端 `request` 对应的操作结果；`error` 可为 `unavailable`、`busy`、`range`、`password`、`inUse`、`closed`、`position`、`item`、`exists`、`identity`、`text`、`inside`、`exit`、`draft`、`storage` 或 `unavailable` |
+| `containerClosed` | `id` | 开门租约到期、玩家远离或状态失效后，服务器强制关箱上锁 |
 | `voiceState` | `player{id,name,color,enabled,muted,speaking}` | 开麦、静音、说话状态变化 |
 | `chat` | `id`, `mid`, `name`, `color`, `text`, `at`, `persisted` | 普通全服大字；另含专注公屏系统播报：`kind: "system"`、`event: "focusStart" / "focusEnd"`、`targetName`、`focusKind`、`durationMs`。`mid` 为大字记录 ID；`persisted: false` 表示已广播但正在异步重试落盘 |
 | `chatDenied` | `reason`, `retryIn` | `rate`、`empty`、`filtered` 或 `focus`；被拒绝的消息不会广播 |

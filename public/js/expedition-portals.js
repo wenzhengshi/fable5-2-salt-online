@@ -94,11 +94,17 @@
       lastRequest = game.time.t;
     }
 
+    function collisionBoxes(x1, z1, x2, z2) {
+      const world = environment.boxes(x1, z1, x2, z2);
+      const extra = game.containers?.boxes(x1, z1, x2, z2);
+      return extra?.length ? [...world, ...extra] : world;
+    }
+
     function ground(x, z, maxY = 240) {
       const localZ = z - active.offset;
       let floor = environment.heightAt(x, localZ);
       if (floor > maxY) floor = -75;
-      for (const box of environment.boxes(x, localZ, x, localZ)) {
+      for (const box of collisionBoxes(x, localZ, x, localZ)) {
         if (x >= box[0] && x <= box[3] && localZ >= box[2] && localZ <= box[5] && box[4] <= maxY) floor = Math.max(floor, box[4]);
       }
       return floor;
@@ -116,7 +122,7 @@
       ray.direction.copy(direction);
       let result = null;
       let best = range;
-      for (const box of environment.boxes(origin.x, z, origin.x + direction.x * range, z + direction.z * range)) {
+      for (const box of collisionBoxes(origin.x, z, origin.x + direction.x * range, z + direction.z * range)) {
         box3.min.set(box[0], box[1], box[2]);
         box3.max.set(box[3], box[4], box[5]);
         if (box3.isEmpty() || !ray.intersectBox(box3, hit)) continue;
@@ -160,7 +166,7 @@
         const max = axis === 'x' ? active.maxX : active.maxZ;
         next[axis] = THREE.MathUtils.clamp(next[axis], min + radius, max - radius);
         const localZ = next.z - active.offset;
-        const blocked = environment.boxes(next.x - radius, localZ - radius, next.x + radius, localZ + radius)
+        const blocked = collisionBoxes(next.x - radius, localZ - radius, next.x + radius, localZ + radius)
           .some(box => next.x + radius > box[0] && next.x - radius < box[3] &&
             localZ + radius > box[2] && localZ - radius < box[5] &&
             pos.y + height > box[1] && pos.y + step < box[4]);
@@ -324,6 +330,21 @@
 
     game.expedition = {
       get active() { return active; },
+      containerGround(x, z, yaw) {
+        if (!active) return null;
+        const dx = yaw % 2 === 0 ? 3.4 : 1.55;
+        const dz = yaw % 2 === 0 ? 1.55 : 3.4;
+        const localZ = z - active.offset;
+        const y = environment.heightAt(x, localZ);
+        if (!Number.isFinite(y) || Math.abs(y - player.pos.y) > 1.2) return null;
+        for (const a of [-dx, 0, dx]) for (const b of [-dz, 0, dz]) {
+          if (Math.abs(environment.heightAt(x + a, localZ + b) - y) > .23) return null;
+        }
+        if (environment.boxes(x - dx, localZ - dz, x + dx, localZ + dz).some(box =>
+          box[3] > x - dx && box[0] < x + dx && box[5] > localZ - dz && box[2] < localZ + dz &&
+          box[4] > y + .18 && box[1] < y + 2.85)) return null;
+        return y;
+      },
       async prepareEntry(mapId) {
         const zone = maps[mapId];
         const world = await load(zone);

@@ -2253,20 +2253,32 @@
     const original = combat.playerShot;
     if (typeof original !== 'function') return;
     combat.playerShot = function patchedPlayerShot(origin, dir, opts) {
-      const result = original.call(this, origin, dir, opts);
-      try {
-        if (origin && dir && G.game && G.game.state === 'playing' && !respawn.active) {
-          send({
-            type: 'shot',
-            weapon: opts?.weapon || 'pac9',
-            origin: { x: origin.x, y: origin.y, z: origin.z },
-            dir: { x: dir.x, y: dir.y, z: dir.z }
-          });
+      let result;
+      let simulated = false;
+      const localShot = () => {
+        if (!simulated) {
+          simulated = true;
+          result = original.call(this, origin, dir, opts);
         }
-      } catch (err) { /* ignore */ }
+        return result;
+      };
       try {
-        const range = (opts && opts.range) || 300;
-        const limit = result && typeof result.dist === 'number' ? result.dist : range;
+        if (!origin || !dir || G.game?.state !== 'playing' || respawn.active) return localShot();
+        if (!send({
+          type: 'shot',
+          weapon: opts?.weapon || 'pac9',
+          origin: { x: origin.x, y: origin.y, z: origin.z },
+          dir: { x: dir.x, y: dir.y, z: dir.z }
+        })) return localShot();
+        const range = opts?.range || 300;
+        const gold = opts?.weapon === 'knife' ? null : G.gold?.intersect(origin, dir, range);
+        let limit;
+        if (gold) {
+          const obstruction = G.physics.raycast(origin, dir, gold.dist);
+          const enemy = G.enemies.raycast(origin, dir, gold.dist);
+          if (obstruction || enemy) limit = localShot()?.dist ?? gold.dist;
+          else limit = gold.dist;
+        } else limit = localShot()?.dist ?? range;
         let best = null;
         for (const avatar of avatars.values()) {
           if (!avatar.group.visible || !avatar.data) continue;
@@ -2275,23 +2287,35 @@
           if (hit == null || hit <= 0.35 || hit >= limit) continue;
           if (!best || hit < best.dist) best = { avatar, dist: hit };
         }
-        if (!best) return result;
-        const point = origin.clone().addScaledVector(dir, best.dist);
-        send({ type: 'hit', targetId: best.avatar.id });
-        best.avatar.hitAt = performance.now();
-        try { G.fx && G.fx.sparks && G.fx.sparks(point, dir, 6); } catch (err) { /* ignore */ }
+        if (!best && (!gold || simulated)) {
+          const enemy = result?.enemy;
+          if (enemy && (enemy.type === 'gull' || enemy.type === 'hound')) {
+            const { x, y, z } = result.point;
+            const floor = result.killed ? G.physics.groundHeight(x, z, y + .8) : undefined;
+            send({ type: 'ordinaryGoldHit', id: enemy.id, kind: enemy.type, point: { x, y, z },
+              floor, weak: result.part === 'weak', killed: result.killed });
+          }
+          return result;
+        }
+        const dist = best?.dist ?? gold.dist;
+        const point = origin.clone().addScaledVector(dir, dist);
+        if (best) {
+          send({ type: 'hit', targetId: best.avatar.id });
+          best.avatar.hitAt = performance.now();
+        } else send({ type: 'goldHit', id: gold.id });
+        try { G.fx?.sparks?.(point, dir, 6); } catch (err) { /* ignore */ }
         return {
           point,
           normal: dir.clone().negate(),
-          dist: best.dist,
+          dist,
           surface: 'player',
           enemy: null,
           from: 'player',
-          pvp: true
+          pvp: !!best
         };
       } catch (err) {
-        console.error('[mp] pvp shot check failed', err);
-        return result;
+        console.error('[mp] online shot check failed', err);
+        return localShot();
       }
     };
     combat.__mpPatched = true;

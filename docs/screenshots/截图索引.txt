@@ -1,0 +1,35 @@
+盐线行动 / 盐线币
+
+地图在游戏内取景，标注项目原图的是源码已附截图。功能图在本地测试场景使用示例数据拍摄。
+
+00-map-selection.png  五图选图首页
+01-salt-port.png  盐港 · 吊机与箱区
+02-salt-port-yard.png  盐港 · 货柜通道
+05-bayhaven.png  湾城 · 城市全景
+06-bayhaven-street.png  湾城 · 街道
+07-dustfall.png  西部荒原 · 小镇
+08-dustfall-town.png  西部荒原 · 街心
+09-mothlight.png  霓虹雨城 · 夜景
+10-mothlight-neon.png  霓虹雨城 · 临街特写
+11-container-locked.png  西部荒原 · 集装箱与箱旁牌子
+12-padlock-closeup.png  上锁 · 门闩与挂锁
+13-gold-marked-hound.png  金标机器狗
+14-gold-marked-drone.png  金标无人机
+15-gold-drop-closeup.png  地面盐线币
+16-manual-pickup-ui.png  走近手动拾取
+17-password-prompt.png  密码／助记词输入
+18-container-open.png  解锁 · 开门过程
+19-container-interior.png  集装箱内部
+20-balance-before-deposit.png  存入前 · 随身与箱内余额
+21-deposited-balance.png  存入后 · 余额已更新
+22-padlock-detail.png  黄铜挂锁 · 局部特写
+23-hound-detail.png  金标机器狗 · 局部特写
+24-drone-detail.png  金标无人机 · 局部特写
+26-qingyun-mountains-archive.jpg  青云宗 · 群峰鸟瞰（项目原图）
+27-qingyun-hall-archive.jpg  青云宗 · 大殿（项目原图）
+28-qingyun-gate-archive.jpg  青云宗 · 返程门（项目原图）
+29-extraction-boat-archive.jpg  撤离艇（项目原图）
+30-rifle-scope-archive.jpg  步枪八倍镜（项目原图）
+31-ground-coin-detail.png  地面盐线币 · 局部特写
+32-password-dialog-detail.png  密码输入 · 界面特写
+33-deposited-balance-detail.png  存入余额 · 界面特写

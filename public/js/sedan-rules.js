@@ -12,14 +12,64 @@
   ];
   const portBounds = { minX: -900, maxX: 900, minZ: -299, maxZ: 900 };
   const exits = index => {
-    const side = Math.sign(seats[index].x);
-    return [[side * 1.85, .25], [side * 1.85, -.88], [-side * 1.85, .25], [0, -3.15], [0, 3.15]];
+    const side = Math.sign(seats[index]?.x) || 1;
+    const other = -side;
+    // The first four spots match the original door positions. The rest are
+    // shoulder/fore-aft fallbacks so a car parked beside a rock or slope still
+    // has a reachable exit without asking the player to reverse again.
+    return [
+      [side * 1.95, .35], [side * 1.95, -.88],
+      [other * 1.95, .35], [other * 1.95, -.88],
+      [side * 2.35, 1.45], [side * 2.35, -1.75],
+      [other * 2.35, 1.45], [other * 2.35, -1.75],
+      [0, -3.35], [0, 3.35],
+      [side * 2.05, 2.2], [other * 2.05, 2.2]
+    ];
   };
-  const maxSpeed = 15;
+  const maxSpeed = 22;
+  const maxReverse = 9;
+  const boardSpeed = 2;
+  const exitSpeed = 1.8;
+  const parkSpeed = .32;
+  const wheelBase = 2.7;
+  const steerMax = .56;
+  const steerHigh = .27;
   const halfWidth = .99;
   const halfLength = 2.45;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const angle = value => Math.atan2(Math.sin(value), Math.cos(value));
   const bounds = map => map === 'qingyun' ? zone.bounds : maps[map] || portBounds;
+
+  // Shared by the browser and the self-tests. A released throttle is an
+  // intentional parking brake: the car sheds speed quickly instead of rolling
+  // on for several seconds while the exit prompt says "stop first".
+  function stepSpeed(speed, throttle, brake, dt, parking = false) {
+    const input = clamp(Number(throttle) || 0, -1, 1);
+    const target = brake || parking ? 0 : input > 0 ? input * maxSpeed : input < 0 ? input * maxReverse : 0;
+    const braking = brake || parking;
+    const opposing = (speed > .05 && input < -.05) || (speed < -.05 && input > .05);
+    let rate;
+    if (braking) rate = 34;
+    else if (opposing && Math.abs(input) > .05) rate = 30;
+    else if (Math.abs(input) <= .05) rate = 9.5;
+    else if (Math.abs(target) > Math.abs(speed) && Math.sign(target) === Math.sign(speed)) {
+      rate = target > 0 ? 12 : 9.5;
+    } else rate = 15;
+    let next = speed + clamp(target - speed, -rate * dt, rate * dt);
+    if (!braking && Math.abs(input) <= .05 && Math.abs(next) < .12) next = 0;
+    return clamp(next, -maxReverse, maxSpeed);
+  }
+
+  function steerLimit(speed) {
+    const ratio = Math.min(1, Math.abs(speed) / maxSpeed);
+    return steerMax - (steerMax - steerHigh) * Math.sqrt(ratio);
+  }
+
+  function turnRate(steering, speed) {
+    const assist = 1 + Math.max(0, 1 - Math.abs(speed) / 4) * .2;
+    return Math.tan(steering) / wheelBase * speed * assist;
+  }
+
   function point(car, x, y, z) {
     const c = Math.cos(car.heading), s = Math.sin(car.heading);
     return { x: car.x + c * x + s * z, y: car.y + y, z: car.z - s * x + c * z };
@@ -68,7 +118,12 @@
   function create() {
     return { ...start, speed: 0, seats: seats.map(() => null), revision: 0 };
   }
-  const api = { start, seats, maxSpeed, halfWidth, halfLength, angle, point, seat, exits, inside, near, portal, create };
+  const api = {
+    start, seats, maxSpeed, maxReverse, boardSpeed, exitSpeed, parkSpeed,
+    wheelBase, steerMax, steerHigh, halfWidth, halfLength,
+    angle, clamp, point, seat, exits, inside, near, portal, create,
+    stepSpeed, steerLimit, turnRate
+  };
   if (node) module.exports = api;
   else root.SaltSedanRules = api;
 })(globalThis);

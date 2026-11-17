@@ -574,6 +574,8 @@ const frontier = require('../services/frontier')({
   onEquipmentChange: (player, mask, now) => deathReplay.recordPlayer(player, now, mask, true)
 });
 
+const gold = require('../services/gold')({ send, players, frontier });
+const containers = require('../services/containers')({ send, players, frontier, gold });
 const sedan = require('../services/sedan')(players, send, frontier.dropping);
 
 function uniqueName(candidate, self) {
@@ -1177,6 +1179,20 @@ function handleMessage(player, raw) {
       }).finally(() => { player.signBusy = false; });
       break;
     }
+    case 'goldList':
+    case 'goldPick':
+      gold.handle(player, msg, now);
+      break;
+    case 'ordinaryGoldHit':
+      if (player.active && player.alive) gold.ordinaryHit(player, playerAuthority.takeReportedShot(player, now), msg, now);
+      break;
+    case 'goldHit':
+      if (player.active && player.alive) gold.shoot(player, playerAuthority.takeReportedShot(player, now), msg.id, now);
+      break;
+    case 'containerList':
+    case 'containerAction':
+      containers.handle(player, msg, now);
+      break;
     case 'frontierLand':
     case 'frontierPick':
     case 'frontierUse':
@@ -1615,6 +1631,8 @@ function tick() {
     });
   }
   frontier.tick(now);
+  containers.tick(now);
+  gold.tick(now);
   syncBoatOccupants();
   sedan.sync();
   deathReplay.recordPlayers(players.values(), now, frontier.equipmentFlags);
@@ -1644,6 +1662,7 @@ function tick() {
       hp: Math.round(player.hp),
       armor: frontier.equipmentFlags(player),
       carSeat: player.carSeat ?? null,
+      carId: player.carId || null,
       weapon: player.frontier && !frontierRules.canEquip(frontier.items(player), player.weaponId || 'pac9', player.mapId)
         ? null : player.weaponId || 'pac9',
       moving: !!player.moving,

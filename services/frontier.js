@@ -20,18 +20,10 @@ module.exports = function createFrontier({ send, participants, sameMap, damage, 
     if (!player.signOwner) return player.frontierItems ||= rules.normalize();
     return profiles()[player.signOwner] ||= rules.normalize();
   }
-  function persist(player, next, now) {
+  function publishItems(player, next, now) {
     const changed = equipmentFlags(player) !== rules.equipmentFlags(next);
-    if (player.signOwner) {
-      try {
-        storage.updateJson(FILE, data => ({ ...(!Array.isArray(data) && data), [player.signOwner]: next }));
-      } catch (error) {
-        console.error('[frontier] inventory save failed:', error.message);
-        send(player.ws, { type: 'frontierDenied', reason: 'storage' });
-        return false;
-      }
-      profiles()[player.signOwner] = next;
-    } else player.frontierItems = next;
+    if (player.signOwner) profiles()[player.signOwner] = next;
+    else player.frontierItems = next;
     for (const other of participants()) {
       if (other === player || (player.signOwner && other.signOwner === player.signOwner)) {
         if (changed && other.frontier && other.active && other.alive) {
@@ -41,6 +33,31 @@ module.exports = function createFrontier({ send, participants, sameMap, damage, 
       }
     }
     return true;
+  }
+  function persist(player, next, now) {
+    if (player.signOwner) {
+      try {
+        storage.updateJson(FILE, data => ({ ...(!Array.isArray(data) && data), [player.signOwner]: next }));
+      } catch (error) {
+        console.error('[frontier] inventory save failed:', error.message);
+        send(player.ws, { type: 'frontierDenied', reason: 'storage' });
+        return false;
+      }
+    }
+    return publishItems(player, next, now);
+  }
+  function containerTransaction(player, update, now) {
+    let next;
+    storage.updateJson(FILE, data => {
+      const profiles = Array.isArray(data) ? {} : data;
+      const containers = profiles.containers || {};
+      const bag = player.signOwner ? rules.normalize(profiles[player.signOwner]) : null;
+      next = update(containers, bag, profiles);
+      if (next && player.signOwner) profiles[player.signOwner] = next;
+      profiles.containers = containers;
+      return profiles;
+    });
+    if (next) publishItems(player, next, now);
   }
   function inventory(player) {
     if (player.frontier) send(player.ws, { type: 'frontierInventory', items: items(player) });
@@ -163,5 +180,5 @@ module.exports = function createFrontier({ send, participants, sameMap, damage, 
       }
     }
   }
-  return { items, inventory, equipmentFlags, enter, dropping, armor, handle, tick };
+  return { items, inventory, equipmentFlags, enter, dropping, armor, handle, tick, containerTransaction };
 };

@@ -633,3 +633,57 @@ body.sail-active .h-heading { opacity: 0 !important; visibility: hidden !importa
 @media (orientation: portrait) {
   .scope-zoom-tools { top: calc(54px + var(--sat)); bottom: auto; }
 }
+
+.container-tools {
+  bottom: calc(44px + var(--sab));
+}
+.is-touch .container-tools { bottom: calc(57px + var(--sab)); }
+.container-tools button:first-child::after { content: ' K'; }
+.is-touch .container-tools button:first-child::after { content: none; }
+.container-dialog { width: min(440px, calc(100% - 32px)); }
+.container-dialog footer { margin-top: 12px; }
+.container-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.container-items { display: grid; gap: 6px; }
+.container-items > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
+.container-dialog button:disabled { opacity: .5; cursor: default; }
+.container-dialog input[readonly] { text-align: center; font-family: monospace; letter-spacing: .04em; }
+
+.gold-hud {
+  position: fixed;
+  z-index: 34;
+  left: calc(12px + var(--sal, 0px));
+  top: calc(23% + var(--sat, 0px));
+  width: min(240px, 32vw);
+  color: #ffe1a0;
+  font: 600 12px/1.35 system-ui, sans-serif;
+  text-shadow: 0 1px 4px #000, 0 1px 8px #000;
+  pointer-events: none;
+}
+.gold-hud[hidden], .gold-hud [hidden] { display: none; }
+.gold-hud > span { display: block; margin-top: 4px; color: #f5dda1; }
+.gold-hud > button {
+  border: 1px solid #e1af58;
+  border-radius: 5px;
+  background: #251b0e;
+  color: #ffe8b7;
+  margin-top: 7px;
+  padding: 8px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.gold-hud > button::after { content: ' J'; margin-left: 5px; opacity: .75; }
+.is-touch .gold-hud > button::after { content: none; }
+.container-gold-balance { color: #ffda86; }
+.container-walk { margin-bottom: 8px; }
+.container-password-options { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 7px; }
+.container-dialog textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  background: #0b141d;
+  color: #fff;
+  border: 1px solid #617b8e;
+  border-radius: 4px;
+  padding: 7px;
+  font: 16px/1.5 system-ui, sans-serif;
+}

@@ -14,7 +14,7 @@
   const labels = {
     board: tr('car.board'), leave: tr('car.leave'), driver: tr('car.driver'),
     passenger: tr('car.passenger'), full: tr('car.full'), moving: tr('car.moving'),
-    boardMoving: tr('car.boardMoving'),
+    boardMoving: tr('car.boardMoving'), range: tr('car.range'),
     blocked: tr('car.blocked'), portal: tr('car.portal'), loading: tr('car.loading'),
     failed: tr('car.failed'), brake: tr('car.brake'), parked: tr('car.parked'),
     leavePending: tr('car.leavePending'),
@@ -48,7 +48,7 @@
     let model, mp, target, display, local = rules.create(), seat = null, drive = null, travel = null;
     let nextPose = 0, portalUntil = 0, requestUntil = 0, noticeUntil = 0, lookOffset = 0;
     let wheels = 0, steering = 0, pitch = 0, roll = 0, retry = false;
-    let pendingExit = false, exitFlushed = false, brakeHeld = false;
+    let pendingExit = false, brakeHeld = false;
     let lastChassisX = Infinity, lastChassisZ = Infinity, lastChassisHeading = Infinity;
     const now = () => performance.now();
     const floor = (x, z, cap) => physics.groundHeight(x, z, cap);
@@ -92,7 +92,6 @@
       seat = null;
       drive = null;
       pendingExit = false;
-      exitFlushed = false;
       requestUntil = 0;
       setBrake(false);
       if (!position) return;
@@ -113,7 +112,6 @@
       }
       if (seat == null) {
         pendingExit = false;
-        exitFlushed = false;
         setBrake(false);
       }
       if (seat !== 0) drive = null;
@@ -185,15 +183,15 @@
           if (message.reason === 'moving') {
             if (seat != null) {
               pendingExit = true;
-              exitFlushed = false;
               requestUntil = now() + 220;
-              say('moving');
+              say(seat === 0 ? 'exitPending' : 'waitingForStop');
             } else {
               say('boardMoving');
             }
           }
           apply(message.car);
           if (message.reason === 'full') say('full');
+          if (message.reason === 'range') say('range');
         }
         if (message.type === 'snapshot' && !travel) {
           const state = message.sedan;
@@ -228,19 +226,19 @@
         apply(local);
         return true;
       }
-      if (!exitFlushed) {
-        // Flush one final stopped pose before asking the server to unlock the
-        // door. This prevents a stale 30 Hz speed sample from rejecting an
-        // exit after the client has already parked.
-        if (drive && Math.abs(drive.speed) <= rules.exitSpeed) {
-          drive.speed = 0;
-          sendPose();
-        }
-        exitFlushed = true;
-        requestUntil = now() + 130;
-        return true;
-      }
-      mp.send({ type: 'sedanLeave', index, speed: Math.abs(state.speed) });
+      const driverPark = seat === 0;
+      if (driverPark && drive) drive.speed = 0;
+      // The driver request carries an explicit parking intent. The server can
+      // therefore park and open the door even if its last 30 Hz speed sample
+      // was throttled or is one frame stale. Passengers still wait for the
+      // authoritative car speed to drop below the exit threshold.
+      if (driverPark && drive) sendPose();
+      mp.send({
+        type: 'sedanLeave',
+        index,
+        speed: driverPark ? 0 : Math.abs(state.speed),
+        park: driverPark
+      });
       requestUntil = now() + 700;
       return true;
     }
@@ -263,10 +261,9 @@
         return;
       }
       pendingExit = true;
-      exitFlushed = false;
       const state = drive || display;
       if (Math.abs(state.speed) <= rules.exitSpeed) requestExit();
-      else say(seat === 0 ? 'moving' : 'waitingForStop');
+      else say(seat === 0 ? 'exitPending' : 'waitingForStop');
     }
 
     button.addEventListener('click', interact);

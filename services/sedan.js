@@ -56,6 +56,7 @@ module.exports = function createSedan(players, send, dropping) {
           return;
         }
         player.pos = rules.seat(car, index);
+        player.carHeading = car.heading;
         player.moving = player.sprint = false;
       });
     }
@@ -79,6 +80,7 @@ module.exports = function createSedan(players, send, dropping) {
     if (car && car.seats[index] === player.id) car.seats[index] = null;
     player.carSeat = null;
     player.carId = null;
+    player.carHeading = null;
     player.motionBudget = null;
     if (car && index === 0) {
       car.speed = 0;
@@ -102,7 +104,10 @@ module.exports = function createSedan(players, send, dropping) {
       if (player.carSeat != null) return;
       const requested = msg.carId ? cars.find(car => car.id === msg.carId && car.map === mapOf(player)) : null;
       const car = requested && rules.near(requested, player.pos) ? requested : carOnMap(mapOf(player), player);
-      if (!car || !rules.near(car, player.pos)) return;
+      if (!car || !rules.near(car, player.pos)) {
+        reply(player, 'range');
+        return;
+      }
       const seat = car.seats.indexOf(null);
       if (seat < 0) { reply(player, 'full'); return; }
       if (Math.abs(car.speed) > rules.boardSpeed) { reply(player, 'moving'); return; }
@@ -120,12 +125,19 @@ module.exports = function createSedan(players, send, dropping) {
     }
     const session = sessions.get(car);
     if (msg.type === 'sedanLeave') {
-      if (Math.abs(car.speed) > rules.exitSpeed) { reply(player, 'moving'); return; }
+      const reportedSpeed = Number(msg.speed);
+      const driverPark = player.carSeat === 0 && msg.park === true &&
+        Number.isFinite(reportedSpeed) && Math.abs(reportedSpeed) <= rules.exitSpeed;
+      if (Math.abs(car.speed) > rules.exitSpeed && !driverPark) {
+        reply(player, 'moving');
+        return;
+      }
       const candidates = rules.exits(player.carSeat);
       const index = Number.isInteger(msg.index) && candidates[msg.index] ? msg.index : 0;
       const [x, z] = candidates[index];
       const position = rules.point(car, x, 0, z);
       car.speed = 0;
+      session.lastPose = now;
       remove(player);
       player.pos = position;
       reply(player, 'leave', position);

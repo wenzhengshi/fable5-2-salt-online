@@ -4323,7 +4323,8 @@ export async function createEnvironment() {
   await Hp();
   K.scene = new Hn();
   K.camera = new Qs();
-  K.time = 17.4;
+  const daylightHour = 12;
+  K.time = daylightHour;
   // Keep the transfer frame responsive while the world is assembled.
   const yieldFrame = () => new Promise(resolve => setTimeout(resolve, 0));
   K.dbg = { chunks: Ym };
@@ -4372,6 +4373,7 @@ export async function createEnvironment() {
     terrain: K.dbg.terrain.geometry,
     boxes,
     update(camera, dt) {
+      K.time = daylightHour;
       K.camera.position.copy(camera.position);
       jh(dt);
     }

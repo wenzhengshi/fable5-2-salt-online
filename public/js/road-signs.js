@@ -75,6 +75,7 @@
     remove.hidden = true;
     toolbar.append(make, remove);
     document.body.append(toolbar);
+    game.frontier?.registerDockTool(toolbar);
 
     const dialog = document.createElement('dialog');
     dialog.className = 'road-sign-dialog';

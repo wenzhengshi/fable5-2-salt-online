@@ -80,6 +80,15 @@
       lastRequest = game.time.t;
     }
 
+    function updateLunarMode() {
+      const lunar = active?.id === 'lunar';
+      if (lunar === !!window.__saltLunarSilent) return;
+      window.__saltLunarSilent = lunar;
+      game.audio?.setLunarSilence?.();
+      document.documentElement.classList.toggle('lunar-silent', lunar);
+      window.dispatchEvent(new Event('saltline:lunar-mode'));
+    }
+
     function leave(position) {
       if (!active) return;
       const target = position || active.hub;
@@ -88,6 +97,7 @@
       game.frontier?.leave();
       active = null;
       environment = null;
+      updateLunarMode();
       exitGate.visible = false;
       game.qingyun.land(target);
       status.style.display = 'none';
@@ -137,7 +147,7 @@
         else normal.z = Math.abs(hit.z - box[2]) < .001 ? -1 : 1;
         result = { dist, point: new THREE.Vector3(hit.x, hit.y, hit.z + active.offset), normal, surface: 'concrete', box: null };
       }
-      if (castTerrain && direction.y < 0) {
+      if (castTerrain && (direction.y < 0 || active.id === 'lunar')) {
         const terrain = castTerrain(ray, best);
         if (terrain) {
           terrain.point.z += active.offset;
@@ -206,7 +216,7 @@
           z < active.minZ + .5 || z > active.maxZ - .5) return false;
       const localZ = z - active.offset;
       const y = environment.heightAt(x, localZ);
-      return y > -.75 && !environment.boxes(x - .45, localZ - .45, x + .45, localZ + .45)
+      return (active.id === 'lunar' || y > -.75) && !environment.boxes(x - .45, localZ - .45, x + .45, localZ + .45)
         .some(box => box[4] > y + .35 && box[1] < y + 1.15 &&
           box[0] < x + .45 && box[3] > x - .45 && box[2] < localZ + .45 && box[5] > localZ - .45);
     }
@@ -303,6 +313,7 @@
       game.qingyun.suspend();
       active = zone;
       environment = world;
+      updateLunarMode();
       for (const gate of gates.values()) gate.visible = false;
       const qingyunGate = scene.getObjectByName('qingyun-time-tunnel');
       if (qingyunGate) qingyunGate.visible = false;
@@ -322,6 +333,7 @@
       if (event.state === 'title' || event.state === 'intro') {
         game.frontier?.leave();
         active = environment = pending = returning = null;
+        updateLunarMode();
         patrols.clear();
         exitGate.visible = false;
         status.style.display = 'none';
@@ -330,6 +342,11 @@
 
     game.expedition = {
       get active() { return active; },
+      terrainHeight(x, z) {
+        if (!active) return null;
+        const height = Number(environment.heightAt(x, z - active.offset));
+        return Number.isFinite(height) ? height : null;
+      },
       containerGround(x, z, yaw) {
         if (!active) return null;
         const dx = yaw % 2 === 0 ? 3.4 : 1.55;

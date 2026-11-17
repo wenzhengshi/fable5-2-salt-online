@@ -539,7 +539,7 @@
 .focus-dialog-card {
   position: relative;
   width: min(560px, 100%);
-  max-height: calc(100vh - 40px);
+  max-height: calc(var(--vp-h, 100vh) - 40px);
   overflow: auto;
   padding: clamp(24px, 5vw, 42px);
   border: 1px solid rgba(255, 179, 71, 0.34);

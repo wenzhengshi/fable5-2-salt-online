@@ -30,6 +30,7 @@ const expeditions = require('../public/js/expedition-zones');
 const roadSigns = require('../services/roadSigns');
 const signRegistry = roadSigns.createRegistry();
 const sameMap = (a, b) => a.mapId === b.mapId && a.inQingyun === b.inQingyun;
+const mapKeyOf = (player) => player.inQingyun ? 'qingyun' : player.mapId || 'port';
 
 const TICK_MS = 100;
 const RESPAWN_MS = 5000;
@@ -64,8 +65,14 @@ const EXTERNAL_PLATFORM = { x0: 82, x1: 126, z0: -12, z1: 28, top: 0.22 };
 const FOCUS_BLOCKED_TYPES = new Set([
   'state', 'soldier', 'spawns', 'chat', 'voiceState', 'rename',
   'shot', 'hit', 'died', 'respawn', 'boatBoard', 'boatLeave',
-  'boatPose', 'boatInvite', 'sedanBoard', 'sedanLeave', 'sedanPose', 'sedanPortal', 'sedanReady', 'mapEnter', 'mapReturn', 'mapLeave', 'qingyunEnter', 'qingyunLeave', 'qingyunReturn'
+  'boatPose', 'boatInvite', 'sedanBoard', 'sedanLeave', 'sedanPose', 'sedanPortal', 'sedanReady', 'mapEnter', 'mapReturn', 'mapLeave', 'qingyunEnter', 'qingyunLeave', 'qingyunReturn',
+  'followInvite', 'followInviteResponse', 'followLeave', 'followDismiss'
 ]);
+const FOLLOW_INVITE_TTL_MS = 20000;
+const FOLLOW_INVITE_COOLDOWN_MS = 1200;
+const FOLLOW_MAX_PENDING = 5;
+const FOLLOW_MAX_FOLLOWERS = 4;
+const FOLLOW_GAP = 2.4;
 
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
 
@@ -522,8 +529,312 @@ function publicFighter(player) {
   };
 }
 
+/* ---------------------------------------------------------- friends & follow */
+
+function followFriends(player) {
+  if (!player || !(player.friends instanceof Set)) return [];
+  return [...player.friends]
+    .map((id) => publicFighter(players.get(String(id))))
+    .filter(Boolean);
+}
+
+function followRequests(player, now) {
+  if (!player || !(player.followRequests instanceof Map)) return [];
+  const at = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  return [...player.followRequests.entries()]
+    .filter(([, requestedAt]) => at - requestedAt <= FOLLOW_INVITE_TTL_MS)
+    .map(([id, requestedAt]) => {
+      const from = publicFighter(players.get(String(id)));
+      return from ? { ...from, at: requestedAt, expiresAt: requestedAt + FOLLOW_INVITE_TTL_MS } : null;
+    })
+    .filter(Boolean);
+}
+
+function followBoundsFor(player) {
+  if (player && player.inQingyun) return qingyun.bounds;
+  const map = player && player.mapId ? expeditions.maps[player.mapId] : null;
+  return map || { minX: -WORLD_LIMIT, maxX: WORLD_LIMIT, minZ: -WORLD_LIMIT, maxZ: WORLD_LIMIT };
+}
+
+function followAnchorFor(leader, follower) {
+  if (!leader || !follower) return null;
+  const yaw = normalizeHeading(leader.yaw, 0);
+  const inCar = leader.carSeat != null && Number.isFinite(Number(leader.carHeading));
+  const heading = inCar ? Number(leader.carHeading) : yaw;
+  const side = inCar ? (Number(follower.numId) % 2 ? 1.75 : -1.75) : 0;
+  const gap = inCar ? 2.95 : FOLLOW_GAP;
+  const bounds = followBoundsFor(leader);
+  return {
+    x: round(clamp(leader.pos.x - Math.sin(heading) * gap + Math.cos(heading) * side,
+      bounds.minX, bounds.maxX)),
+    // Follow the leader's current floor/altitude instead of reusing the
+    // follower's old Y. Reusing it pinned the camera to the elevation where
+    // following began, so chasing someone uphill teleported it underground.
+    y: round(clamp(leader.pos.y, -80, 240)),
+    z: round(clamp(leader.pos.z - Math.cos(heading) * gap - Math.sin(heading) * side,
+      bounds.minZ, bounds.maxZ)),
+    yaw: round(heading)
+  };
+}
+
+function followStatePayload(player, event, extra) {
+  const leader = player && player.followingId ? players.get(String(player.followingId)) : null;
+  return {
+    type: 'followState',
+    event: event || 'sync',
+    following: leader ? { ...publicFighter(leader), anchor: followAnchorFor(leader, player) } : null,
+    followers: player && player.followers instanceof Set
+      ? [...player.followers].map((id) => publicFighter(players.get(String(id)))).filter(Boolean)
+      : [],
+    friends: followFriends(player),
+    requests: followRequests(player),
+    serverTime: Date.now(),
+    ...(extra || {})
+  };
+}
+
+function sendFollowState(player, event, extra) {
+  if (!player) return;
+  send(player.ws, followStatePayload(player, event, extra));
+}
+
+function addFriend(first, second) {
+  if (!first || !second || first === second) return false;
+  first.friends.add(second.id);
+  second.friends.add(first.id);
+  return true;
+}
+
+function endFollowing(follower, reason, options) {
+  if (!follower || !follower.followingId) return false;
+  const meta = options || {};
+  const leaderId = follower.followingId;
+  const leader = players.get(String(leaderId));
+  follower.followingId = null;
+  follower.followAnchor = null;
+  if (leader && leader.followers instanceof Set) leader.followers.delete(follower.id);
+  if (!meta.silent) sendFollowState(follower, 'ended', { reason: reason || 'manual' });
+  if (leader && !meta.silentLeader) {
+    sendFollowState(leader, 'followerLeft', {
+      follower: publicFighter(follower),
+      reason: reason || 'manual'
+    });
+  }
+  return true;
+}
+
+function endFollowersOf(leader, reason) {
+  if (!leader || !(leader.followers instanceof Set)) return 0;
+  let ended = 0;
+  for (const followerId of [...leader.followers]) {
+    const follower = players.get(String(followerId));
+    if (follower && follower.followingId === leader.id && endFollowing(follower, reason)) ended += 1;
+    else leader.followers.delete(followerId);
+  }
+  return ended;
+}
+
+function startFollowing(follower, leader, now, source) {
+  if (!follower || !leader || follower === leader) return false;
+  if (follower.followingId) endFollowing(follower, 'switched');
+  if (leader.followers.size >= FOLLOW_MAX_FOLLOWERS) {
+    send(follower.ws, { type: 'followDenied', reason: 'full' });
+    return false;
+  }
+  follower.followingId = leader.id;
+  follower.followAnchor = followAnchorFor(leader, follower);
+  follower.motionBudget = null;
+  follower.moving = false;
+  follower.sprint = false;
+  leader.followers.add(follower.id);
+  follower.lastFollowActionAt = now;
+  sendFollowState(follower, 'started', {
+    source: source || 'friend',
+    autoFollow: true
+  });
+  sendFollowState(leader, 'followerJoined', {
+    follower: publicFighter(follower)
+  });
+  return true;
+}
+
+function followInviteAllowed(player, target, now) {
+  if (!player || !target || player === target) return 'self';
+  if (!player.joined || !target.joined) return 'offline';
+  if (!player.active || !player.alive || !target.active || !target.alive) return 'notReady';
+  if (player.focusUntil > now || target.focusUntil > now) return 'focus';
+  if (frontier.dropping(player, now) || frontier.dropping(target, now)) return 'busy';
+  // The leader may already be in a car. Followers are placed beside the rear
+  // door so they can catch up and board a free seat; only a follower who is
+  // already in a vehicle (or either player in a boat) is busy.
+  if (player.carSeat != null || player.boatSeat != null || target.boatSeat != null) return 'busy';
+  if (!sameMap(player, target)) return 'map';
+  return '';
+}
+
+function handleFollowInvite(player, msg, now) {
+  const target = players.get(String(msg.targetId || ''));
+  if (!target) {
+    send(player.ws, { type: 'followDenied', reason: 'offline' });
+    return;
+  }
+  const denied = followInviteAllowed(player, target, now);
+  if (denied) {
+    send(player.ws, { type: 'followDenied', reason: denied });
+    return;
+  }
+  if (player.friends.has(target.id)) {
+    startFollowing(player, target, now, 'friend');
+    return;
+  }
+  if (now - (player.lastFollowInviteAt || 0) < FOLLOW_INVITE_COOLDOWN_MS) {
+    send(player.ws, { type: 'followDenied', reason: 'rate' });
+    return;
+  }
+  let requestedAt = target.followRequests.get(player.id);
+  if (!requestedAt) {
+    if (target.followRequests.size >= FOLLOW_MAX_PENDING ||
+        player.pendingFollowInvites.size >= FOLLOW_MAX_PENDING) {
+      send(player.ws, { type: 'followDenied', reason: 'full' });
+      return;
+    }
+    requestedAt = now;
+    target.followRequests.set(player.id, now);
+    player.pendingFollowInvites.set(target.id, now);
+  }
+  player.lastFollowInviteAt = now;
+  const expiresAt = requestedAt + FOLLOW_INVITE_TTL_MS;
+  send(player.ws, {
+    type: 'followInviteSent',
+    target: publicFighter(target),
+    expiresAt
+  });
+  send(target.ws, {
+    type: 'followInviteReceived',
+    from: publicFighter(player),
+    at: requestedAt,
+    expiresAt
+  });
+}
+
+function handleFollowInviteResponse(player, msg, now) {
+  const fromId = String(msg.fromId || '');
+  const inviter = players.get(fromId);
+  const requestedAt = player.followRequests.get(fromId);
+  if (!requestedAt || now - requestedAt > FOLLOW_INVITE_TTL_MS) {
+    player.followRequests.delete(fromId);
+    if (inviter) inviter.pendingFollowInvites.delete(player.id);
+    send(player.ws, { type: 'followDenied', reason: 'expired' });
+    if (inviter) send(inviter.ws, {
+      type: 'followInviteResult',
+      accepted: false,
+      reason: 'expired',
+      target: publicFighter(player)
+    });
+    return;
+  }
+  player.followRequests.delete(fromId);
+  if (inviter) inviter.pendingFollowInvites.delete(player.id);
+  if (msg.accept !== true) {
+    if (inviter) send(inviter.ws, {
+      type: 'followInviteResult',
+      accepted: false,
+      reason: 'declined',
+      target: publicFighter(player)
+    });
+    sendFollowState(player, 'inviteClosed', { reason: 'declined' });
+    return;
+  }
+  const denied = inviter ? followInviteAllowed(inviter, player, now) : 'offline';
+  if (denied) {
+    send(player.ws, { type: 'followDenied', reason: denied });
+    if (inviter) send(inviter.ws, {
+      type: 'followInviteResult',
+      accepted: false,
+      reason: denied,
+      target: publicFighter(player)
+    });
+    return;
+  }
+  addFriend(inviter, player);
+  send(inviter.ws, {
+    type: 'followInviteResult',
+    accepted: true,
+    target: publicFighter(player),
+    autoFollow: true
+  });
+  send(player.ws, {
+    type: 'followInviteResult',
+    accepted: true,
+    from: publicFighter(inviter),
+    autoFollow: false
+  });
+  startFollowing(inviter, player, now, 'accepted');
+}
+
+function handleFollowDismiss(player, msg, now) {
+  const follower = players.get(String(msg.targetId || ''));
+  if (!follower || follower.followingId !== player.id) {
+    send(player.ws, { type: 'followDenied', reason: 'notFollowing' });
+    return;
+  }
+  endFollowing(follower, 'dismissed');
+  follower.lastFollowActionAt = now;
+}
+
+function expireFollowInvites(now) {
+  for (const player of players.values()) {
+    for (const [fromId, requestedAt] of [...player.followRequests.entries()]) {
+      if (now - requestedAt <= FOLLOW_INVITE_TTL_MS) continue;
+      player.followRequests.delete(fromId);
+      const inviter = players.get(String(fromId));
+      if (inviter) {
+        inviter.pendingFollowInvites.delete(player.id);
+        send(inviter.ws, {
+          type: 'followInviteResult',
+          accepted: false,
+          reason: 'expired',
+          target: publicFighter(player)
+        });
+      }
+    }
+  }
+}
+
+function syncFollowingPlayers(now) {
+  for (const follower of players.values()) {
+    if (!follower.followingId) continue;
+    const leader = players.get(String(follower.followingId));
+    let reason = '';
+    if (!leader) reason = 'offline';
+    else if (!follower.active || !follower.alive) reason = 'notReady';
+    else if (!leader.active || !leader.alive) reason = 'leaderDown';
+    else if (leader.focusUntil > now || follower.focusUntil > now) reason = 'focus';
+    else if (!sameMap(follower, leader)) reason = 'map';
+    else if (follower.carSeat != null || follower.boatSeat != null) reason = 'busy';
+    else if (frontier.dropping(follower, now) || frontier.dropping(leader, now)) reason = 'busy';
+    if (reason) {
+      endFollowing(follower, reason);
+      continue;
+    }
+    const anchor = followAnchorFor(leader, follower);
+    if (!anchor) {
+      endFollowing(follower, 'offline');
+      continue;
+    }
+    follower.followAnchor = anchor;
+    follower.pos = { x: anchor.x, y: anchor.y, z: anchor.z };
+    follower.yaw = normalizeHeading(leader.yaw, follower.yaw);
+    follower.moving = false;
+    follower.sprint = false;
+    follower.lastSeen = now;
+  }
+}
+
 function killPlayer(victim, killer, now) {
   const replay = killer ? deathReplay.build(victim, killer, now, frontier.equipmentFlags) : null;
+  endFollowing(victim, 'down');
+  endFollowersOf(victim, 'leaderDown');
   removeFromBoat(victim, true);
   sedan.remove(victim);
   victim.alive = false;
@@ -667,6 +978,8 @@ function setFocusLock(player, until, recordId, options) {
   const previousRecordId = player.focusRecordId || '';
   const expiresAt = Math.max(Date.now(), Number(until) || 0);
   const hadVoice = !!(player.voice && player.voice.enabled);
+  endFollowing(player, 'focus');
+  endFollowersOf(player, 'focus');
   player.focusUntil = expiresAt;
   player.focusRecordId = String(recordId || player.focusRecordId || '');
   player.focusKind = meta.kind === 'auto' ? 'auto' : 'manual';
@@ -910,6 +1223,24 @@ function handleMessage(player, raw) {
       if (player.voice.enabled) {
         broadcast({ type: 'voiceState', player: publicVoice(player) });
       }
+      break;
+    }
+    case 'followInvite': {
+      handleFollowInvite(player, msg, now);
+      break;
+    }
+    case 'followInviteResponse': {
+      handleFollowInviteResponse(player, msg, now);
+      break;
+    }
+    case 'followLeave': {
+      if (!endFollowing(player, 'manual')) {
+        send(player.ws, { type: 'followDenied', reason: 'notFollowing' });
+      }
+      break;
+    }
+    case 'followDismiss': {
+      handleFollowDismiss(player, msg, now);
       break;
     }
     case 'sedanBoard':
@@ -1181,6 +1512,8 @@ function handleMessage(player, raw) {
     }
     case 'goldList':
     case 'goldPick':
+    case 'goldGift':
+    case 'goldGiftResponse':
       gold.handle(player, msg, now);
       break;
     case 'ordinaryGoldHit':
@@ -1224,7 +1557,7 @@ function handleMessage(player, raw) {
             candidate = playerAuthority.clampDronePosition(pos, player.soldier, player.boatSeat) || player.pos;
           }
         }
-        if (candidate && player.alive && msg.active === true) {
+        if (candidate && player.alive && msg.active === true && !player.followingId) {
           const withinBudget = playerAuthority.observeMovement(player, candidate, now);
           player.pos = candidate;
           if (!withinBudget) monitor(player, 'positionJump', now);
@@ -1513,6 +1846,14 @@ function addPlayer(ws, req, signOwner) {
     inQingyun: false,
     mapId: null,
     lastBoatInviteAt: 0,
+    friends: new Set(),
+    followingId: null,
+    followAnchor: null,
+    followers: new Set(),
+    followRequests: new Map(),
+    pendingFollowInvites: new Map(),
+    lastFollowInviteAt: 0,
+    lastFollowActionAt: 0,
     isAlive: true
   };
   players.set(id, player);
@@ -1548,6 +1889,29 @@ function sendWelcome(player) {
 
 function removePlayer(player, reason) {
   if (!players.has(player.id)) return;
+  endFollowing(player, 'offline', { silent: true });
+  endFollowersOf(player, 'leaderLeft');
+  for (const friendId of [...player.friends]) {
+    const friend = players.get(String(friendId));
+    if (!friend) continue;
+    friend.friends.delete(player.id);
+    sendFollowState(friend, 'friendUpdated', { removed: publicFighter(player) });
+  }
+  for (const fromId of [...player.followRequests.keys()]) {
+    const inviter = players.get(String(fromId));
+    if (inviter) {
+      inviter.pendingFollowInvites.delete(player.id);
+      send(inviter.ws, { type: 'followInviteResult', accepted: false, reason: 'offline', target: publicFighter(player) });
+    }
+  }
+  for (const targetId of [...player.pendingFollowInvites.keys()]) {
+    const target = players.get(String(targetId));
+    if (target) target.followRequests.delete(player.id);
+  }
+  player.friends.clear();
+  player.followers.clear();
+  player.followRequests.clear();
+  player.pendingFollowInvites.clear();
   removeFromBoat(player, true);
   sedan.remove(player);
   const hadVoice = player.voice.enabled;
@@ -1635,12 +1999,14 @@ function tick() {
   gold.tick(now);
   syncBoatOccupants();
   sedan.sync();
+  expireFollowInvites(now);
+  syncFollowingPlayers(now);
   deathReplay.recordPlayers(players.values(), now, frontier.equipmentFlags);
   deathReplay.prune(now);
   const roster = rosterPayload();
   const visibleByMap = new Map();
   const mapCounts = Object.fromEntries(['port', 'qingyun', ...Object.keys(expeditions.maps)].map(id => [id, 0]));
-  const mapKey = player => player.inQingyun ? 'qingyun' : player.mapId || 'port';
+  const mapKey = mapKeyOf;
   for (const player of players.values()) {
     const key = mapKey(player);
     if (player.joined && player.ws.readyState === 1 && player.focusUntil <= now &&
@@ -1699,7 +2065,18 @@ function tick() {
         focusKind: player.focusKind || '',
         focusDurationMs: Math.max(0, Number(player.focusDurationMs) || 0),
         respawnAt: player.respawnAt,
-        protectedUntil: player.protectedUntil
+        protectedUntil: player.protectedUntil,
+        follow: {
+          following: player.followingId && players.get(String(player.followingId))
+            ? {
+                ...publicFighter(players.get(String(player.followingId))),
+                anchor: followAnchorFor(players.get(String(player.followingId)), player)
+              }
+            : null,
+          followers: [...player.followers].map((id) => publicFighter(players.get(String(id)))).filter(Boolean),
+          friends: followFriends(player),
+          requests: followRequests(player, now)
+        }
       }
     });
   }

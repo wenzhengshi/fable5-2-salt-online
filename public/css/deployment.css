@@ -173,7 +173,6 @@ html[lang="en-US"] .menu[data-screen="title"] .m-word {
   background: #18212a;
   border: 1px solid #f5eadb63;
 }
-.spawn-card[data-map="port"] { grid-column: 1 / -1; aspect-ratio: 2.72; }
 .spawn-card::after {
   position: absolute;
   inset: 0;
@@ -223,7 +222,6 @@ html[lang="en-US"] .menu[data-screen="title"] .m-word {
   text-shadow: 0 2px 6px #000;
   pointer-events: none;
 }
-.spawn-card[data-map="port"] .spawn-name { font-size: clamp(20px, 2.7vw, 45px); }
 .spawn-population {
   position: absolute;
   inset: 6px auto auto 6px;
@@ -372,7 +370,6 @@ body:has(.menu[data-screen="title"]) .mp-toast { bottom: calc(var(--sab) + 49px)
   .menu[data-screen="title"] .m-word { font-size: clamp(42px, 8.7vw, 92px) !important; }
   html[lang="en-US"] .menu[data-screen="title"] .m-word { font-size: clamp(42px, 7.9vw, 87px) !important; }
   .spawn-card { aspect-ratio: 2.15; }
-  .spawn-card[data-map="port"] { aspect-ratio: 3.05; }
 }
 
 .hud.off-port :is(.h-obj, .h-marks, .h-cm, .h-wm) { display: none !important; }

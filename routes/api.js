@@ -14,6 +14,8 @@ router.get('/hello', userController.hello);
 router.get('/health', gameController.health);
 router.get('/game/meta', gameController.meta);
 router.get('/game/leaderboard', gameController.leaderboard);
+router.get('/game/gold/pickups', gameController.goldPickups);
+router.get('/game/gold/activity', gameController.goldActivity);
 router.get('/game/chat/history', gameController.chatHistory);
 router.get('/focus/status', userController.focusStatus);
 router.post('/focus/start', userController.focusStart);

@@ -33,7 +33,7 @@
     group.innerHTML = '<legend></legend><div class="spawn-grid"></div>';
     group.querySelector('legend').textContent = copy.title;
     const grid = group.querySelector('.spawn-grid');
-    for (const id of ['port', 'qingyun', 'bayhaven', 'mothlight', 'dustfall']) {
+    for (const id of ['port', 'qingyun', 'bayhaven', 'mothlight', 'dustfall', 'lunar']) {
       const card = document.createElement('label');
       card.className = 'spawn-card';
       card.dataset.map = id;

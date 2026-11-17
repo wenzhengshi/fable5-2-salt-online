@@ -1,0 +1,348 @@
+/* Manual turning + in-page screen orientation controls for phones without a gyro. */
+:root {
+  --vp-w: 100vw;
+  --vp-h: 100vh;
+}
+
+html.mr-force-landscape,
+html.mr-force-portrait {
+  --vp-w: 100vh;
+  --vp-h: 100vw;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+html.mr-force-landscape body,
+html.mr-force-portrait body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: auto;
+  bottom: auto;
+  width: var(--vp-w);
+  height: var(--vp-h);
+  margin: 0;
+  overflow: hidden;
+  transform-origin: top left;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  background: var(--ink, #0b0d0f);
+}
+
+html.mr-force-landscape body { transform: rotate(90deg) translateY(-100%); }
+html.mr-force-portrait body { transform: rotate(-90deg) translateX(-100%); }
+
+html.mr-force-landscape {
+  --sat: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-left, 0px);
+  --sal: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-bottom, 0px);
+  --gl: max(16px, env(safe-area-inset-top, 0px));
+  --gr: max(16px, env(safe-area-inset-bottom, 0px));
+}
+
+html.mr-force-portrait {
+  --sat: env(safe-area-inset-left, 0px);
+  --sab: env(safe-area-inset-right, 0px);
+  --sal: env(safe-area-inset-bottom, 0px);
+  --sar: env(safe-area-inset-top, 0px);
+  --gl: max(16px, env(safe-area-inset-bottom, 0px));
+  --gr: max(16px, env(safe-area-inset-top, 0px));
+}
+
+@supports (height: 100dvh) and (width: 100dvw) {
+  html.mr-force-landscape,
+  html.mr-force-portrait {
+    --vp-w: 100dvh;
+    --vp-h: 100dvw;
+  }
+}
+
+.mr-pad {
+  position: absolute;
+  right: calc(12px + var(--sar));
+  top: 50%;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: repeat(3, 40px);
+  grid-template-rows: repeat(3, 40px);
+  gap: 3px;
+  width: 126px;
+  height: 126px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  opacity: .94;
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, .42));
+}
+
+.mr-pad[hidden],
+.mr-quick-rotate[hidden] {
+  display: none !important;
+}
+
+.mr-pad-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid rgba(232, 228, 218, .5);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(24, 29, 32, .84), rgba(11, 13, 15, .66));
+  color: rgba(232, 228, 218, .92);
+  font: 600 13px/1 var(--f-label, system-ui);
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  touch-action: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: border-color .12s ease, background .12s ease, color .12s ease, transform .1s ease;
+}
+
+.mr-pad-btn span {
+  pointer-events: none;
+  transform: translateY(-1px);
+}
+
+.mr-pad-btn.active,
+.mr-pad-btn:active {
+  border-color: var(--signal, #ffb347);
+  background: rgba(255, 179, 71, .3);
+  color: #ffe0a6;
+  transform: scale(.94);
+}
+
+.mr-pad-btn:focus-visible {
+  outline: 2px solid var(--signal, #ffb347);
+  outline-offset: 2px;
+}
+
+.mr-up { grid-area: 1 / 2; }
+.mr-left { grid-area: 2 / 1; }
+.mr-right { grid-area: 2 / 3; }
+.mr-down { grid-area: 3 / 2; }
+
+.mr-pad-core {
+  grid-area: 2 / 2;
+  display: grid;
+  place-items: center;
+  align-self: center;
+  justify-self: stretch;
+  min-height: 20px;
+  border-radius: 50%;
+  color: rgba(255, 214, 148, .82);
+  font: 600 8px/1 var(--f-mono, monospace);
+  letter-spacing: .08em;
+  text-align: center;
+  text-shadow: 0 1px 5px #000;
+}
+
+.mr-quick-rotate {
+  position: absolute;
+  left: calc(2px + var(--sal));
+  top: 50%;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 26px;
+  min-height: 54px;
+  padding: 6px 0 5px;
+  border: 1px solid rgba(255, 179, 71, .66);
+  border-radius: 9px;
+  background: rgba(11, 13, 15, .68);
+  color: #ffd99f;
+  transform: translateY(-50%);
+  font: 600 9px/1 var(--f-label, system-ui);
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  touch-action: manipulation;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .36);
+}
+
+.mr-quick-rotate:active {
+  background: rgba(255, 179, 71, .22);
+}
+
+html:not(.mr-force-landscape):not(.mr-force-portrait) body:has(.menu[data-screen="title"]) .mr-quick-rotate {
+  top: calc(var(--sat) + 116px);
+  transform: none;
+}
+
+.mr-quick-icon {
+  font: 600 15px/1 var(--f-mono, monospace);
+}
+
+.mr-quick-label {
+  display: block;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
+.mr-settings {
+  margin-top: 20px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(255, 179, 71, .3);
+}
+
+.mr-settings h3 {
+  margin-top: 16px !important;
+  color: #ffcf86;
+}
+
+.mr-settings .mr-help {
+  margin: 0 0 4px;
+  color: rgba(232, 228, 218, .7);
+  font: 400 11px/1.7 var(--f-mono, monospace);
+  letter-spacing: .02em;
+  line-height: 1.7 !important;
+}
+
+.mr-settings .mr-row {
+  padding: 13px 0 14px;
+}
+
+.mr-settings .mr-orient button {
+  min-height: 38px;
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+
+.mr-settings .mr-row:last-of-type {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.mr-settings .mr-status {
+  margin: 8px 0 0;
+  color: #ffcf86;
+  font: 400 11px/1.6 var(--f-mono, monospace);
+  letter-spacing: .02em;
+}
+
+.mr-status::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 7px 1px 0;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 7px currentColor;
+}
+
+html.mr-force-landscape .mr-pad { display: none !important; }
+
+@media (orientation: landscape) {
+  .mr-pad { display: none !important; }
+}
+
+@media (max-height: 560px) and (orientation: portrait) {
+  .mr-pad {
+    grid-template-columns: repeat(3, 36px);
+    grid-template-rows: repeat(3, 36px);
+    width: 114px;
+    height: 114px;
+  }
+  .mr-pad-btn { width: 36px; height: 36px; }
+}
+
+/* The layout is rotated by the app, while CSS media queries still see the
+   physical viewport. Restore the wide title treatment and the most
+   orientation-sensitive HUD geometry inside forced landscape. */
+html.mr-force-landscape body:has(.menu[data-screen="title"]) {
+  --title-tools-width: clamp(170px, calc(var(--vp-w) * .31), 235px);
+}
+
+html.mr-force-landscape .menu[data-screen="title"] .m-title {
+  right: calc(var(--title-tools-width) + var(--gr) + 12px);
+  display: block;
+  padding: calc(var(--sat) + 14px) 10px calc(var(--sab) + 12px) calc(var(--gl) + 12px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+html.mr-force-landscape .m-title .m-word {
+  font-size: clamp(29px, min(calc(var(--vp-w) * .09), calc(var(--vp-h) * .15)), 65px) !important;
+  line-height: 1 !important;
+  margin: 7px 0 10px !important;
+}
+
+html.mr-force-landscape .m-title .m-actions { margin-top: 10px; gap: 6px; }
+html.mr-force-landscape .m-title .m-actions .btn { flex: 0 1 auto; min-height: 38px !important; padding-inline: 12px; }
+html.mr-force-landscape .m-title .m-note { margin-top: 8px !important; }
+html.mr-force-landscape .m-bars i { height: calc(clamp(14px, calc(var(--vp-h) * .055), 52px) + var(--sat)); }
+
+html.mr-force-landscape .h-obj { max-width: min(300px, calc(var(--vp-w) * .42)); }
+html.mr-force-landscape .loc-card {
+  left: max(var(--gl), calc(var(--vp-w) * .055));
+  bottom: calc(var(--vp-h) * .28 + var(--sab));
+}
+html.mr-force-landscape .h-arc { width: min(calc(var(--vp-h) * .72), calc(var(--vp-w) * .94)); }
+html.mr-force-landscape .rifle-scope i { width: min(calc(var(--vp-h) * .77), calc(var(--vp-w) * .76)); }
+html.mr-force-landscape .rifle-scope b { top: calc(50% + min(calc(var(--vp-h) * .31), calc(var(--vp-w) * .30))); }
+
+html.mr-force-landscape body:has(.menu[data-screen="title"]) .mp-chip {
+  max-width: var(--title-tools-width);
+  gap: 5px;
+  padding-inline: 6px;
+}
+
+html.mr-force-landscape body:has(.menu[data-screen="title"]) #sr-launch {
+  top: calc(var(--sat) + 97px);
+  left: auto;
+  right: var(--gr);
+  min-height: 36px;
+}
+
+html.mr-force-landscape body:has(.menu[data-screen="title"]) .vc-rail {
+  top: calc(var(--sat) + 140px);
+  right: var(--gr);
+  left: auto;
+  bottom: auto;
+  transform: none;
+  flex-direction: row;
+  gap: 5px;
+}
+
+html.mr-force-landscape body:has(.menu[data-screen="title"]) .vc-rail button {
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  justify-content: center;
+}
+
+html.mr-force-landscape body:has(.menu[data-screen="title"]) .vc-rail :is(.vc-mic-copy, .vc-chat-copy, .vc-meter),
+html.mr-force-landscape body:has(.menu[data-screen="title"]) :is(.sail-invite, .vc-banner) {
+  display: none !important;
+}
+
+html.mr-force-portrait .menu[data-screen="title"] .m-title {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 18px;
+  right: 0;
+  padding: calc(var(--sat) + 72px) var(--gr) calc(var(--sab) + 54px) var(--gl);
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+html.mr-force-portrait .m-title .m-word {
+  font-size: clamp(38px, calc(var(--vp-w) * .14), 95px) !important;
+}
+
+html.mr-force-portrait .m-title .m-actions .btn.primary { flex: 1 1 100%; }

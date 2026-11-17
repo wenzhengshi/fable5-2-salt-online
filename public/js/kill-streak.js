@@ -92,6 +92,7 @@
   }
 
   function play(level) {
+    if (window.__saltLunarSilent) return false;
     const index = Math.floor(Number(level)) - 1;
     if (index < 0 || index >= tracks.length) return false;
 
@@ -120,6 +121,13 @@
     }
     return true;
   }
+
+  window.addEventListener('saltline:lunar-mode', () => {
+    if (!window.__saltLunarSilent) return;
+    pendingLevel = 0;
+    disarmUnlock();
+    stopActive();
+  });
 
   function reset() {
     currentStreak = 0;

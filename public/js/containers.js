@@ -6,6 +6,11 @@
     const rules = window.SaltFrontierRules;
     const words = window.__SALT_I18N__.messages;
     const tr = (zh, en) => document.documentElement.lang === 'en-US' ? en : zh;
+    const flow = words.containerFlow || {};
+    const t = key => typeof flow[key] === 'string' ? flow[key] : key;
+    const format = (key, values) => t(key).replace(/\{(\w+)\}/g, (_, name) =>
+      Object.hasOwn(values, name) ? String(values[name]) : '');
+    const formatGold = window.SaltGoldRules.format;
     const mapNames = {
       bayhaven: tr('湾城', 'Bayhaven'), dustfall: tr('西部荒野', 'Dustfall'),
       mothlight: tr('霓虹雨城', 'Mothlight')
@@ -24,6 +29,8 @@
       text: tr('请输入可公开展示的文字，最多 32 字。', 'Enter up to 32 characters suitable for public display.'),
       inside: tr('先走进集装箱，再存金币。', 'Step inside the container before depositing gold.'),
       exit: tr('先走出集装箱，再关门上锁。', 'Step outside before closing and locking the doors.'),
+      amount: t('amount'),
+      itemAmount: t('itemAmount'),
       draft: tr('密码领用已过期，请重新创建。', 'This password offer expired. Create a new one.'),
       storage: tr('存档暂时无法写入，请稍后重试。', 'Could not save. Try again later.')
     };
@@ -49,6 +56,9 @@
     const post = new THREE.BoxGeometry(.09, 1.35, .09);
     const plate = new THREE.BoxGeometry(.08, .39, 1.08);
     const board = new THREE.PlaneGeometry(1.04, .35);
+    const coinPlate = new THREE.BoxGeometry(.08, .39, .92);
+    const coinBoard = new THREE.PlaneGeometry(.88, .28);
+    const signFaceOffset = .05;
 
     function mesh(parent, geometry, material, x, y, z) {
       const child = new THREE.Mesh(geometry, material);
@@ -57,6 +67,11 @@
       child.receiveShadow = true;
       parent.add(child);
       return child;
+    }
+    function addSignFaces(group, geometry, material) {
+      for (const side of [-1, 1]) {
+        mesh(group, geometry, material, side * signFaceOffset, 1.35, 0).rotation.y = side * Math.PI / 2;
+      }
     }
     function setSign(model, label) {
       model.sign?.removeFromParent();
@@ -91,12 +106,59 @@
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       model.signMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
-      mesh(group, board, model.signMaterial, .043, 1.35, 0).rotation.y = Math.PI / 2;
+      addSignFaces(group, board, model.signMaterial);
+    }
+    function setCoinSign(model, amount) {
+      model.coinSign?.removeFromParent();
+      model.coinSignMaterial?.map.dispose();
+      model.coinSignMaterial?.dispose();
+      model.coinSign = model.coinSignMaterial = null;
+      if (amount == null) {
+        model.coinAmount = null;
+        return;
+      }
+      const value = Number.isSafeInteger(amount) && amount >= 0 ? amount : 0;
+      model.coinAmount = value;
+      const group = model.coinSign = new THREE.Group();
+      group.name = 'container-coin-sign';
+      group.userData.coinAmount = value;
+      group.position.set(3.15, 0, 2.92);
+      model.root.add(group);
+      mesh(group, post, iron, 0, .675, 0);
+      mesh(group, coinPlate, iron, 0, 1.35, 0);
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 216;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#241a08';
+      ctx.fillRect(0, 0, 640, 216);
+      ctx.strokeStyle = '#e9b14f';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(10, 10, 620, 196);
+      ctx.fillStyle = '#f2c66d';
+      ctx.font = '600 27px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(t('goldSignLabel'), 320, 66, 580);
+      ctx.fillStyle = '#fff2cc';
+      ctx.font = '700 58px sans-serif';
+      ctx.fillText(formatGold(value), 320, 137, 590);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      model.coinSignMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+      addSignFaces(group, coinBoard, model.coinSignMaterial);
+    }
+    function syncCoinSign(model, amount) {
+      if (!model) return;
+      const value = Number.isSafeInteger(amount) && amount >= 0 ? amount : 0;
+      model.row = { ...model.row, gold: value };
+      if (model.coinAmount !== value || !model.coinSign) setCoinSign(model, value);
     }
     function erase(id) {
       const model = models.get(id);
       if (!model) return;
       setSign(model, '');
+      setCoinSign(model, null);
       model.root.removeFromParent();
       models.delete(id);
     }
@@ -116,8 +178,9 @@
       root.position.copy(row.pos);
       root.rotation.y = row.yaw * Math.PI / 2;
       holder.add(root);
-      const model = { row, root, hinges, latch, hook, progress: row.open ? 1 : 0, boxes: [] };
+      const model = { row: { ...row }, root, hinges, latch, hook, progress: row.open ? 1 : 0, boxes: [] };
       setSign(model, row.sign);
+      setCoinSign(model, row.gold ?? 0);
       animate(model, 0, true);
       models.set(row.id, model);
     }
@@ -175,6 +238,16 @@
     toolbar.append(control);
     toolbar.hidden = true;
     document.body.append(toolbar);
+    game.frontier?.registerDockTool(toolbar);
+
+    const depositHud = document.createElement('aside');
+    depositHud.className = 'container-deposit-hud';
+    depositHud.hidden = true;
+    depositHud.innerHTML = '<span></span><button type="button"></button>';
+    const depositStatus = depositHud.querySelector('span');
+    const depositButton = depositHud.querySelector('button');
+    depositButton.textContent = t('deposit');
+    document.body.append(depositHud);
 
     const dialog = document.createElement('dialog');
     dialog.className = 'road-sign-dialog container-dialog';
@@ -193,6 +266,26 @@
     const lastList = new THREE.Vector3();
     const direction = new THREE.Vector3();
 
+    function insideBox(row) {
+      if (!row) return false;
+      const angle = row.yaw * Math.PI / 2;
+      const dx = player.pos.x - row.pos.x;
+      const dz = player.pos.z - row.pos.z;
+      return Math.abs(dx * Math.cos(angle) - dz * Math.sin(angle)) < 2.91 &&
+        Math.abs(dx * Math.sin(angle) + dz * Math.cos(angle)) < 1.13 &&
+        player.pos.y >= row.pos.y - .05 && player.pos.y <= row.pos.y + 1;
+    }
+    function nearbyBox(row) {
+      return !!row && Math.hypot(row.pos.x - player.pos.x, row.pos.z - player.pos.z) <= 7 &&
+        Math.abs(row.pos.y - player.pos.y) <= 2.5;
+    }
+    function setText(node, text) {
+      if (node.textContent !== text) node.textContent = text;
+    }
+    function notify(text) {
+      setText(notice, text);
+      window.__mp?.toast?.(text);
+    }
     function button(parent, text, click) {
       const element = document.createElement('button');
       element.type = 'button';
@@ -218,18 +311,25 @@
       return y === null ? null : { x, y, z, yaw };
     }
     function request(action, payload = {}) {
-      if (pending) return;
+      if (pending) return false;
       if (!mp?.connected) {
-        notice.textContent = errors.unavailable;
-        return;
+        notify(errors.unavailable);
+        return false;
       }
       const id = ++sequence;
       mp.syncState();
       if (mp.send({ type: 'containerAction', request: id, action, ...payload })) {
-        pending = { id, action, at: performance.now() };
-        notice.textContent = tr('正在处理…', 'Working…');
-      } else notice.textContent = errors.unavailable;
+        pending = { id, action, at: performance.now(), payload };
+        notify(tr('正在处理…', 'Working…'));
+        return true;
+      }
+      notify(errors.unavailable);
+      return false;
     }
+    depositButton.addEventListener('click', () => {
+      if (!openedId || !insideBox(models.get(openedId)?.row)) return;
+      request('depositGold', { id: openedId });
+    });
     function dismiss(force = false, leaveOpen = false) {
       if (!dialog.open || (pending && !force)) return;
       if (!leaveOpen && openedId && mp?.connected) mp.send({
@@ -306,16 +406,72 @@
       });
       (password || color || back).focus();
     }
+    function parseGoldAmount(value, maximum) {
+      const text = String(value || '').trim();
+      if (!text) return undefined;
+      const units = window.SaltGoldRules.parse(text);
+      return units !== null && units > 0 && units <= maximum ? units : null;
+    }
+    function parseItemAmount(value, maximum) {
+      const text = String(value || '').trim();
+      if (!text) return undefined;
+      if (!/^\d+$/.test(text)) return null;
+      const amount = Number(text);
+      return Number.isSafeInteger(amount) && amount > 0 && amount <= maximum ? amount : null;
+    }
     function inventory() {
       reset(tr('门已打开 · 存取物品', 'Doors open · Transfer items'));
       const gold = document.createElement('p');
       gold.className = 'container-gold-balance';
-      const formatGold = window.SaltGoldRules.format;
       gold.textContent = tr('箱内金币 ', 'Stored gold ') + formatGold(banked) +
         tr(' · 随身金币 ', ' · Carried gold ') + formatGold(game.gold?.carried || 0);
       content.append(gold);
+      const inside = insideBox(models.get(openedId)?.row);
       const enter = button(content, tr('返回游戏，进箱或离箱', 'Return to game to enter or exit the container'), () => dismiss(false, true));
       enter.className = 'container-walk';
+      const carried = game.gold?.carried || 0;
+      if (carried || banked) {
+        const goldActions = document.createElement('div');
+        goldActions.className = 'container-gold-actions';
+        const amount = document.createElement('input');
+        amount.type = 'text';
+        amount.inputMode = 'decimal';
+        amount.maxLength = 24;
+        amount.placeholder = t('goldAmountPlaceholder');
+        amount.setAttribute('aria-label', t('goldAmount'));
+        goldActions.append(amount);
+        if (carried) {
+          const putSelected = button(goldActions, t('depositSelected'), () => {
+            const units = parseGoldAmount(amount.value, carried);
+            if (units === null) { notify(t('amount')); return; }
+            if (request('depositGold', { id: openedId, ...(units === undefined ? {} : { amount: units }) })) {
+              putSelected.disabled = true;
+            }
+          });
+          const putAll = button(goldActions, t('deposit'), () => {
+            if (request('depositGold', { id: openedId })) putAll.disabled = true;
+          });
+          putSelected.disabled = putAll.disabled = !inside || !!pending;
+        }
+        if (banked) {
+          const takeAll = button(goldActions, t('withdraw'), () => {
+            if (request('withdrawGold', { id: openedId })) takeAll.disabled = true;
+          });
+          const takeSelected = button(goldActions, t('withdrawSelected'), () => {
+            const units = parseGoldAmount(amount.value, banked);
+            if (units === null) { notify(t('amount')); return; }
+            if (request('withdrawGold', { id: openedId, ...(units === undefined ? {} : { amount: units }) })) {
+              takeSelected.disabled = true;
+            }
+          });
+          takeAll.disabled = takeSelected.disabled = !inside || !!pending;
+        }
+        content.append(goldActions);
+      }
+      const hint = document.createElement('p');
+      hint.className = 'container-item-hint';
+      hint.textContent = t('itemHint');
+      content.append(hint);
       const rows = document.createElement('div');
       rows.className = 'container-items';
       content.append(rows);
@@ -323,32 +479,45 @@
       if (!kinds.length) notice.textContent = tr('背包和集装箱都是空的。', 'Your backpack and container are empty.');
       for (const kind of kinds) {
         const line = document.createElement('div');
-        const label = document.createElement('span');
-        label.textContent = words.frontier.items[kind] || window.SaltArsenalRules[kind]?.name ||
+        line.className = 'container-item-row';
+        const meta = document.createElement('div');
+        meta.className = 'container-item-meta';
+        const name = document.createElement('strong');
+        name.textContent = words.frontier.items[kind] || window.SaltArsenalRules[kind]?.name ||
           (kind === 'knife' ? words.arsenal.knife : kind);
-        line.append(label);
-        const put = button(line, tr('存入', 'Store') + ' · ' + (bag[kind] || 0),
-          () => request('deposit', { id: openedId, item: kind }));
-        const take = button(line, tr('取出', 'Take') + ' · ' + (stored[kind] || 0),
-          () => request('withdraw', { id: openedId, item: kind }));
-        put.disabled = !bag[kind];
-        take.disabled = !stored[kind];
+        const counts = document.createElement('small');
+        counts.textContent = format('itemBalances', { bag: bag[kind] || 0, stored: stored[kind] || 0 });
+        meta.append(name, counts);
+        const quantity = document.createElement('input');
+        quantity.type = 'number';
+        quantity.min = '1';
+        quantity.step = '1';
+        quantity.inputMode = 'numeric';
+        quantity.maxLength = 6;
+        quantity.max = String(Math.max(bag[kind] || 0, stored[kind] || 0, 1));
+        quantity.placeholder = t('itemAmountPlaceholder');
+        quantity.setAttribute('aria-label', format('itemQuantity', { item: name.textContent }));
+        line.append(meta, quantity);
+        const put = button(line, t('storeItem'), () => {
+          const amount = parseItemAmount(quantity.value, bag[kind] || 0);
+          if (amount === null) { notify(t('itemAmount')); return; }
+          const payload = { id: openedId, item: kind, itemName: name.textContent,
+            ...(amount === undefined ? {} : { amount }) };
+          if (request('deposit', payload)) put.disabled = true;
+        });
+        const take = button(line, t('takeItem'), () => {
+          const amount = parseItemAmount(quantity.value, stored[kind] || 0);
+          if (amount === null) { notify(t('itemAmount')); return; }
+          const payload = { id: openedId, item: kind, itemName: name.textContent,
+            ...(amount === undefined ? {} : { amount }) };
+          if (request('withdraw', payload)) take.disabled = true;
+        });
+        put.disabled = !bag[kind] || !!pending;
+        take.disabled = !stored[kind] || !!pending;
         rows.append(line);
       }
-      if (game.gold?.carried) {
-        const put = button(footer, tr('存入全部金币', 'Deposit all gold'), () => request('depositGold', { id: openedId }));
-        const row = models.get(openedId)?.row;
-        if (row) {
-          const angle = row.yaw * Math.PI / 2;
-          const dx = player.pos.x - row.pos.x;
-          const dz = player.pos.z - row.pos.z;
-          const inside = Math.abs(dx * Math.cos(angle) - dz * Math.sin(angle)) < 2.91 &&
-            Math.abs(dx * Math.sin(angle) + dz * Math.cos(angle)) < 1.13 &&
-            player.pos.y >= row.pos.y - .05 && player.pos.y <= row.pos.y + 1;
-          put.disabled = !inside;
-          if (!inside) notice.textContent = tr('走进箱内，再按 K 或点「集装箱」存金币。', 'Walk inside, then open Container again to deposit your gold.');
-        }
-      }
+      if (!inside && carried) notice.textContent = t('walkIn');
+      else if (!inside && banked) notice.textContent = t('withdrawHint');
       button(footer, tr('关门上锁', 'Close and lock'), () => request('close', { id: openedId }));
     }
     function showPassword() {
@@ -449,7 +618,9 @@
             buildQueue.set(row.id, row);
           } else {
             if (row.sign !== model.row.sign) setSign(model, row.sign);
-            model.row = row;
+            const gold = Number.isSafeInteger(row.gold) && row.gold >= 0 ? row.gold : 0;
+            if (gold !== model.coinAmount || !model.coinSign) setCoinSign(model, gold);
+            model.row = { ...row, gold };
           }
         }
       } else if (message.type === 'containerClosed' && message.id === openedId) {
@@ -459,33 +630,50 @@
       } else if (message.type === 'containerResult') {
         if (message.request !== pending?.id) return;
         if (message.password) issued = message.password;
-        const { action } = pending;
+        const { action, payload } = pending;
         pending = null;
-        if (!dialog.open) return;
-        if (message.error) { notice.textContent = errors[message.error] || errors.storage; return; }
+        if (message.error) {
+          const key = message.error === 'amount' && ['deposit', 'withdraw'].includes(action)
+            ? 'itemAmount' : message.error;
+          notify(errors[key] || errors.storage);
+          return;
+        }
         if (issued && action === 'issue') {
-          reveal = true;
-          showPassword();
+          if (dialog.open) {
+            reveal = true;
+            showPassword();
+          }
         } else if (action === 'create') {
           issued = null;
           reveal = false;
-          menu();
-          notice.textContent = tr('已放置并上锁。', 'Placed and locked.');
-        } else if (action === 'open' || action === 'deposit' || action === 'withdraw' || action === 'depositGold') {
+          if (dialog.open) menu();
+          notify(t('placed'));
+        } else if (action === 'open' || action === 'deposit' || action === 'withdraw' || action === 'depositGold' || action === 'withdrawGold') {
           openedId = message.id;
           stored = message.items || {};
           banked = message.gold || 0;
-          inventory();
-          if (action === 'depositGold') notice.textContent = tr('金币已存入集装箱，换设备也能用密码查看。', 'Gold deposited. Use your password to access it on another device.');
+          syncCoinSign(models.get(openedId), banked);
+          if (action === 'open' && dialog.open) dismiss(false, true);
+          if (dialog.open && action !== 'open') inventory();
+          if (action === 'open') notify(t('openedHint'));
+          else if (action === 'deposit' || action === 'withdraw') {
+            notify(format(action === 'deposit' ? 'itemStored' : 'itemWithdrawn', {
+              amount: message.moved || 0, item: payload.itemName || ''
+            }));
+          } else if (action === 'depositGold') {
+            notify(format('goldDeposited', { amount: formatGold(message.moved || 0) }));
+          } else if (action === 'withdrawGold') {
+            notify(format('goldWithdrawn', { amount: formatGold(message.moved || 0) }));
+          }
         } else if (action === 'close') {
           openedId = null;
           dismiss();
         } else {
-          menu();
+          if (dialog.open) menu();
           if (message.location) {
             const { map: name, pos } = message.location;
-            notice.textContent = mapNames[name] + ' · X ' + Math.round(pos.x) + ' / Z ' +
-              Math.round(pos.z - window.SaltExpeditionZones.maps[name].offset);
+            notify(mapNames[name] + ' · X ' + Math.round(pos.x) + ' / Z ' +
+              Math.round(pos.z - window.SaltExpeditionZones.maps[name].offset));
           } else notice.textContent = action === 'move' ? tr('已搬迁并上锁。', 'Moved and locked.') : tr('牌面已更新。', 'Sign updated.');
         }
       }
@@ -522,6 +710,18 @@
         const playing = !!map && mp?.connected && player.alive && game.game.state === 'playing' &&
           !game.frontier?.airborne && !game.sedan?.riding;
         toolbar.hidden = !playing;
+        const depositRow = openedId ? models.get(openedId)?.row : null;
+        const showDeposit = playing && nearbyBox(depositRow);
+        depositHud.hidden = !showDeposit;
+        if (showDeposit) {
+          const inside = insideBox(depositRow);
+          const carried = game.gold?.carried || 0;
+          depositButton.hidden = !inside;
+          setText(depositStatus, inside ? t('insideHint') : t('openHint'));
+          const label = t('deposit') + (carried ? ' · ' + window.SaltGoldRules.format(carried) : '');
+          setText(depositButton, label);
+          depositButton.disabled = !inside || !carried || !!pending;
+        }
         if (!playing && dialog.open) {
           pending = null;
           dismiss(true);
@@ -551,7 +751,15 @@
           if (dist < closest) { closest = dist; target = model.row; }
         }
         const label = target ? (target.open ? tr('集装箱 · 已开门', 'Container · Open') : tr('集装箱 · 已上锁', 'Container · Locked')) : tr('集装箱', 'Container');
-        if (control.textContent !== label) control.textContent = label;
+        const docked = toolbar.parentElement?.classList.contains('mobile-field-dock');
+        const visibleLabel = docked ? tr('集装箱', 'Container') : label;
+        if (control.textContent !== visibleLabel) control.textContent = visibleLabel;
+        if (control.getAttribute('aria-label') !== label) {
+          control.setAttribute('aria-label', label);
+          control.title = label;
+        }
+        control.classList.toggle('container-near-open', !!target?.open);
+        control.classList.toggle('container-near-locked', !!target && !target.open);
       }
     };
   };

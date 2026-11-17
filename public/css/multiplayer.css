@@ -138,6 +138,159 @@ body.is-playing .mp-net { opacity: 0.78; }
 .mp-roster-btn:active { transform: scale(0.96); }
 .mp-roster-btn:focus-visible { outline: 2px solid var(--signal-hot); outline-offset: 2px; }
 
+/* ------------------------------------------------------------ friends/follow */
+.mp-follow-hud {
+  position: absolute;
+  top: calc(94px + var(--sat));
+  right: var(--gr);
+  z-index: 54;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  max-width: min(360px, 74vw);
+  pointer-events: auto;
+}
+
+.mp-follow-hud[hidden],
+.mp-follow-main[hidden],
+.mp-follow-fans[hidden] { display: none; }
+
+.mp-follow-main,
+.mp-follow-fans {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 5px 5px 10px;
+  border: 1px solid rgba(95, 208, 255, 0.32);
+  background: rgba(7, 12, 16, 0.86);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: rgba(232, 228, 218, 0.78);
+  font: 500 10px/1.2 var(--f-mono);
+  letter-spacing: 0.06em;
+}
+
+.mp-follow-fans {
+  border-color: rgba(255, 179, 71, 0.34);
+  color: rgba(232, 228, 218, 0.64);
+}
+
+.mp-follow-pulse {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: #5fd0ff;
+  box-shadow: 0 0 0 3px rgba(95, 208, 255, 0.12), 0 0 12px rgba(95, 208, 255, 0.58);
+  animation: mp-follow-pulse 1.9s ease-in-out infinite;
+}
+
+@keyframes mp-follow-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.78); }
+}
+
+.mp-follow-main span,
+.mp-follow-fans span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-follow-main button,
+.mp-follow-fans button {
+  flex: none;
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(95, 208, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(95, 208, 255, 0.1);
+  color: #bfefff;
+  font: 600 9px/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.mp-follow-fans button {
+  border-color: rgba(255, 179, 71, 0.36);
+  background: rgba(255, 179, 71, 0.09);
+  color: var(--signal);
+}
+
+.mp-follow-main button:hover,
+.mp-follow-fans button:hover { background: var(--signal); color: var(--ink); }
+
+.mp-follow-invites {
+  position: absolute;
+  right: var(--gr);
+  bottom: calc(110px + var(--sab));
+  z-index: 58;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, 88vw);
+  pointer-events: auto;
+}
+
+.mp-follow-invites[hidden] { display: none; }
+
+.mp-follow-invite {
+  padding: 12px 14px 12px;
+  border: 1px solid rgba(95, 208, 255, 0.34);
+  border-left: 3px solid #5fd0ff;
+  background: rgba(8, 12, 15, 0.94);
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: mp-respawn-in 0.22s ease-out both;
+}
+
+.mp-follow-invite-k {
+  display: block;
+  margin-bottom: 5px;
+  color: #8edfff;
+  font: 600 8px/1 var(--f-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.mp-follow-invite-name {
+  display: block;
+  font: 700 17px/1.1 var(--f-label);
+  letter-spacing: 0.06em;
+}
+
+.mp-follow-invite p {
+  margin: 5px 0 10px;
+  color: rgba(232, 228, 218, 0.62);
+  font: 500 10px/1.45 var(--f-label);
+  letter-spacing: 0.03em;
+}
+
+.mp-follow-invite-actions { display: flex; gap: 7px; }
+
+.mp-follow-invite-actions button {
+  flex: 1;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  background: rgba(232, 228, 218, 0.05);
+  color: var(--bone);
+  font: 600 10px/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.mp-follow-invite-actions button.accept {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: var(--ink);
+}
+
+.mp-follow-invite-actions button:hover { filter: brightness(1.12); }
+
 /* --------------------------------------------------------------- unit mode */
 .mp-unit {
   position: absolute;
@@ -687,7 +840,7 @@ body.is-playing .mp-net { opacity: 0.78; }
 
 .mp-rr {
   display: grid;
-  grid-template-columns: 1fr auto 10px;
+  grid-template-columns: minmax(0, 1fr) auto 10px auto;
   align-items: center;
   gap: 10px;
   padding: 6px 6px;
@@ -737,6 +890,44 @@ body.is-playing .mp-net { opacity: 0.78; }
   background: rgba(255, 224, 102, 0.08);
   box-shadow: 0 0 12px rgba(255, 224, 102, 0.12);
 }
+
+.mp-rr-name em.mp-rr-friend {
+  color: #8affc1;
+  border-color: rgba(138, 255, 193, 0.42);
+  background: rgba(138, 255, 193, 0.06);
+}
+
+.mp-rr-name em.mp-rr-following {
+  color: #5fd0ff;
+  border-color: rgba(95, 208, 255, 0.48);
+  background: rgba(95, 208, 255, 0.08);
+}
+
+.mp-rr-name em.mp-rr-follower {
+  color: #ffb347;
+  border-color: rgba(255, 179, 71, 0.48);
+  background: rgba(255, 179, 71, 0.08);
+}
+
+.mp-rr-action {
+  min-width: 46px;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid rgba(95, 208, 255, 0.32);
+  background: rgba(95, 208, 255, 0.06);
+  color: #9fdfff;
+  font: 600 8px/1 var(--f-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+
+.mp-rr-action:hover:not(:disabled) { background: #5fd0ff; color: var(--ink); }
+.mp-rr-action.active { border-color: var(--signal); background: rgba(255, 179, 71, 0.12); color: var(--signal); }
+.mp-rr-action.active:hover { background: var(--signal); color: var(--ink); }
+.mp-rr-action:disabled { opacity: 0.46; cursor: default; }
 
 .mp-rr.team-red .mp-rr-name em.mp-rr-team {
   color: #ff9aa0;
@@ -877,6 +1068,129 @@ body.is-playing .mp-net { opacity: 0.78; }
 .mp-roster-board li i { font: 400 10px/1 var(--f-mono); color: rgba(232, 228, 218, 0.4); }
 .mp-roster-board li b { font: 600 12px/1 var(--f-mono); color: var(--signal); }
 .mp-roster-board li.mp-board-empty { display: block; color: rgba(232, 228, 218, 0.4); }
+
+.mp-roster-pickups {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.mp-roster-pickups-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mp-roster-pickups-head b {
+  font: 600 9px/1 var(--f-mono);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(232, 228, 218, 0.55);
+}
+
+.mp-roster-pickups-head span {
+  font: 500 9px/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  color: rgba(232, 228, 218, 0.38);
+}
+
+.mp-roster-pickups ol {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mp-gold-activity-scroll {
+  max-height: 232px;
+  margin-top: 2px;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(255, 179, 71, 0.45) transparent;
+  scrollbar-width: thin;
+}
+
+.mp-gold-activity-sentinel {
+  padding: 8px 6px 2px;
+  font: 500 9px/1.4 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-align: center;
+  color: rgba(255, 179, 71, 0.78);
+  cursor: pointer;
+}
+
+.mp-gold-activity-sentinel[hidden] { display: none; }
+
+.mp-gold-pickup {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  padding: 7px 8px;
+  border-left: 2px solid rgba(255, 179, 71, 0.72);
+  background: rgba(255, 179, 71, 0.055);
+}
+
+.mp-gold-pickup.mp-gold-gift {
+  border-left-color: rgba(143, 211, 255, 0.78);
+  background: rgba(143, 211, 255, 0.06);
+}
+
+.mp-gold-pickup.mp-gold-gift .mp-gold-pickup-amount {
+  color: #9ed8ff;
+}
+
+.mp-gold-activity-kind {
+  font: 700 8px/1 var(--f-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 179, 71, 0.72);
+}
+
+.mp-gold-gift .mp-gold-activity-kind {
+  color: rgba(158, 216, 255, 0.82);
+}
+
+.mp-gold-pickup-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mp-gold-pickup-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 12px/1.2 var(--f-mono);
+  letter-spacing: 0.06em;
+  color: var(--bone);
+}
+
+.mp-gold-pickup-amount {
+  flex: none;
+  font: 700 11px/1.2 var(--f-mono);
+  color: #ffb347;
+}
+
+.mp-gold-pickup-meta {
+  font: 500 10px/1.4 var(--f-mono);
+  letter-spacing: 0.04em;
+  color: rgba(232, 228, 218, 0.48);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.mp-gold-pickup-empty {
+  padding: 8px 6px;
+  font: 500 11px/1.45 var(--f-mono);
+  letter-spacing: 0.05em;
+  color: rgba(232, 228, 218, 0.4);
+}
 
 .mp-roster-hint {
   margin: 14px 0 0;

@@ -72,9 +72,8 @@ pose(6, 1100);
 sedan.handle(driver, { type: 'sedanLeave', index: 0 }, 1180);
 assert.equal(sent.at(-1).reason, 'moving', '高速时仍应拒绝下车');
 
-pose(0, 1220);
-sedan.handle(driver, { type: 'sedanLeave', index: 0 }, 1320);
-assert.equal(sent.at(-1).reason, 'leave', '停稳后应允许下车');
+sedan.handle(driver, { type: 'sedanLeave', index: 0, speed: 0, park: true }, 1220);
+assert.equal(sent.at(-1).reason, 'leave', '驾驶员带驻车意图时应直接驻车并下车');
 assert.equal(driver.carSeat, null, '下车后应释放驾驶席');
 assert.equal(sent.at(-1).car.seat, null, '下车结果不应继续标记座位');
 assert.ok(Number.isFinite(sent.at(-1).position.x) && Number.isFinite(sent.at(-1).position.z),
@@ -86,7 +85,24 @@ assert.equal(driver.carSeat, 0, '停稳后应能再次上车');
 sedan.handle(driver, { type: 'sedanLeave', index: 999 }, 1500);
 assert.equal(sent.at(-1).reason, 'leave', '非法落点序号应回退到安全车门，而不是卡死');
 
-sedan.handle(walker, { type: 'sedanLeave', index: 0 }, 1600);
+sedan.handle(driver, { type: 'sedanBoard', carId: car.id }, 1540);
+assert.equal(driver.carSeat, 0, '驾驶员应能重新回到驾驶席');
+walker.pos = { x: car.x + 1, y: car.y, z: car.z };
+sedan.handle(walker, { type: 'sedanBoard', carId: car.id }, 1600);
+assert.equal(sent.at(-1).reason, 'board', '好友应能坐上副驾驶席');
+assert.equal(walker.carSeat, 1, '好友应占用第一个空座');
+
+pose(6, 1700);
+sedan.handle(walker, { type: 'sedanLeave', index: 0, speed: 0, park: true }, 1780);
+assert.equal(sent.at(-1).reason, 'moving', '乘客不能在车辆高速行驶时自行开门');
+sedan.handle(driver, { type: 'sedanLeave', index: 0, speed: 0, park: true }, 1860);
+assert.equal(sent.at(-1).reason, 'leave', '驾驶员驻车后应能下车');
+assert.equal(driver.carSeat, null);
+assert.equal(walker.carSeat, 1, '驾驶员下车不应挤掉乘客');
+sedan.handle(walker, { type: 'sedanLeave', index: 1 }, 1940);
+assert.equal(sent.at(-1).reason, 'leave', '车辆停稳后乘客也应能下车');
+
+sedan.handle(walker, { type: 'sedanLeave', index: 0 }, 2020);
 assert.equal(sent.at(-1).reason, 'not-riding', '未乘车时也应返回明确结果，避免客户端空等');
 
 console.log(JSON.stringify({

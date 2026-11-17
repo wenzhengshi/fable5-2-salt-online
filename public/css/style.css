@@ -120,7 +120,7 @@ body.is-touch .lang-switch:focus-within {
   left: 50%;
   bottom: max(22px, calc(env(safe-area-inset-bottom, 0px) + 18px));
   z-index: 10002;
-  max-width: min(420px, calc(100vw - 40px));
+  max-width: min(420px, calc(var(--vp-w, 100vw) - 40px));
   padding: 10px 15px;
   border: 1px solid rgba(232, 228, 218, 0.3);
   border-radius: 8px;
@@ -145,7 +145,7 @@ body.is-touch .lang-switch:focus-within {
   position: fixed;
   inset: 50% auto auto 50%;
   z-index: 10003;
-  width: min(420px, calc(100vw - 40px));
+  width: min(420px, calc(var(--vp-w, 100vw) - 40px));
   padding: 20px;
   border: 1px solid rgba(232, 228, 218, 0.28);
   border-radius: 10px;

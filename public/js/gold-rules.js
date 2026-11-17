@@ -9,6 +9,12 @@
     const fraction = String(units % scale).padStart(6, '0').replace(/0+$/, '');
     return fraction ? whole + '.' + fraction : String(whole);
   }
+  function parse(value) {
+    const match = /^(\d+)(?:\.(\d{1,6}))?$/.exec(String(value == null ? '' : value).trim());
+    if (!match) return null;
+    const units = Number(match[1]) * scale + Number((match[2] || '').padEnd(6, '0'));
+    return Number.isSafeInteger(units) ? units : null;
+  }
   function hit(origin, dir, target, range) {
     const radius = target.kind === 'drone' ? .94 : .76;
     const y = target.pos.y + (target.kind === 'hound' ? .7 : .05);
@@ -19,7 +25,7 @@
     const entry = along - Math.sqrt(inside);
     return entry > .1 && entry < range ? entry : null;
   }
-  const rules = { hit, eraDays, eraFor, rewardFor, format };
+  const rules = { hit, eraDays, eraFor, rewardFor, format, parse };
   if (typeof module === 'object' && module.exports) module.exports = rules;
   else root.SaltGoldRules = rules;
 })(globalThis);

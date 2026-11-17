@@ -8,7 +8,7 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
-  width: min(286px, calc(100vw - 24px));
+  width: min(286px, calc(var(--vp-w, 100vw) - 24px));
   transform: none;
   color: #fff0d7;
   text-align: right;
@@ -84,7 +84,7 @@ body:has(.menu[data-screen="title"]) .frontier { display: none; }
     top: max(calc(168px + var(--sat)), 42%);
     right: max(10px, var(--sar));
     gap: 5px;
-    width: min(190px, calc(100vw - 20px));
+    width: min(190px, calc(var(--vp-w, 100vw) - 20px));
     font-size: 11px;
   }
   .frontier-state, .frontier-equipment { padding: 4px 8px; }
@@ -183,7 +183,7 @@ body:has(.menu[data-screen="dead"]) .frontier { display: none; }
     right: auto;
     left: calc(64px + var(--sal));
     align-items: flex-start;
-    width: min(174px, calc(100vw - 74px));
+    width: min(174px, calc(var(--vp-w, 100vw) - 74px));
     text-align: left;
   }
   .frontier-actions { width: 100%; }
@@ -194,7 +194,7 @@ body:has(.menu[data-screen="dead"]) .frontier { display: none; }
     right: 50%;
     bottom: calc(96px + var(--sab));
     align-items: center;
-    width: min(440px, calc(100vw - 20px));
+    width: min(440px, calc(var(--vp-w, 100vw) - 20px));
     transform: translateX(50%);
     text-align: center;
   }
@@ -225,7 +225,7 @@ body:has(.menu[data-screen="dead"]) .frontier { display: none; }
   justify-content: center;
   flex-wrap: wrap;
   gap: .55rem;
-  max-width: calc(100vw - 24px);
+  max-width: calc(var(--vp-w, 100vw) - 24px);
   transform: translateX(-50%);
   color: #ffffff;
   font: 700 .81rem var(--f-label, system-ui), sans-serif;
@@ -259,3 +259,74 @@ body:has(.menu[data-screen="dead"]) .frontier { display: none; }
   .sedan-hud button { min-height: 44px; }
   .sedan-hud .sedan-status { max-width: min(78vw, 470px); }
 }
+
+/* Touch tools share one row along the bottom edge of the battlefield. */
+.mobile-field-dock {
+  position: fixed;
+  z-index: 33;
+  left: 50%;
+  bottom: calc(7px + var(--sab, 0px));
+  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  max-width: min(370px, calc(var(--vp-w, 100vw) - var(--sal, 0px) - var(--sar, 0px) - 18px));
+  pointer-events: none;
+}
+.mobile-field-dock[hidden], .mobile-field-dock [hidden] { display: none; }
+.mobile-field-dock .road-sign-tools {
+  position: static;
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 4px;
+  transform: none;
+}
+.mobile-field-dock button {
+  min-width: 44px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid #c8ad7866;
+  border-radius: 6px;
+  background: #14130ee0;
+  color: #fff0d7;
+  font: 650 11px/1.2 system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: auto;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.mobile-field-dock button:first-child::after { content: none; }
+.mobile-field-dock button:active { background: #30281b; }
+.mobile-field-dock .container-near-open { border-color: #93cca1; }
+.mobile-field-dock .container-near-locked { border-color: #dca869; }
+
+/* The weapon name is already shown in the ammo HUD. Armor stays in the bag. */
+.frontier.frontier-touch:not(.frontier-dropping) .frontier-equipment { display: none; }
+.frontier.frontier-touch:not(.frontier-dropping) {
+  top: auto;
+  bottom: calc(58px + var(--sab, 0px));
+  left: 50%;
+  right: auto;
+  align-items: center;
+  width: min(290px, calc(var(--vp-w, 100vw) - 24px));
+  transform: translateX(-50%);
+  text-align: center;
+}
+.frontier.frontier-touch .frontier-actions { align-items: center; }
+.frontier.frontier-touch .frontier-actions:not(:has(button:not([hidden]))) { display: none; }
+body:has(.scope-zoom-tools:not([hidden])) .frontier.frontier-touch:not(.frontier-dropping) {
+  bottom: calc(110px + var(--sab, 0px));
+}
+
+@media (max-width: 740px) {
+  .is-touch:has(.mobile-field-dock:not([hidden]) button:not([hidden])) .t-ads {
+    bottom: calc(54px + var(--sab, 0px));
+  }
+}
+.mobile-field-dock .container-tools { order: 1; }
+.mobile-field-dock .road-sign-tools:not(.container-tools) { order: 2; }

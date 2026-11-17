@@ -51,6 +51,9 @@ const required = [
   'public/js/game.bundle.js',
   'public/js/flight-collision.js',
   'public/js/boot-gate.js',
+  'public/js/forced-layout.js',
+  'public/js/manual-rotate.js',
+  'public/css/manual-rotate.css',
   'public/js/audio-tap.js',
   'public/js/replay.js',
   'public/js/community.js',
@@ -60,6 +63,8 @@ const required = [
   'public/js/multiplayer.js',
   'realtime/multiplayer.js',
   'services/roadSigns.js',
+  'services/goldPickups.js',
+  'services/goldLedger.js',
   'public/js/road-sign-rules.js',
   'public/js/road-sign-physics.js',
   'public/js/road-signs.js',
@@ -69,7 +74,13 @@ const required = [
   'public/js/sedan-rules.js',
   'public/js/sedan-model.js',
   'public/js/sedan.js',
-  'services/sedan.js'
+  'services/sedan.js',
+  'scripts/gold-pickups-self-test.js',
+  'scripts/gold-transfer-self-test.js',
+  'scripts/gold-gift-pause-self-test.js',
+  'scripts/follow-friend-self-test.js',
+  'scripts/fullscreen-overlay-self-test.js',
+  'scripts/container-coin-sign-self-test.js'
 ];
 
 for (const relative of required) {

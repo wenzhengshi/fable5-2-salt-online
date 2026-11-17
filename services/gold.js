@@ -5,12 +5,30 @@ const storage = require('../config/storage');
 const { zones } = require('../public/js/road-sign-rules');
 const { hit, eraFor, rewardFor } = require('../public/js/gold-rules');
 const arsenal = require('../public/js/arsenal-rules');
+const pickupLog = require('./goldPickups');
 
 const FILE = 'frontier-inventory.json';
 const DAY = 86400000;
-const BONUS_CHANCE = 5;
-const DAILY_BONUS_LIMIT = 8;
+const BONUS_CHANCE = 25;
+const BONUS_PITY = 5;
+const FIXED_KILL_REWARD = 10;
+const DAILY_BONUS_BUDGET_MULTIPLIER = 8;
+
+function ordinaryBudget(data, day) {
+  const reward = data.dispatch.reward;
+  const amount = Math.max(1, Math.floor(reward / 4));
+  const bonus = data.ordinaryBonus?.day === day ? data.ordinaryBonus : null;
+  const spent = bonus ? bonus.spent ?? bonus.count * reward : 0;
+  const remaining = Math.max(0, reward * DAILY_BONUS_BUDGET_MULTIPLIER - spent);
+  return { amount, spent, remaining: Math.floor(remaining / amount) * amount };
+}
 const MACHINE_HP = { gull: 45, hound: 140 };
+const GIFT_RANGE = 8;
+const GIFT_HEIGHT = 3;
+const GIFT_COOLDOWN = 500;
+const GIFT_RESPONSE_COOLDOWN = 250;
+const GIFT_OFFER_TTL = 30000;
+const MAX_PENDING_GIFTS = 3;
 const LOCATIONS = {
   port: [{ x: 27, y: 0, z: 26 }, { x: 34, y: 0, z: 26 }],
   qingyun: [{ x: -4, y: 1.5, z: -595 }, { x: 4, y: 1.5, z: -595 }],
@@ -53,6 +71,7 @@ function schedule(day, epoch) {
 
 module.exports = function createGold({ players, send, frontier, roll = randomInt }) {
   let state;
+  const giftOffers = new Map();
   function load() {
     return state ||= storage.readJson(FILE).gold || {};
   }
@@ -109,16 +128,153 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     const data = load();
     const dispatch = data.dispatch;
     if (!dispatch) return;
-    const targets = Object.values(dispatch.targets).filter(row => row.map === map && live(row, now))
+    const rows = Object.values(dispatch.targets);
+    const targets = rows.filter(row => row.map === map && live(row, now))
       .map(({ id, kind, pos, hp }) => ({ id, kind, pos, hp }));
     const drops = Object.values(data.drops || {}).filter(row => row.map === map && row.until > now)
       .map(({ id, pos, amount }) => ({ id, pos, amount }));
+    const open = rows.filter(row => row.hp > 0 && row.until > now);
+    const remainingGold = open.reduce((total, row) => total + (row.reward || 0), 0);
+    const totalGold = rows.reduce((total, row) => total + (row.reward || 0), 0);
     send(player.ws, { type: 'goldList', map, targets, drops,
-      reward: dispatch.reward, issued: dispatch.count, remaining: Object.values(dispatch.targets).filter(row => row.hp > 0 && row.until > now).length,
+      reward: dispatch.reward, issued: dispatch.count, remaining: rows.filter(row =>
+        row.map === map && row.hp > 0 && row.until > now).length,
+      remainingTargets: open.length, remainingGold, totalGold,
+      ordinaryRemaining: ordinaryBudget(data, dayOf(now)).remaining,
+      ordinaryUntilPity: BONUS_PITY - (data.ordinaryMisses?.[player.signOwner] || 0),
       carried: data.carried?.[player.signOwner] || 0 });
   }
   function broadcast(map, now) {
     for (const player of players.values()) if (player.joined && mapOf(player) === map) list(player, now);
+  }
+  function broadcastAll(now) {
+    for (const player of players.values()) if (player.joined) list(player, now);
+  }
+  function pendingAmount(owner) {
+    let total = 0;
+    for (const offer of giftOffers.values()) if (offer.fromOwner === owner) total += offer.amount;
+    return total;
+  }
+  function notifyGift(offer, status, senderFields = {}, recipientFields = {}) {
+    const sender = players.get(offer.fromId);
+    if (sender) send(sender.ws, {
+      type: 'goldGiftResult', role: 'sender', request: offer.request, offerId: offer.id,
+      status, amount: offer.amount, toName: offer.toName, ...senderFields
+    });
+    const recipient = players.get(offer.toId);
+    if (recipient) send(recipient.ws, {
+      type: 'goldGiftResult', role: 'recipient', offerId: offer.id,
+      status, amount: offer.amount, fromName: offer.fromName, ...recipientFields
+    });
+  }
+  function expireGifts(now) {
+    for (const [id, offer] of giftOffers) {
+      if (now < offer.expiresAt) continue;
+      giftOffers.delete(id);
+      notifyGift(offer, 'expired');
+    }
+  }
+  function gift(player, msg, now) {
+    const answer = fields => send(player.ws, { type: 'goldGiftResult', role: 'sender', request: msg.request, ...fields });
+    if (!player.signOwner || !available(player, now) ||
+        ![player.pos?.x, player.pos?.y, player.pos?.z].every(Number.isFinite)) {
+      return answer({ error: 'unavailable' });
+    }
+    const target = players.get(String(msg.toId));
+    if (!target || target === player || !target.signOwner || !available(target, now) ||
+        mapOf(target) !== mapOf(player) ||
+        ![target.pos?.x, target.pos?.y, target.pos?.z].every(Number.isFinite)) {
+      return answer({ error: 'target' });
+    }
+    const distance = Math.hypot(player.pos.x - target.pos.x, player.pos.z - target.pos.z);
+    if (distance > GIFT_RANGE || Math.abs(player.pos.y - target.pos.y) > GIFT_HEIGHT) {
+      return answer({ error: 'range' });
+    }
+    const amount = msg.amount;
+    if (!Number.isSafeInteger(amount) || amount <= 0) return answer({ error: 'amount' });
+    const pending = Array.from(giftOffers.values()).filter(offer => offer.fromOwner === player.signOwner);
+    if (pending.length >= MAX_PENDING_GIFTS) return answer({ error: 'busy' });
+    const reserved = pendingAmount(player.signOwner) + amount;
+    const balance = load().carried?.[player.signOwner] || 0;
+    if (!Number.isSafeInteger(balance) || !Number.isSafeInteger(reserved) || balance < reserved) {
+      return answer({ error: 'funds' });
+    }
+    const offer = {
+      id: randomUUID(), request: msg.request,
+      fromId: player.id, fromOwner: player.signOwner, fromName: player.name,
+      toId: target.id, toOwner: target.signOwner, toName: target.name,
+      amount, map: mapOf(player), pos: { ...player.pos },
+      expiresAt: now + GIFT_OFFER_TTL
+    };
+    giftOffers.set(offer.id, offer);
+    answer({ status: 'pending', offerId: offer.id, amount, toName: target.name, expiresAt: offer.expiresAt });
+    send(target.ws, { type: 'goldGiftRequest', offerId: offer.id, fromId: player.id,
+      fromName: player.name, amount, expiresAt: offer.expiresAt });
+  }
+  function respondGift(player, msg, now) {
+    const answer = fields => send(player.ws, { type: 'goldGiftResponseResult', offerId: msg.offerId, ...fields });
+    const offer = typeof msg.offerId === 'string' ? giftOffers.get(msg.offerId) : null;
+    if (!offer || !player.signOwner || player.id !== offer.toId || player.signOwner !== offer.toOwner) return;
+    if (now - (player.giftResponseAt || 0) < GIFT_RESPONSE_COOLDOWN) return answer({ error: 'busy' });
+    player.giftResponseAt = now;
+    if (now >= offer.expiresAt) {
+      giftOffers.delete(offer.id);
+      notifyGift(offer, 'expired');
+      return;
+    }
+    giftOffers.delete(offer.id);
+    if (msg.accept !== true) {
+      notifyGift(offer, 'declined');
+      return;
+    }
+    const sender = players.get(offer.fromId);
+    if (!available(player, now) || !sender || sender.signOwner !== offer.fromOwner ||
+        !available(sender, now) || mapOf(sender) !== offer.map || mapOf(player) !== offer.map ||
+        ![sender.pos?.x, sender.pos?.y, sender.pos?.z].every(Number.isFinite)) {
+      notifyGift(offer, 'unavailable');
+      return;
+    }
+    const distance = Math.hypot(sender.pos.x - player.pos.x, sender.pos.z - player.pos.z);
+    if (distance > GIFT_RANGE || Math.abs(sender.pos.y - player.pos.y) > GIFT_HEIGHT) {
+      notifyGift(offer, 'range');
+      return;
+    }
+    let transferred = 0;
+    let senderCarried = 0;
+    let recipientCarried = 0;
+    change(data => {
+      data.carried ||= {};
+      const senderBalance = data.carried[sender.signOwner] || 0;
+      const recipientBalance = data.carried[player.signOwner] || 0;
+      const required = offer.amount + pendingAmount(offer.fromOwner);
+      if (!Number.isSafeInteger(senderBalance) || senderBalance < required ||
+          !Number.isSafeInteger(recipientBalance) ||
+          !Number.isSafeInteger(recipientBalance + offer.amount)) return;
+      data.carried[sender.signOwner] = senderBalance - offer.amount;
+      data.carried[player.signOwner] = recipientBalance + offer.amount;
+      transferred = offer.amount;
+      senderCarried = data.carried[sender.signOwner];
+      recipientCarried = data.carried[player.signOwner];
+    });
+    if (!transferred) {
+      notifyGift(offer, 'funds');
+      return;
+    }
+    try {
+      pickupLog.recordGift({
+        sender,
+        recipient: player,
+        map: offer.map,
+        pos: offer.pos,
+        amount: transferred,
+        at: Date.now()
+      });
+    } catch (error) {
+      console.error('[gold] gift ledger write failed:', error.message);
+    }
+    notifyGift(offer, 'accepted', { carried: senderCarried }, { carried: recipientCarried });
+    list(sender, now);
+    list(player, now);
   }
   function handle(player, msg, now) {
     if (!player.joined) return;
@@ -128,6 +284,15 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
       rotate(now);
       return list(player, now);
     }
+    if (msg.type === 'goldGift') {
+      if (now - (player.goldGiftAt || 0) < GIFT_COOLDOWN) {
+        return send(player.ws, { type: 'goldGiftResult', request: msg.request, error: 'busy' });
+      }
+      player.goldGiftAt = now;
+      rotate(now);
+      return gift(player, msg, now);
+    }
+    if (msg.type === 'goldGiftResponse') return respondGift(player, msg, now);
     if (now - (player.goldPickAt || 0) < 220) return;
     player.goldPickAt = now;
     rotate(now);
@@ -143,6 +308,17 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
       collected = saved.amount;
     });
     if (collected) {
+      try {
+        pickupLog.record({
+          player,
+          map: drop.map,
+          pos: drop.pos,
+          amount: collected,
+          at: Date.now()
+        });
+      } catch (error) {
+        console.error('[gold] pickup ledger write failed:', error.message);
+      }
       send(player.ws, { type: 'goldPicked', amount: collected });
       broadcast(drop.map, now);
     }
@@ -168,7 +344,8 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
         send(other.ws, { type: 'goldDestroyed', id, pos: row.pos });
       }
     }
-    broadcast(row.map, now);
+    if (destroyed) broadcastAll(now);
+    else broadcast(row.map, now);
   }
   function ordinaryHit(player, shot, msg, now) {
     if (!shot || !available(player, now) || !player.signOwner ||
@@ -199,22 +376,33 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
         msg.floor < -80 || msg.floor > point.y + 1.2 || point.y - msg.floor > 24) return;
     rotate(now);
     const day = dayOf(now);
-    const prior = load().ordinaryBonus;
-    if ((prior?.day === day && prior.count >= DAILY_BONUS_LIMIT) || roll(100) >= BONUS_CHANCE) return;
+    let credited = false;
     let awarded = false;
     change(data => {
-      if (data.ordinaryBonus?.day !== day) data.ordinaryBonus = { day, count: 0 };
-      if (data.ordinaryBonus.count >= DAILY_BONUS_LIMIT) return;
+      const owner = player.signOwner;
+      const balance = (data.carried[owner] || 0) + FIXED_KILL_REWARD;
+      if (!Number.isSafeInteger(balance)) return;
+      data.carried[owner] = balance;
+      credited = true;
+      const budget = ordinaryBudget(data, day);
+      if (budget.remaining < budget.amount) return;
+      const misses = data.ordinaryMisses ||= {};
+      const attempts = (misses[owner] || 0) + 1;
+      if (attempts < BONUS_PITY && roll(100) >= BONUS_CHANCE) {
+        misses[owner] = attempts;
+        return;
+      }
+      delete misses[owner];
+      data.ordinaryBonus = { day, spent: budget.spent + budget.amount };
       const id = randomUUID();
       data.drops[id] = { id, map, pos: { x: point.x, y: msg.floor, z: point.z },
-        amount: data.dispatch.reward, until: now + 20 * 60000 };
-      data.ordinaryBonus.count++;
+        amount: budget.amount, until: now + 20 * 60000 };
       awarded = true;
     });
-    if (awarded) {
-      send(player.ws, { type: 'goldBonus' });
-      broadcast(map, now);
-    }
+    if (!credited) return;
+    send(player.ws, { type: 'goldKillReward', amount: FIXED_KILL_REWARD, bonus: awarded });
+    if (awarded) broadcastAll(now);
+    else list(player, now);
   }
   function deposited(player, now) {
     state = null;
@@ -222,6 +410,7 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
   }
   let nextRotationCheck = 0;
   function tick(now) {
+    expireGifts(now);
     if (now < nextRotationCheck) return;
     nextRotationCheck = now + 10000;
     try { rotate(now); } catch (error) { console.error('[gold] dispatch storage:', error.message); }

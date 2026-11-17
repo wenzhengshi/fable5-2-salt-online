@@ -12,6 +12,7 @@
     'expedition-zones.js',
     'terrain-ray.js',
     'expedition-portals.js',
+    'lunar-suit.js',
     'road-sign-rules.js',
     'road-sign-physics.js',
     'road-signs.js',
@@ -44,7 +45,8 @@
     'community.js',
     'replay.js',
     'comms.js',
-    'controls.js'
+    'controls.js',
+    'manual-rotate.js'
   ];
   const MODULE_SCRIPTS = [
     'hunter-avatar.js',

@@ -69,6 +69,15 @@
   .mp-roster-name label { font-size: 8px !important; }
   .mp-roster-name input { font-size: 12px !important; }
   .mp-name-note, .mp-roster-hint { font-size: 8px !important; }
+  .mp-follow-hud { max-width: 72vw; }
+  .mp-follow-main, .mp-follow-fans { font-size: 8.5px !important; min-height: 29px; }
+  .mp-follow-main button, .mp-follow-fans button { font-size: 7.5px !important; min-height: 22px; padding: 0 7px; }
+  .mp-follow-invite-k { font-size: 7px !important; }
+  .mp-follow-invite-name { font-size: 14px !important; }
+  .mp-follow-invite p { font-size: 8.5px !important; }
+  .mp-follow-invite-actions button { font-size: 8.5px !important; }
+  .mp-rr-action { min-width: 40px; min-height: 22px; padding: 0 5px; font-size: 7px !important; }
+  .mp-rr-name em { font-size: 6.5px !important; padding: 1px 4px; }
   .mp-title-line { font-size: 10.5px !important; }
 
   .party-head h2 { font-size: 24px !important; }

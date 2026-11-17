@@ -8,7 +8,18 @@ const contentFilter = require('../services/contentFilter');
 const chatHistoryStore = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
 const deathReplay = require('../services/deathReplay');
+const goldPickupLog = require('../services/goldPickups');
+const goldLedger = require('../services/goldLedger');
 const { version: RELEASE_VERSION } = require('../package.json');
+
+const GOLD_PICKUP_MAP_KEYS = {
+  port: 'deployment.port',
+  qingyun: 'expedition.maps.qingyun',
+  bayhaven: 'expedition.maps.bayhaven',
+  dustfall: 'expedition.maps.dustfall',
+  mothlight: 'expedition.maps.mothlight',
+  lunar: 'expedition.maps.lunar'
+};
 
 module.exports = {
   health(req, res) {
@@ -113,6 +124,13 @@ module.exports = {
           maxPageSize: 50
         }
       },
+      goldActivity: {
+        endpoint: '/api/game/gold/activity',
+        pageSize: goldLedger.DEFAULT_LIMIT,
+        maxPageSize: goldLedger.MAX_LIMIT,
+        retention: 'all',
+        kinds: ['pickup', 'gift']
+      },
       controls: [
         { keys: 'WASD', label: req.t('controls.move') },
         { keys: 'Mouse', label: req.t('controls.look') },
@@ -128,6 +146,7 @@ module.exports = {
         { keys: 'B', label: req.t('controls.placeSign') },
         { keys: 'Delete', label: req.t('controls.removeSign') },
         { keys: 'Tab', label: req.t('controls.roster') },
+        { keys: 'O', label: req.t('controls.backpack') },
         { keys: 'Esc / P', label: req.t('controls.pause') }
       ]
     });
@@ -165,5 +184,56 @@ module.exports = {
       respawnSeconds: Math.round(RESPAWN_MS / 1000),
       leaderboard: getLeaderboard(req.query && req.query.limit)
     });
+  },
+
+  goldPickups(req, res) {
+    const query = req.query || {};
+    const page = goldPickupLog.list({ before: query.before, limit: query.limit });
+    res.json({
+      ok: true,
+      lang: req.lang,
+      ...goldPickupLog.status(),
+      total: page.total,
+      limit: page.limit,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+      pickups: page.pickups.map((row) => serializeGoldRecord(row, req.t))
+    });
+  },
+
+  goldActivity(req, res) {
+    const query = req.query || {};
+    const page = goldLedger.list({ before: query.before, limit: query.limit });
+    res.json({
+      ok: true,
+      lang: req.lang,
+      ...goldLedger.status(),
+      total: page.total,
+      limit: page.limit,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+      records: page.records.map((row) => serializeGoldRecord(row, req.t))
+    });
   }
 };
+
+function serializeGoldRecord(row, translate) {
+  const key = GOLD_PICKUP_MAP_KEYS[row.map];
+  const translated = key ? translate(key) : row.map;
+  const record = {
+    id: row.id,
+    kind: row.kind,
+    playerId: row.playerId,
+    name: row.name,
+    map: row.map,
+    mapName: translated && translated !== key ? translated : row.map,
+    pos: row.pos,
+    amount: row.amount,
+    at: row.at
+  };
+  if (row.kind === 'gift') {
+    record.recipientId = row.recipientId;
+    record.recipientName = row.recipientName;
+  }
+  return record;
+}

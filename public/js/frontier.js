@@ -35,6 +35,24 @@
     state.setAttribute('role', 'status');
     const equipment = document.createElement('div');
     equipment.className = 'frontier-equipment';
+    const dock = document.createElement('div');
+    dock.className = 'mobile-field-dock';
+    dock.setAttribute('role', 'group');
+    dock.setAttribute('aria-label', document.documentElement.lang.startsWith('zh') ? '战场工具' : 'Field tools');
+    dock.hidden = true;
+    document.body.append(dock);
+    const dockTools = [];
+    function syncDock(touch, playing) {
+      const buttonHost = touch ? dock : actions;
+      for (const name of ['view', 'backpack']) {
+        if (buttons[name].parentNode !== buttonHost) buttonHost.append(buttons[name]);
+      }
+      for (const tool of dockTools) {
+        const host = touch ? dock : document.body;
+        if (tool.parentNode !== host) host.append(tool);
+      }
+      dock.hidden = !touch || !playing;
+    }
     const actions = document.createElement('div');
     actions.className = 'frontier-actions';
     const useBar = document.createElement('div');
@@ -55,7 +73,7 @@
     button('pick', pick);
     button('view', toggleView);
     button('backpack', openBackpack);
-    buttons.backpack.setAttribute('aria-keyshortcuts', 'Tab');
+    buttons.backpack.setAttribute('aria-keyshortcuts', 'O');
     buttons.backpack.setAttribute('aria-haspopup', 'dialog');
     const backpack = document.createElement('dialog');
     backpack.className = 'frontier-backpack';
@@ -136,6 +154,81 @@
     const currentMap = () => game.expedition?.active?.id || (game.qingyun?.active ? 'qingyun' : 'port');
     const mp = () => window.__mp;
     const getModels = () => models ||= window.createFrontierModels(THREE);
+    let wheelNext = null;
+    let wheelCurrent = null;
+    let wheelBusy = false;
+    let wheelDelta = 0;
+    let wheelAt = 0;
+
+    function availableWeapons() {
+      return rules.availableWeapons(inventory, currentMap());
+    }
+
+    function wheelBlocked() {
+      const unit = window.__mp?.soldier;
+      return game.game.state !== 'playing' || !player.alive || !player.enabled || !!insertion ||
+        backpack.open || game.sedan?.riding || window.__saltBoat?.riding || game.weapon?.stub ||
+        window.__SALT_FOCUS__?.active || game.roadSigns?.editing || !!document.querySelector('dialog[open]') ||
+        ['drone', 'hound'].includes(unit) ||
+        (input.ads && (game.weapon?.arsenalId || 'pac9') !== 'knife');
+    }
+
+    async function pumpWheelSwitch() {
+      try {
+        while (wheelNext) {
+          const target = wheelNext;
+          wheelNext = null;
+          if (wheelBlocked()) break;
+          const entry = availableWeapons().find(([, id]) => id === target);
+          if (!entry) continue;
+          wheelCurrent = target;
+          const equipped = await equipWeapon(entry[0]);
+          wheelCurrent = null;
+          if (!equipped) break;
+        }
+      } catch (error) {
+        console.warn('[frontier] weapon wheel switch failed', error);
+        wheelNext = null;
+        show(window.__SALT_I18N__.messages.arsenal.failed);
+      } finally {
+        wheelBusy = false;
+        wheelCurrent = null;
+      }
+    }
+
+    function cycleWeapon(direction) {
+      if (!direction || wheelBlocked()) return false;
+      const list = availableWeapons();
+      if (list.length < 2) return false;
+      const active = wheelNext || wheelCurrent || game.weapon?.arsenalId || 'pac9';
+      const next = rules.cycleWeapon(inventory, currentMap(), active, direction);
+      if (!next) return false;
+      wheelNext = next[1];
+      if (!wheelBusy) {
+        wheelBusy = true;
+        void pumpWheelSwitch();
+      }
+      return true;
+    }
+
+    function onWheel(event) {
+      if (!event.deltaY || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
+      if (wheelBlocked() || availableWeapons().length < 2) {
+        wheelDelta = 0;
+        return;
+      }
+      event.preventDefault();
+      const now = clock();
+      if (now - wheelAt > 240 || (wheelDelta < 0 && event.deltaY > 0) ||
+          (wheelDelta > 0 && event.deltaY < 0)) wheelDelta = 0;
+      wheelAt = now;
+      wheelDelta += event.deltaY;
+      const threshold = event.deltaMode === 0 ? 48 : 1;
+      if (Math.abs(wheelDelta) < threshold) return;
+      const direction = wheelDelta > 0 ? 1 : -1;
+      wheelDelta = 0;
+      cycleWeapon(direction);
+    }
 
     function show(text) {
       note = text;
@@ -226,14 +319,18 @@
 
     async function equipWeapon(kind) {
       const id = rules.weaponKinds[kind];
-      if (!inventory[kind] || !id || insertion || !player.alive || game.game.state !== 'playing') return;
+      if (!id || insertion || !player.alive || game.game.state !== 'playing' ||
+          !rules.canEquip(inventory, id, currentMap())) return false;
       const arsenal = window.SaltArsenal;
-      if (!arsenal) return;
+      if (!arsenal) return false;
       show(window.__SALT_I18N__.messages.arsenal.loading);
       if (await arsenal.equip(id)) {
         show(names[kind] + ' · ' + strings.equipped);
         mp()?.syncState();
-      } else show(window.__SALT_I18N__.messages.arsenal.failed);
+        return true;
+      }
+      show(window.__SALT_I18N__.messages.arsenal.failed);
+      return false;
     }
 
     function picked(kind) {
@@ -278,6 +375,7 @@
       for (const trail of throwables.splice(0)) effectRoot.remove(trail.mesh);
       for (const blast of blasts.splice(0)) { effectRoot.remove(blast.mesh); blast.mesh.material.dispose(); }
       ui.hidden = true;
+      dock.hidden = true;
     }
     function jump() {
       if (insertion?.phase !== 'plane') return;
@@ -389,6 +487,7 @@
       if (backpack.open || insertion || !player.alive || game.game.state !== 'playing' ||
           game.roadSigns?.editing || document.querySelector('dialog[open]') ||
           window.__SALT_FOCUS__?.active) return;
+      window.__mp?.closeRoster?.();
       backpackRelock = input.locked;
       backpack.showModal();
       input.setGameplay(false);
@@ -554,6 +653,7 @@
 
     function updateHud(inDustfall) {
       const touch = input.touch || coarsePointer.matches;
+      const inLunar = currentMap() === 'lunar';
       const phase = insertion?.phase;
       const message = phase === 'plane' ? strings.inPlane : phase === 'fall' ? strings.fall :
         phase === 'canopy' ? strings.canopy : clock() < noteUntil ? note : inDustfall && !weapons.some(([kind]) => inventory[kind]) ? (touch ? strings.unarmedTouch : strings.unarmed) : '';
@@ -561,11 +661,12 @@
       const pickText = nearest && (nearest.issue ? strings[nearest.issue] :
         shortcut(strings.pick.replace('{item}', names[nearest.entry.kind])));
       const playing = game.game.state === 'playing' && player.alive && !window.__SALT_FOCUS__?.active;
-      const cache = JSON.stringify([phase, message, pickText, inventory, inDustfall, thirdPerson,
+      const cache = JSON.stringify([phase, message, pickText, inventory, inDustfall, inLunar, thirdPerson, viewChosen,
         playing, touch, backpack.open, confirmingDiscard, game.weapon.arsenalId]);
       if (cache === latestActions) return;
       latestActions = cache;
-      ui.hidden = !playing || (!viewChosen && !backpack.open && !inDustfall && !Object.values(inventory).some(Boolean) && !message);
+      syncDock(touch, playing && !phase);
+      ui.hidden = !playing || (!viewChosen && !backpack.open && !inDustfall && !inLunar && !Object.values(inventory).some(Boolean) && !message);
       ui.classList.toggle('frontier-touch', touch);
       ui.classList.toggle('frontier-dropping', !!phase);
       state.textContent = phase === 'plane' && touch ? strings.inPlaneTouch : message;
@@ -573,18 +674,19 @@
       const activeKind = weapons.find(([, id]) => id === (game.weapon.arsenalId || 'pac9'))?.[0];
       equipment.textContent = [inventory[activeKind] && names[activeKind] + ' · ' + strings.equipped,
         inventory.helmet && names.helmet + ' ' + inventory.helmet,
-        inventory.vest && names.vest + ' ' + inventory.vest].filter(Boolean).join('  ·  ');
+        inventory.vest && names.vest + ' ' + inventory.vest,
+        !touch && availableWeapons().length > 1 && strings.wheelSwitch].filter(Boolean).join('  ·  ');
       equipment.hidden = !equipment.textContent || !!phase;
       buttons.jump.hidden = phase !== 'plane';
       buttons.jump.textContent = shortcut(strings.jump);
       buttons.pick.hidden = !pickText || !!phase;
       buttons.pick.textContent = pickText || '';
-      buttons.view.hidden = (!inDustfall && !viewChosen) || !!phase || !player.alive;
+      buttons.view.hidden = (!inDustfall && !inLunar && !viewChosen) || !!phase || !player.alive;
       buttons.view.textContent = shortcut(thirdPerson ? strings.switchFirst : strings.switchThird);
       const slots = rules.usedSlots(inventory);
       const space = slots + '/' + rules.capacity;
       buttons.backpack.hidden = !!phase || !player.alive || (!inDustfall && !Object.values(inventory).some(Boolean));
-      buttons.backpack.textContent = strings.backpack + ' ' + space + (touch ? '' : ' [Tab]');
+      buttons.backpack.textContent = strings.backpack + ' ' + space + (touch ? '' : ' [O]');
       if (backpack.open) {
         capacity.textContent = strings.capacity.replace('{space}', space);
         capacity.classList.toggle('frontier-bag-full', slots >= rules.capacity);
@@ -811,30 +913,37 @@
         }
         return;
       }
-      if (event.repeat || event.defaultPrevented || event.ctrlKey || event.altKey ||
+      if (event.repeat || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey ||
           event.target?.closest?.('input, textarea, [contenteditable], dialog') ||
           game.game.state !== 'playing' || window.__SALT_FOCUS__?.active) return;
-      if (event.code === 'Tab' && !event.shiftKey && !insertion &&
+      if (!['KeyO', 'Space', 'KeyF', 'KeyV'].includes(event.code) && !itemKeys[event.code]) return;
+      if (event.code === 'KeyO' && !insertion &&
           (currentMap() === rules.map || Object.values(inventory).some(Boolean)) &&
           !event.target?.closest?.('button, a, select, [tabindex]')) openBackpack();
       else if (event.code === 'Space' && insertion?.phase === 'plane') jump();
       else if (event.code === 'KeyF' && nearest) pick();
-      else if (event.code === 'KeyV' && !insertion && (viewChosen || currentMap() === rules.map)) toggleView();
+      else if (event.code === 'KeyV' && !insertion && (viewChosen || currentMap() === rules.map || currentMap() === 'lunar')) toggleView();
       else {
         const kind = itemKeys[event.code];
         if (!kind || !inventory[kind]) return;
         use(kind);
       }
       event.preventDefault();
+      if (event.code === 'KeyO') event.stopImmediatePropagation();
     }, { capture: true });
+    game.renderer?.domElement?.addEventListener('wheel', onWheel, { passive: false });
     return game.frontier = {
       begin, leave, onMessage, beginView, endView, rememberView, serverDamage: rawDamage,
+      registerDockTool(tool) { dockTools.push(tool); latestActions = ''; },
       get prefersThirdPerson() { return thirdPerson; },
       get renderingThirdPerson() { return thirdPersonFrame; },
       get backpackOpen() { return backpack.open; },
+      closeBackpack(relock = false) { closeBackpack(relock); },
       get airborne() { return !!insertion; },
       get equipmentFlags() { return rules.equipmentFlags(inventory); },
+      get availableWeaponIds() { return availableWeapons().map(([, id]) => id); },
       canEquipWeapon(id) { return rules.canEquip(inventory, id, currentMap()); },
+      switchWeapon(direction) { return cycleWeapon(direction); },
       get canFire() { return this.canEquipWeapon(game.weapon.arsenalId || 'pac9'); },
       update(dt, insertionDt = dt) {
         const inDustfall = currentMap() === rules.map;

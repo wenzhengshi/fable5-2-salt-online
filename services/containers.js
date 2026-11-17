@@ -17,6 +17,18 @@ const recover = input => {
   const password = canonical(input);
   return password ? hash(password) : '';
 };
+const amountOf = (value, maximum, fallback) => {
+  if (value === undefined || value === null || value === '' || value === 'all') return fallback;
+  if (!Number.isSafeInteger(value) || value < 1 || value > maximum) throw new Error('amount');
+  return value;
+};
+const canCarry = (bag, item, amount) => {
+  const next = bag[item] + amount;
+  if (!Number.isSafeInteger(next) || next > rules.limits[item]) return false;
+  if (!rules.consumables.includes(item)) return true;
+  const used = rules.consumables.reduce((total, kind) => total + (kind === item ? next : bag[kind] || 0), 0);
+  return used <= rules.capacity;
+};
 
 module.exports = function createContainers({ send, players, frontier, gold }) {
   const opened = new Map();
@@ -41,7 +53,10 @@ module.exports = function createContainers({ send, players, frontier, gold }) {
     if (!Object.hasOwn(maps, map)) return;
     const containers = Object.values(rows)
       .filter(row => row.map === map && planar(row.pos, player.pos) <= radius)
-      .map(({ id, color, pos, yaw, sign }) => ({ id, color, pos, yaw, sign, open: opened.has(id) }));
+      .map(({ id, color, pos, yaw, sign, gold }) => ({
+        id, color, pos, yaw, sign, gold: Number.isSafeInteger(gold) && gold > 0 ? gold : 0,
+        open: opened.has(id)
+      }));
     send(player.ws, { type: 'containerList', map, containers });
   }
   function broadcast(rows, ...points) {
@@ -118,15 +133,15 @@ module.exports = function createContainers({ send, players, frontier, gold }) {
       player.containerDraft = { hash: digest, map: mapOf(player), color: msg.color, point: msg.point, expires: now + 900000 };
       return reply({ password });
     }
-    if (!['create', 'move', 'sign', 'deposit', 'withdraw', 'locate', 'depositGold'].includes(action)) return reply({ error: 'unavailable' });
+    if (!['create', 'move', 'sign', 'deposit', 'withdraw', 'locate', 'depositGold', 'withdrawGold'].includes(action)) return reply({ error: 'unavailable' });
     if (action === 'locate') {
       if (!own) return reply({ error: 'password' });
       return reply({ location: { map: own.map, pos: own.pos } });
     }
     const placement = action === 'create' || action === 'move';
     const transfer = action === 'deposit' || action === 'withdraw';
-    const cash = action === 'depositGold';
-    let updated, previous, key, savedRows;
+    const cash = action === 'depositGold' || action === 'withdrawGold';
+    let updated, previous, key, savedRows, withdrawn = 0, moved = 0;
     try {
       frontier.containerTransaction(player, (current, bag, data) => {
         savedRows = current;
@@ -165,40 +180,70 @@ module.exports = function createContainers({ send, players, frontier, gold }) {
           const item = msg.item;
           if (!Object.hasOwn(rules.limits, item)) throw new Error('item');
           const count = updated.items[item] || 0;
-          const amount = action === 'deposit' ? (rules.consumables.includes(item) ? 1 : bag[item]) :
-            rules.consumables.includes(item) ? 1 : Math.min(count, rules.limits[item] - bag[item]);
+          const consumable = rules.consumables.includes(item);
+          let amount;
           if (action === 'deposit') {
-            if (!bag[item] || count + amount > 9999) throw new Error('item');
+            amount = amountOf(msg.amount, bag[item] || 0, consumable ? 1 : bag[item] || 0);
+            if (!Number.isSafeInteger(amount) || amount <= 0 || count + amount > 9999) throw new Error('item');
             bag[item] -= amount;
             updated.items[item] = count + amount;
           } else {
-            if (amount <= 0 || count < amount || rules.pickupIssue(bag, item)) throw new Error('item');
+            const room = rules.limits[item] - bag[item];
+            amount = amountOf(msg.amount, count, consumable ? 1 : Math.min(count, room));
+            if (!Number.isSafeInteger(amount) || amount <= 0 || amount > count || !canCarry(bag, item, amount)) {
+              throw new Error('amount');
+            }
             bag[item] += amount;
             updated.items[item] = count - amount;
             if (!updated.items[item]) delete updated.items[item];
           }
+          moved = amount;
         }
         if (cash) {
           if (!inside(player, updated)) throw new Error('inside');
-          const carried = data.gold?.carried;
-          const amount = carried?.[player.signOwner];
-          if (!amount) throw new Error('item');
-          updated.gold = (updated.gold || 0) + amount;
-          delete carried[player.signOwner];
+          const carried = (data.gold ||= {}).carried ||= {};
+          const carriedBalance = carried[player.signOwner] || 0;
+          const stored = Number(updated.gold) || 0;
+          if (!Number.isSafeInteger(carriedBalance) || !Number.isSafeInteger(stored)) throw new Error('amount');
+          if (action === 'depositGold') {
+            const amount = amountOf(msg.amount, carriedBalance, carriedBalance);
+            if (!Number.isSafeInteger(amount) || amount <= 0 || !Number.isSafeInteger(stored + amount)) {
+              throw new Error('amount');
+            }
+            updated.gold = stored + amount;
+            const remaining = carriedBalance - amount;
+            if (remaining) carried[player.signOwner] = remaining;
+            else delete carried[player.signOwner];
+            moved = amount;
+          } else {
+            const requested = amountOf(msg.amount, stored, stored);
+            if (!Number.isSafeInteger(requested) || requested <= 0 || requested > stored) throw new Error('amount');
+            if (!Number.isSafeInteger(carriedBalance + requested)) throw new Error('amount');
+            updated.gold = stored - requested;
+            if (!updated.gold) delete updated.gold;
+            carried[player.signOwner] = carriedBalance + requested;
+            withdrawn = requested;
+            moved = requested;
+          }
         }
         current[key] = updated;
         return transfer ? bag : null;
       }, now);
     } catch (error) {
-      const expected = ['exists', 'identity', 'password', 'range', 'position', 'inUse', 'text', 'closed', 'item', 'draft', 'inside'];
+      const expected = ['exists', 'identity', 'password', 'range', 'position', 'inUse', 'text', 'closed', 'item', 'draft', 'inside', 'amount'];
       return reply({ error: expected.includes(error.message) ? error.message : 'storage' });
     }
     registry = savedRows;
     if (cash) gold?.deposited(player, now);
-    if (transfer || cash) opened.get(updated.id).expires = now + 60000;
-    else broadcast(registry, previous, updated);
+    if (transfer || cash) {
+      const session = opened.get(updated.id);
+      if (session) session.expires = now + 60000;
+      broadcast(registry, updated);
+    } else broadcast(registry, previous, updated);
     if (action === 'create') player.containerDraft = null;
-    reply({ id: updated.id, items: transfer || cash ? updated.items : undefined, gold: transfer || cash ? updated.gold || 0 : undefined });
+    reply({ id: updated.id, items: transfer || cash ? updated.items : undefined,
+      gold: transfer || cash ? updated.gold || 0 : undefined,
+      withdrawn: withdrawn || undefined, moved: moved || undefined });
   }
   function tick(now) {
     for (const [id, session] of opened) {

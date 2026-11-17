@@ -416,10 +416,15 @@
       try { playbackContext = new AudioCtx(); } catch (fallbackErr) { return null; }
     }
     playbackGain = playbackContext.createGain();
-    playbackGain.gain.value = incomingMuted ? 0 : 1;
+    playbackGain.gain.value = incomingMuted || window.__saltLunarSilent ? 0 : 1;
     playbackGain.connect(playbackContext.destination);
     return playbackContext;
   }
+
+  window.addEventListener('saltline:lunar-mode', () => {
+    if (playbackGain) playbackGain.gain.value = incomingMuted || window.__saltLunarSilent ? 0 : 1;
+    pendingAudio.length = 0;
+  });
 
   function unlockAudio() {
     const ctx = ensurePlaybackGraph();
@@ -451,7 +456,7 @@
 
   function scheduleSamples(id, samples) {
     if (!playbackContext || playbackContext.state !== 'running' || !samples || !samples.length) return;
-    if (incomingMuted || mutedPeers.has(id)) return;
+    if (window.__saltLunarSilent || incomingMuted || mutedPeers.has(id)) return;
     const now = playbackContext.currentTime;
     let entry = speakers.get(id);
     if (!entry) {
@@ -492,7 +497,7 @@
     if (view.getUint8(0) !== VOICE_MAGIC) return;
     const speakerId = 'p' + view.getUint32(1, true);
     if (speakerId === myId) return;
-    if (incomingMuted || mutedPeers.has(speakerId)) return;
+    if (window.__saltLunarSilent || incomingMuted || mutedPeers.has(speakerId)) return;
 
     const pcmBytes = buffer.byteLength - 5;
     if (pcmBytes < 2 || pcmBytes % 2 !== 0) return;
@@ -516,7 +521,7 @@
   function toggleListenMute() {
     incomingMuted = !incomingMuted;
     try { localStorage.setItem(MUTE_KEY, incomingMuted ? '1' : '0'); } catch (err) { /* ignore */ }
-    if (playbackGain) playbackGain.gain.value = incomingMuted ? 0 : 1;
+    if (playbackGain) playbackGain.gain.value = incomingMuted || window.__saltLunarSilent ? 0 : 1;
     if (!incomingMuted) unlockAudio();
     renderVoice();
     toast(incomingMuted ? t('listenMutedToast') : t('listenUnmutedToast'));
@@ -562,7 +567,7 @@
       captureSink.gain.value = 0;
       capturePhase = 0;
       captureProcessor.onaudioprocess = (event) => {
-        if (!micEnabled || localMuted) {
+        if (!micEnabled || localMuted || window.__saltLunarSilent) {
           pcmQueue.length = 0;
           return;
         }
@@ -592,7 +597,7 @@
         const rms = Math.sqrt(sum / analyserData.length);
         const now = performance.now();
         if (!localMuted && rms > 0.045) lastSpokenAt = now;
-        const nowSpeaking = !localMuted && now - lastSpokenAt < 460;
+        const nowSpeaking = !window.__saltLunarSilent && !localMuted && now - lastSpokenAt < 460;
         el.mic.style.setProperty('--level', String(Math.min(1, rms * 14)));
         el.mic.classList.toggle('is-speaking', nowSpeaking);
         if (nowSpeaking !== speaking) sendVoiceState(nowSpeaking);

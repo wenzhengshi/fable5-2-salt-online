@@ -22,12 +22,23 @@
     radius: 360
   });
   const weaponKinds = Object.freeze(Object.fromEntries(Object.keys(arsenal).map(id => [id === 'pac9' ? 'rifle' : id, id])));
+  const weaponEntries = Object.freeze(Object.entries(weaponKinds).map(entry => Object.freeze(entry)));
   const limits = Object.freeze({ ...Object.fromEntries(Object.keys(weaponKinds).map(kind => [kind, 1])), helmet: 75, vest: 100, grenade: 4, drink: 4, medkit: 3, quiet: 3 });
   const consumables = ['grenade', 'drink', 'medkit', 'quiet'];
   const capacity = 8;
   function canEquip(inventory, id, mapId) {
     return id === 'pac9' ? mapId !== map || !!inventory.rifle :
       Object.hasOwn(weaponKinds, id) && id !== 'rifle' && !!inventory[id];
+  }
+  function availableWeapons(inventory, mapId) {
+    return weaponEntries.filter(([, id]) => canEquip(inventory, id, mapId));
+  }
+  function cycleWeapon(inventory, mapId, activeId, direction) {
+    const list = availableWeapons(inventory, mapId);
+    if (list.length < 2 || !direction) return null;
+    let index = list.findIndex(([, id]) => id === activeId);
+    if (index < 0) index = direction > 0 ? -1 : 0;
+    return list[(index + (direction > 0 ? 1 : -1) + list.length) % list.length];
   }
   const usedSlots = inventory => consumables.reduce((total, kind) => total + inventory[kind], 0);
   function pickupIssue(inventory, kind, used = usedSlots(inventory)) {
@@ -70,6 +81,6 @@
       point.x >= bounds.minX && point.x <= bounds.maxX && point.z >= bounds.minZ && point.z <= bounds.maxZ &&
       Math.abs(point.z - anchor.z) <= insertion.radius + 1 && point.y >= -5 && point.y <= 210;
   }
-  return Object.freeze({ map, offset, bounds, insertion, limits, loot, capacity, weaponKinds, canEquip, usedSlots, pickupIssue, normalize, collect, absorb, equipmentFlags, validLanding, consumables,
+  return Object.freeze({ map, offset, bounds, insertion, limits, loot, capacity, weaponKinds, canEquip, availableWeapons, cycleWeapon, usedSlots, pickupIssue, normalize, collect, absorb, equipmentFlags, validLanding, consumables,
     throwWindup: 350, quietRadius: 32, quietSeconds: 20, replenishMs: 45000, dropMinMs: 4500, dropMaxMs: 90000 });
 });

@@ -174,7 +174,7 @@ body.community-locked { overflow: hidden; }
 
 .community-dialog {
   position: relative;
-  width: min(780px, calc(100vw - 40px));
+  width: min(780px, calc(var(--vp-w, 100vw) - 40px));
   max-height: calc(100dvh - 40px);
   overflow: auto;
   border: 1px solid rgba(232, 228, 218, .24);

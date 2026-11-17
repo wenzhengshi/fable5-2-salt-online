@@ -65,7 +65,11 @@ const required = [
   'public/js/road-signs.js',
   'public/js/terrain-ray.js',
   'public/js/expedition-zones.js',
-  'public/js/expedition-portals.js'
+  'public/js/expedition-portals.js',
+  'public/js/sedan-rules.js',
+  'public/js/sedan-model.js',
+  'public/js/sedan.js',
+  'services/sedan.js'
 ];
 
 for (const relative of required) {

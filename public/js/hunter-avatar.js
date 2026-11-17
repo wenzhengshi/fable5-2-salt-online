@@ -23,9 +23,7 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       id: 'female',
       url: '/models/female-soldier.glb',
       height: 1.84,
-      // The female template faces the opposite local axis to the male model.
-      // Keep both characters pointing along the player's forward (-Z) axis.
-      yaw: 0,
+      yaw: Math.PI,
       tint: { hue: 0.58, sat: 0.92, light: 0.92, grey: 0.7, skin: '#d8a78f', hair: '#d8b56d' }
     }
   };
@@ -211,6 +209,15 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
     scene.position.y -= fitted.min.y;
     scene.rotation.y = config.yaw;
     scene.updateMatrixWorld(true);
+    const headMesh = scene.getObjectByName(config.id === 'female' ? 'Soldier_Head' : 'Swat_Head');
+    if (headMesh) {
+      const bounds = new THREE.Box3().setFromObject(headMesh, true);
+      if (!bounds.isEmpty()) scene.userData.frontierHead = {
+        center: bounds.getCenter(new THREE.Vector3()).toArray(),
+        size: bounds.getSize(new THREE.Vector3()).toArray(),
+        base: bounds.min.y
+      };
+    }
     scene.userData.hunterAvatar = true;
     scene.userData.soldierKind = config.id;
     return scene;
@@ -230,6 +237,7 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       this.fingers = { L: [], R: [] };
       this.weapon = createAvatarWeapon(model.userData.soldierKind, weaponTemplate);
       this.weaponBaseY = this.weapon.position.y;
+      this.weaponBasePitch = this.weapon.rotation.x;
       model.add(this.weapon);
 
       const lookup = new Map();
@@ -297,6 +305,10 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       };
       this.apply(this.idlePose);
       this.poseWeapon();
+      // Finger curl is constant in hand space. Keep that local pose for subsequent IK updates.
+      this.curlFingers('R', -1.10);
+      this.curlFingers('L', -1.15);
+      this.armsSettled = true;
     }
 
     normalize(value) {
@@ -379,7 +391,6 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       const lengths = this.armLengths[side];
       if (!upper || !lower || !hand || !lengths) return;
 
-      this.model.updateMatrixWorld(true);
       const shoulder = upper.getWorldPosition(new THREE.Vector3());
       const toward = target.clone().sub(shoulder);
       const maxReach = Math.max(0.05, lengths.upper + lengths.lower - 0.008);
@@ -453,7 +464,7 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       }
     }
 
-    poseWeapon() {
+    poseWeapon(gesture) {
       const anchors = this.weapon && this.weapon.userData && this.weapon.userData.anchors;
       if (!anchors) return;
       this.model.updateMatrixWorld(true);
@@ -471,14 +482,16 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       const down = new THREE.Vector3(0, -1, 0);
       const rightPole = rightPos.clone().addScaledVector(outward, 0.62).addScaledVector(down, 0.52).addScaledVector(forward, 0.1);
       const leftPole = leftPos.clone().addScaledVector(outward, -0.62).addScaledVector(down, 0.52).addScaledVector(forward, 0.1);
+      if (gesture) {
+        const target = this.model.parent.localToWorld(gesture.position.clone());
+        (gesture.kind === 'reload' ? left : right).lerp(target, gesture.blend);
+      }
       this.solveArm('R', right, rightPole);
       this.solveArm('L', left, leftPole);
       const muzzle = forward.lengthSq() > 1e-6 ? forward.normalize() : new THREE.Vector3(1, 0, 0);
       const up = down.clone().negate();
       this.aimHand('R', muzzle.clone().multiplyScalar(0.62).addScaledVector(up, 0.38));
       this.aimHand('L', muzzle.clone().multiplyScalar(0.72).addScaledVector(up, 0.28));
-      this.curlFingers('R', -1.10);
-      this.curlFingers('L', -1.15);
     }
 
     update(dt, data) {
@@ -490,6 +503,10 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       const swing = moving ? Math.sin(this.walkPhase) * (sprint ? 0.72 : 0.52) : 0;
       const breathe = Math.sin(this.idlePhase) * 0.018;
       const bob = moving ? Math.abs(Math.sin(this.walkPhase)) * (sprint ? 0.045 : 0.028) : breathe * 0.3;
+      this.model.position.y = this.baseY + bob;
+      const gesture = data?.gesture;
+      if (!moving && !gesture && this.armsSettled) return;
+      this.armsSettled = !moving && !gesture;
       const pose = {};
 
       for (const [name, steps] of Object.entries(this.idlePose)) pose[name] = steps.slice();
@@ -501,10 +518,22 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
         pose.Chest = [['y', 0.1 + breathe], ['x', 0.045]];
         pose.Head = [['y', 0.16 - breathe * 0.5]];
       }
+      if (gesture) {
+        const turn = gesture.kind === 'grenade' ? -gesture.tilt * .25 : 0;
+        pose.Chest = [['y', turn], ['x', gesture.kind === 'reload' ? .17 * gesture.blend : 0]];
+        if (gesture.kind === 'drink') pose.Head = [['x', -.18 * gesture.blend]];
+        if (gesture.kind === 'reload') pose.Head = [['x', .22 * gesture.blend]];
+      }
       this.apply(pose);
-      this.model.position.y = this.baseY + bob;
-      if (this.weapon) this.weapon.position.y = this.weaponBaseY;
-      this.poseWeapon();
+      if (this.weapon) {
+        this.weapon.position.y = this.weaponBaseY;
+        this.weapon.rotation.x = this.weaponBasePitch + (gesture?.kind === 'reload' ? -.30 * gesture.blend : 0);
+      }
+      this.poseWeapon(gesture);
+    }
+
+    actionHand(kind, out) {
+      return this.bones.get(kind === 'reload' ? 'Hand.L' : 'Hand.R')?.getWorldPosition(out);
     }
   }
 
@@ -558,7 +587,13 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
     model.userData.hunterAvatar = true;
     model.userData.soldierKind = templates.has(id) ? id : 'male';
     const rig = new HunterRig(model, pac9Template);
-    return { model, rig, weapon: rig.weapon, kind: model.userData.soldierKind };
+    return {
+      model, rig, weapon: rig.weapon, kind: model.userData.soldierKind,
+      armorAnchors: {
+        head: rig.bones.get('Head'), chest: rig.bones.get('Chest') || rig.bones.get('Torso'),
+        headBounds: model.userData.frontierHead
+      }
+    };
   }
 
   function whenReady(kind) {
@@ -575,6 +610,15 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
     soldiers: Object.keys(SOLDIERS),
     normalize: normalizeSoldier,
     whenReady,
+    async groundRifle() {
+      const template = await weaponLoad;
+      if (!template) return null;
+      const gun = template.clone(true);
+      for (const child of gun.children.slice()) {
+        if (/^(glove_|brass$)/i.test(child.name)) child.removeFromParent();
+      }
+      return gun;
+    },
     create,
     isReady(kind) { return templates.has(normalizeSoldier(kind)); }
   };

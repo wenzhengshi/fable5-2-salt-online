@@ -73,6 +73,7 @@
         y: a.y + (b.y - a.y) * k,
         z: a.z + (b.z - a.z) * k,
         yaw: yawA + delta * k,
+        armor: time < b.t ? a.armor : b.armor,
         t: time
       };
     }
@@ -110,6 +111,9 @@
   }
 
   function clearScene() {
+    // Detach the wearables before replay teardown traverses disposable scene graphics.
+    state.playback?.victimActor.armor?.dispose();
+    state.playback?.killerActor.armor?.dispose();
     if (state.scene) {
       for (const child of state.scene.children.slice()) {
         state.scene.remove(child);
@@ -296,10 +300,12 @@
       stride: 0
     };
 
+    let anchors;
     if (kind === 'hound') {
-      addBox(THREE, body, [0.52, 0.28, 1.02], [0, 0.57, 0], suit);
+      const chest = addBox(THREE, body, [0.52, 0.28, 1.02], [0, 0.57, 0], suit);
       addBox(THREE, body, [0.38, 0.15, 0.76], [0, 0.75, -0.02], trim);
       rig.head = addBox(THREE, body, [0.33, 0.24, 0.42], [0, 0.66, -0.62], suit);
+      anchors = { head: rig.head, chest, machineFallback: true };
       const sensor = new THREE.Mesh(new THREE.SphereGeometry(0.105, 12, 8), visor);
       sensor.position.set(0, 0.69, -0.84);
       body.add(sensor);
@@ -316,11 +322,12 @@
       antenna.position.set(0.17, 0.94, 0.22);
       body.add(antenna);
     } else if (kind === 'drone') {
-      addBox(THREE, body, [0.48, 0.18, 0.72], [0, 0.72, 0], suit);
+      const chest = addBox(THREE, body, [0.48, 0.18, 0.72], [0, 0.72, 0], suit);
       addBox(THREE, body, [0.34, 0.08, 0.54], [0, 0.82, 0], trim);
       const sensor = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 8), visor);
       sensor.position.set(0, 0.61, -0.2);
       body.add(sensor);
+      anchors = { head: sensor, chest, machineFallback: true };
       for (const sx of [-1, 1]) {
         for (const sz of [-1, 1]) {
           const arm = addBox(THREE, body, [0.46, 0.035, 0.045], [sx * 0.36, 0.76, sz * 0.28], dark);
@@ -333,8 +340,8 @@
       }
     } else {
       const slim = kind === 'female' ? 0.9 : 1;
-      addBox(THREE, body, [0.58 * slim, 0.68, 0.36], [0, 1.13, 0], suit);
-      addBox(THREE, body, [0.66 * slim, 0.39, 0.42], [0, 1.16, -0.01], trim);
+      const chest = addBox(THREE, body, [0.58 * slim, 0.68, 0.36], [0, 1.13, 0], suit);
+      const vest = addBox(THREE, body, [0.66 * slim, 0.39, 0.42], [0, 1.16, -0.01], trim);
       addBox(THREE, body, [0.34, 0.4, 0.18], [0, 1.16, 0.25], dark);
       rig.head = new THREE.Mesh(new THREE.SphereGeometry(0.205, 14, 10), suit);
       rig.head.position.set(0, 1.66, 0);
@@ -345,6 +352,7 @@
       );
       helmet.position.set(0, 1.69, 0);
       body.add(helmet);
+      anchors = { head: rig.head, chest, baseHelmet: helmet, baseVest: vest };
       addBox(THREE, body, [0.3, 0.075, 0.055], [0, 1.65, -0.19], visor);
 
       for (const sx of [-1, 1]) {
@@ -397,7 +405,8 @@
       group.add(label);
       rig.label = label;
     }
-    return { group, rig };
+    const armor = options.hasArmor ? window.SaltFrontierArmor?.mount(THREE, body, kind, anchors) : undefined;
+    return { group, rig, armor };
   }
 
   function createContainer(THREE, rng, center, groundY, blocked) {
@@ -650,6 +659,7 @@
 
     const victimActor = createOperator(THREE, {
       kind: data.victimKind || 'classic',
+      hasArmor: victimPoints.some(point => point.armor),
       color: data.victimColor || '#9fe8ff',
       label: data.victimLabel || '',
       role: data.victimRole || ''
@@ -660,6 +670,7 @@
 
     const killerActor = createOperator(THREE, {
       kind: data.killerKind || 'classic',
+      hasArmor: killerPoints.some(point => point.armor),
       color: data.killerColor || '#ff5a40',
       label: data.killerLabel || '',
       role: data.killerRole || ''
@@ -953,6 +964,8 @@
     playback.current = current;
     playback.victimPrevious = playback.victimCurrent || victimCurrent;
     playback.victimCurrent = victimCurrent;
+    playback.killerActor.armor?.update(current.armor);
+    playback.victimActor.armor?.update(victimCurrent.armor);
 
     playback.killerActor.group.position.set(
       current.x,

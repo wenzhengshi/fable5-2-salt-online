@@ -31,9 +31,10 @@
     let active = null;
     let environment = null;
     let lastLocalRespawn = null;
-    let returnLoad = null;
+    let returning = null;
     let lastRequest = -Infinity;
     const status = document.createElement('div');
+    status.id = 'expedition-portal-status';
     status.setAttribute('role', 'status');
     status.style.cssText = 'display:none;position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:12;padding:9px 16px;background:#101d27dc;color:#fff;font:600 14px sans-serif;pointer-events:none';
     document.body.append(status);
@@ -82,7 +83,9 @@
     function leave(position) {
       if (!active) return;
       const target = position || active.hub;
+      returning = null;
       clearPatrol();
+      game.frontier?.leave();
       active = null;
       environment = null;
       exitGate.visible = false;
@@ -287,7 +290,7 @@
     }
 
     let portRoots = [];
-    function enter(zone, world, position) {
+    function enter(zone, world, position, insert = true) {
       if (active !== zone) clearPatrol();
       portRoots = [game.render.sky, game.level.root, game.backdrop.root, game.ground.root,
         scene.getObjectByName('saltline-external-combat-zone'), scene.getObjectByName('saltline-boat-wake')];
@@ -303,13 +306,16 @@
       const exitY = ground(zone.exit.x, zone.exit.z, zone.landing.y + 3);
       exitPoint.y = exitY;
       exitGate.position.set(zone.exit.x, exitY + 1.45, zone.exit.z);
-      land({ ...position, y: ground(position.x, position.z, zone.landing.y + 2) }, Math.PI);
+      const point = { ...position, y: ground(position.x, position.z, zone.landing.y + 2) };
+      land(point, Math.PI);
+      if (zone.id === 'dustfall') game.frontier?.begin(world, point, insert);
     }
 
     let pending = null;
     game.events.on('game:state', event => {
       if (event.state === 'title' || event.state === 'intro') {
-        active = environment = pending = null;
+        game.frontier?.leave();
+        active = environment = pending = returning = null;
         patrols.clear();
         exitGate.visible = false;
         status.style.display = 'none';
@@ -321,7 +327,7 @@
       async prepareEntry(mapId) {
         const zone = maps[mapId];
         const world = await load(zone);
-        return position => enter(zone, world, position);
+        return (position, insert = true) => enter(zone, world, position, insert);
       },
       async restore(mapId, position, current) {
         const zone = zones.find(candidate => candidate.id === mapId);
@@ -330,7 +336,7 @@
         if (active?.id === mapId) return true;
         const world = await load(zone);
         if (!current() || !world) return false;
-        enter(zone, world, position);
+        enter(zone, world, position, false);
         return true;
       },
       spawn(point) {
@@ -366,7 +372,7 @@
         const playing = game.game.state === 'playing' && player.alive;
         const inHub = !!game.qingyun?.active;
         if (playing && active) updatePatrol(dt);
-        const canUse = playing && !window.__saltBoat?.riding && (inHub || active);
+        const canUse = playing && !window.__saltBoat?.riding && !game.sedan?.riding && (inHub || active);
         for (const gate of gates.values()) {
           gate.visible = playing && !active && inHub;
           if (gate.visible) gate.children[1].material.uniforms.time.value = game.time.t;
@@ -376,28 +382,51 @@
         if (!canUse || game.time.t - lastRequest < 1.2) return;
         const mp = window.__mp;
         if (active) {
-          if (!near(player.pos, exitPoint)) {
+          if (!near(player.pos, exitPoint) && !returning?.sentAt) {
+            returning = null;
             status.style.display = 'none';
             return;
           }
-          if (!game.qingyun.collision) {
-            if (!returnLoad) {
-              status.textContent = t('expedition.loading', { map: t('deployment.qingyun') });
-              status.style.display = 'block';
-              returnLoad = game.qingyun.preload({ warmup: false }).catch(error => {
-                lastRequest = game.time.t;
-                if (active) {
-                  status.textContent = t('expedition.loadFailed');
-                  status.style.display = 'block';
-                }
-                console.warn('[expedition] Qingyun return load failed', error);
-              }).finally(() => { returnLoad = null; });
+          const now = performance.now();
+          if (!returning) {
+            returning = { since: now, loading: false, sentAt: 0 };
+            status.textContent = t('expedition.loading', { map: t('deployment.qingyun') });
+            status.style.display = 'block';
+            return;
+          }
+          const attempt = returning;
+          if (attempt.sentAt) {
+            if (now - attempt.sentAt >= 4500) {
+              returning = null;
+              lastRequest = game.time.t;
+              status.textContent = t('expedition.loadFailed');
             }
             return;
           }
-          lastRequest = game.time.t;
-          if (mp?.connected) { mp.syncState(); mp.send({ type: 'mapReturn' }); }
-          else leave();
+          // Paint the notice before starting resource work, including on a cached return.
+          if (now - attempt.since < 120) return;
+          if (!game.qingyun.collision) {
+            if (!attempt.loading) {
+              attempt.loading = true;
+              game.qingyun.preload({ warmup: false }).catch(error => {
+                if (returning !== attempt) return;
+                returning = null;
+                lastRequest = game.time.t;
+                status.textContent = t('expedition.loadFailed');
+                console.warn('[expedition] Qingyun return load failed', error);
+              });
+            }
+            return;
+          }
+          if (mp?.connected) {
+            mp.syncState();
+            if (mp.send({ type: 'mapReturn' })) attempt.sentAt = now;
+            else {
+              returning = null;
+              lastRequest = game.time.t;
+              status.textContent = t('expedition.loadFailed');
+            }
+          } else leave();
           return;
         }
         const zone = zones.find(item => near(player.pos, item.gate));
@@ -456,16 +485,20 @@
           actorCamera.projectionMatrix.copy(localCamera.projectionMatrix);
           actorCamera.projectionMatrixInverse.copy(localCamera.projectionMatrixInverse);
           actorCamera.updateMatrixWorld(true);
-          scene.updateMatrixWorld();
+          // Hidden port scenery is not drawn on this map. Avoid walking that entire subtree.
+          scene.updateWorldMatrix(false, false);
+          for (const root of scene.children) if (root.visible) root.updateMatrixWorld(true);
           scene.matrixWorldAutoUpdate = false;
           renderer.render(scene, actorCamera);
-          renderer.clearDepth();
-          camera.updateMatrixWorld(true);
-          viewCamera.matrixAutoUpdate = false;
-          viewCamera.matrixWorldAutoUpdate = false;
-          viewCamera.matrixWorld.copy(camera.matrixWorld);
-          viewCamera.matrixWorldInverse.copy(camera.matrixWorldInverse);
-          renderer.render(scene, viewCamera);
+          if (!game.frontier?.renderingThirdPerson) {
+            renderer.clearDepth();
+            camera.updateMatrixWorld(true);
+            viewCamera.matrixAutoUpdate = false;
+            viewCamera.matrixWorldAutoUpdate = false;
+            viewCamera.matrixWorld.copy(camera.matrixWorld);
+            viewCamera.matrixWorldInverse.copy(camera.matrixWorldInverse);
+            renderer.render(scene, viewCamera);
+          }
         } finally {
           scene.matrixWorldAutoUpdate = matrices;
           scene.fog = fog;

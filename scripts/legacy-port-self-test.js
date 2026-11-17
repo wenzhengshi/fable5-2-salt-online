@@ -62,7 +62,9 @@ assert.match(client, /snapshotTrails\.clear\(\)/, '断线时必须清空快照�
 assert.match(client, /window\.SaltFlightCollision/, '无人机必须接入飞行碰撞模块');
 assert.match(client, /resolved\.blockedUp \|\| resolved\.blockedDown/, '飞行单位必须处理顶部与底部碰撞');
 assert.match(client, /large-ship-flight-guard/, '大船可视模型必须生成整船飞行碰撞包络');
-assert.match(client, /FLIGHT_AIR_WALL = Object\.freeze/, '无人机必须恢复旧版空气墙');
+const { AIR_WALL } = require('../public/js/flight-collision');
+assert.deepEqual(AIR_WALL, { minX: -40, maxX: 40, minZ: -30, maxZ: 30, padding: 0.4 }, '无人机必须保留旧版空气墙');
+assert.match(client, /AIR_WALL: FLIGHT_AIR_WALL/, '客户端必须复用共享空气墙');
 assert.match(client, /clampToBounds\(player\.pos, FLIGHT_AIR_WALL/, '空气墙必须限制无人机水平位置');
 assert.match(client, /state === 'playing' \|\| state === 'paused'/, '聊天或暂停时玩家必须保持在线可见');
 assert.match(client, /!document\.hidden/, '页面切到后台时玩家仍应按现有逻辑隐藏');

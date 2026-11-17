@@ -237,6 +237,11 @@
 | `boatLeave` | 无 | 请求下船；仅允许船速低于 2.4 米/秒，且船位于撤离码头或外海平台附近 |
 | `boatPose` | `pos`, `heading`, `speed` | 舵手以不超过 20 Hz 的频率同步船只坐标、朝向和速度；服务端校验舵手身份、单步位移和海面半径 |
 | `boatInvite` | 无 | 舵手向全服发送船只集合广播，冷却 2200 ms |
+| `sedanBoard` | 无 | 请求登上共享轿车；仅允许存活、未上船、未处于专注模式且靠近轿车的玩家，车内满员或车速超过 1.5 米/秒时会拒绝 |
+| `sedanLeave` | `index` | 任意乘客请求从指定车门下车；车速不得超过 1.5 米/秒，`index` 为服务端确认的安全落点序号 |
+| `sedanPose` | `revision`, `pose{x,y,z,heading,speed}` | 驾驶席约每 85 ms 同步一次轿车坐标、朝向与速度；服务端最小接收间隔 45 ms，并校验驾驶资格、地图边界、最高 15 米/秒以及单帧位移 |
+| `sedanPortal` | `revision`, `destination` | 轿车进入传送门后请求跨地图行驶；服务端校验车门位置、目标地图与 1800 ms 冷却后广播 `sedanTravel` |
+| `sedanReady` | `revision` | 乘客完成目标地图加载后由驾驶席确认，服务端恢复接收 `sedanPose` |
 | `qingyunEnter` | 无 | 请求穿过港口时空隧道进入青云宗；仅允许存活、未上船且未处于青云宗或传送门地图的玩家在隧道口附近发送 |
 | `qingyunReturn` | 无 | 请求从青云宗返回港口；仅允许存活玩家在任一回港门附近发送 |
 | `qingyunLeave` | 无 | 部署或重连流程用于清理青云状态，并把玩家放回出生点 |
@@ -249,7 +254,7 @@
 | `focusEnd` | 无 | 手动 30 分钟或自动 20 分钟到期后请求结束只读观战并恢复出生；未到期时返回 `focusState.denied: true` |
 | `ping` | `t` | 延迟探测，服务端回 `pong` |
 
-专注锁定期间，`state`、`soldier`、`spawns`、`chat`、`voiceState`、`rename`、`shot`、`hit`、`died`、`respawn`、`boatBoard`、`boatLeave`、`boatPose`、`boatInvite`、`qingyunEnter`、`qingyunReturn`、`qingyunLeave`、`mapEnter`、`mapReturn`、`mapLeave` 均被服务端拒绝；只允许 `join`、`focusEnd` 与 `ping`。二进制语音帧同样不会转发。
+专注锁定期间，`state`、`soldier`、`spawns`、`chat`、`voiceState`、`rename`、`shot`、`hit`、`died`、`respawn`、`boatBoard`、`boatLeave`、`boatPose`、`boatInvite`、`sedanBoard`、`sedanLeave`、`sedanPose`、`sedanPortal`、`sedanReady`、`qingyunEnter`、`qingyunReturn`、`qingyunLeave`、`mapEnter`、`mapReturn`、`mapLeave` 均被服务端拒绝；只允许 `join`、`focusEnd` 与 `ping`。二进制语音帧同样不会转发。
 
 专注观战的切换目标完全在客户端完成：从最新 `snapshot.players` 中筛选同一地图内可见、存活的玩家，支持上一位 / 下一位按钮、目标列表点击与键盘 `ArrowLeft` / `ArrowRight`。切换不会发送新的 WebSocket 消息，也不会改变服务端专注锁定或专注记录；手动目标离开或阵亡后，客户端自动回退到 9 秒轮播。
 专注结束时，客户端会恢复进入专注前的战局状态；若从暂停菜单进入，会自动继续行动并同步 HUD、输入和第一人称镜头。即使本地超时兜底先结束观战层，后续到达的 `focusState.ended` 复活点仍会写入本地玩家位置，不需要刷新页面。
@@ -269,12 +274,14 @@
 | `soldierAck` | `soldier` | 操控单位已生效 |
 | `soldierState` | `id`, `soldier` | 某位在线玩家的操控单位发生变化；客户端据此实时替换远端模型 |
 | `nameDenied` | `reason` | `filtered`（敏感词）或 `invalid`（空代号）；改代号失败时原代号不变 |
-| `snapshot` | `t`, `online`, `players[]`, `roster[]`, `voice[]`, `boat`, `you` | 10 Hz 状态帧；`players[]` 每项含 `x,y,z,yaw,pitch,hp,moving,sprint,shield,soldier`，`roster[]` 每项含 `soldier`、`focused`、`focusUntil`、`focusKind` 与 `focus{active,until,remainingMs,kind,durationMs,trigger}`，`voice[]` 只包含已开麦玩家，`boat` 为共享撤离船状态，`you` 含 `active`、`focusUntil`、`focusKind` 与 `focusDurationMs` |
+| `snapshot` | `t`, `online`, `players[]`, `roster[]`, `voice[]`, `boat`, `sedan`, `you` | 10 Hz 状态帧；`players[]` 每项含 `x,y,z,yaw,pitch,hp,moving,sprint,shield,soldier,carSeat`，`roster[]` 每项含 `soldier`、`focused`、`focusUntil`、`focusKind` 与 `focus{active,until,remainingMs,kind,durationMs,trigger}`，`voice[]` 只包含已开麦玩家，`boat` 为共享撤离船状态，`sedan` 为共享轿车状态（含四个座位与当前玩家座位），跨地图玩家为 `null`，`you` 含 `active`、`focusUntil`、`focusKind` 与 `focusDurationMs` |
 | `boatAck` | `aboard`, `seat`, `pos`, `boat` | 登船或下船确认；登船时含座位，下船时含安全落点 |
 | `boatDenied` | `reason` | 船只操作拒绝；`range`、`full`、`helm`、`moving`、`landing`、`notAboard`、`rate`、`helmOnly` 或 `unavailable` |
 | `boatState` | `boat` | 船只成员或状态变化；`boat.seats` 固定为四个槽位，空位为 `null` |
 | `boatInvite` | `from`, `boat`, `at` | 舵手发起全服集合；`from` 为玩家公开信息，`boat` 含当前坐标与容量 |
 | `boatInviteSent` | `boat` | 集合邀请已成功广播给其他在线玩家 |
+| `sedanResult` | `reason`, `position`, `car` | 轿车操作结果；`reason` 为 `board`、`leave`、`full` 或 `moving`，成功下车时 `position` 为安全落点 |
+| `sedanTravel` | `car` | 轿车跨地图成功；客户端预载目标地图并按服务端轿车状态重新落位 |
 | `qingyunEntered` | `pos` | 已通过服务端校验进入青云宗；`pos` 为服务器指定的落点 |
 | `qingyunReturned` | `pos` | 已从青云宗返回港口；`pos` 为港口回程落点 |
 | `mapEntered` | `map`, `pos` | 已从青云宗进入传送门地图；`map` 为地图 ID，`pos` 为服务器指定的落点 |
@@ -309,7 +316,7 @@
 - `replay.windowMs`：回放窗口，默认 `4500`
 - `replay.victim` / `replay.killer`：双方玩家的 `id`、`name`、`color`、`soldier`
 - `replay.distance` / `replay.bearing`：服务端计算的击杀距离（米）与方位角（度）
-- `replay.victimTrack` / `replay.killerTrack`：紧凑轨迹数组，每项为 `[dt, x, y, z, yaw, pitch]`；`dt` 是相对 `killAt` 的毫秒偏移（负数表示击杀前）
+- `replay.victimTrack` / `replay.killerTrack`：紧凑轨迹数组，每项为 `[dt, x, y, z, yaw, pitch, armor]`；`armor` 的位 1 表示头盔、位 2 表示防弹衣，旧轨迹省略时按 0 处理。`dt` 是相对 `killAt` 的毫秒偏移（负数表示击杀前）
 - `replay.shots`：击杀者在窗口内的真实射击，每项为 `[dt, originX, originY, originZ, dirX, dirY, dirZ]`
 - `replay.hits`：被击杀者在窗口内收到的伤害，每项为 `[dt, damage, hpAfter, killed, attackerId]`
 

@@ -287,6 +287,7 @@
 
   function clearPreviewModel() {
     if (!state.pivot || !state.current) return;
+    state.current.armor?.dispose();
     state.pivot.remove(state.current.model);
     if (typeof state.current.dispose === 'function') state.current.dispose();
     state.current = null;
@@ -312,6 +313,12 @@
     }
     state.current = made;
     state.pivot.add(made.model);
+    if (made.armorAnchors) {
+      const sameSize = unit === 'classic' || isMachine(unit) ? made.model.scale.x : 1;
+      made.armor = window.SaltFrontierArmor?.mount(window.__G.THREE, state.pivot,
+        made.kind || unit, made.armorAnchors, sameSize);
+      made.armor?.update(window.__G.frontier?.equipmentFlags);
+    }
     overlay.dataset.previewKind = made.kind || unit;
     el.stageLoading.hidden = true;
     setModelState(t('ready'));
@@ -335,7 +342,10 @@
         : previewYaw + Math.sin(state.elapsed * 0.34) * 0.16;
     }
     if (state.current && state.current.rig) {
-      try { state.current.rig.update(dt, { moving: false }); } catch (err) { /* ignore */ }
+      try {
+        state.current.rig.update(dt, { moving: false });
+        state.current.armor?.update(window.__G.frontier?.equipmentFlags);
+      } catch (err) { /* ignore */ }
     }
     try { state.renderer.render(state.scene, state.camera); } catch (err) { /* ignore */ }
     state.raf = window.requestAnimationFrame(renderFrame);

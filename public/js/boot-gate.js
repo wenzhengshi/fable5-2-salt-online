@@ -21,6 +21,14 @@
     'qingyun-collision.js',
     'qingyun-portal.js',
     'map-select.js',
+    'arsenal-rules.js',
+    'frontier-rules.js',
+    'frontier-models.js',
+    'frontier-armor.js',
+    'frontier.js',
+    'sedan-rules.js',
+    'sedan-model.js',
+    'sedan.js',
     'game.bundle.js',
     'flight-collision.js',
     'ammo.js',
@@ -36,6 +44,7 @@
   ];
   const MODULE_SCRIPTS = [
     'hunter-avatar.js',
+    'arsenal.js',
     'unit-models.js',
     'classic-avatar.js',
     'soldier-select.js'

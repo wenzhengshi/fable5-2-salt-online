@@ -1,0 +1,162 @@
+.frontier {
+  position: absolute;
+  z-index: 5;
+  top: max(calc(118px + var(--sat)), 18%);
+  left: 50%;
+  width: min(90%, 530px);
+  transform: translateX(-50%);
+  color: #fff0d7;
+  text-align: center;
+  pointer-events: none;
+  font: 600 13px/1.35 var(--f-label);
+  text-shadow: 0 1px 3px #000;
+}
+.frontier[hidden], .frontier [hidden], .menu[data-screen="paused"] ~ .frontier,
+body:has(.menu[data-screen="paused"]) .frontier,
+body:has(.menu[data-screen="title"]) .frontier { display: none; }
+.frontier-state, .frontier-equipment {
+  width: fit-content;
+  margin: 0 auto 5px;
+  padding: 4px 9px;
+  background: #14110bea;
+  border-left: 2px solid #edab65;
+}
+.frontier-equipment { font-size: 12px; color: #ead4b8; border-color: #9eaa89; }
+.frontier-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.frontier-actions button {
+  min-height: 30px;
+  padding: 3px 7px;
+  background: #15130ee8;
+  border: 1px solid #c3a382;
+  border-radius: 3px;
+  color: #ffe9ce;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.frontier-dropping .frontier-actions button {
+  min-height: 42px;
+  padding: 4px 16px;
+  color: #160c02;
+  background: #ffb451;
+  text-shadow: none;
+}
+@media (max-width: 800px), (pointer: coarse) {
+  .frontier {
+    position: fixed;
+    top: max(calc(84px + var(--sat)), 17%);
+    width: min(62%, 500px);
+    font-size: 11px;
+  }
+  .frontier-actions button { min-height: 35px; }
+  .frontier-dropping { top: max(calc(77px + var(--sat)), 20%); }
+}
+
+.hud.frontier-unarmed :is(.h-ammo, .h-cross) { visibility: hidden; }
+body:has(.menu[data-screen="dead"]) .frontier { display: none; }
+
+.frontier-usebar {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.frontier-usebar button {
+  min-height: 34px;
+  padding: 3px 8px;
+  background: #211b12f2;
+  border: 1px solid #c3a382;
+  border-radius: 3px;
+  color: #ffe9ce;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.frontier-usebar button:disabled {
+  opacity: .53;
+  cursor: default;
+  pointer-events: none;
+}
+@media (pointer: coarse) {
+  .frontier-usebar button { min-height: 40px; }
+}
+
+.frontier-touch .frontier-actions button {
+  min-height: 44px;
+  padding-inline: 8px;
+  touch-action: manipulation;
+}
+.frontier-touch .frontier-usebar { display: none; }
+
+.frontier-backpack {
+  position: fixed;
+  width: min(460px, calc(100% - var(--sal) - var(--sar) - 24px));
+  max-height: calc(100% - var(--sat) - var(--sab) - 24px);
+  padding: 14px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  pointer-events: auto;
+  text-align: left;
+  color: #ffe9ce;
+  background: #16130f;
+  border: 1px solid #796344;
+  border-top: 3px solid #ffb451;
+  box-shadow: 0 12px 50px #0009;
+  font: 600 15px/1.4 var(--f-label);
+}
+.frontier-backpack::backdrop { background: #0008; }
+.frontier-backpack header, .frontier-backpack li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.frontier-backpack h2 { margin: 0; font-size: 21px; }
+.frontier-backpack p { margin: 8px 0; }
+.frontier-backpack ul { margin: 0; padding: 0; list-style: none; }
+.frontier-backpack li { padding: 4px 0; border-top: 1px solid #ffffff24; }
+.frontier-backpack li span { flex: 1; }
+.frontier-backpack button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 4px 8px;
+  border: 1px solid #796344;
+  border-radius: 3px;
+  background: #2b2318;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.frontier-backpack button:focus-visible { outline: 2px solid #ffcf83; }
+.frontier-bag-full, .frontier-bag-status { color: #ffb451; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .frontier-touch { top: calc(74px + var(--sat)); }
+  .frontier-backpack { padding: 8px 12px; }
+}
+
+.sedan-hud {
+  position: fixed;
+  top: max(22%, calc(env(safe-area-inset-top) + 45px));
+  left: 50%;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  max-width: calc(100vw - 24px);
+  transform: translateX(-50%);
+  color: #f4ecd8;
+  font: 700 .81rem system-ui, sans-serif;
+}
+.sedan-hud[hidden], .sedan-hud button[hidden] { display: none; }
+.sedan-hud span, .sedan-hud button {
+  padding: .48rem .65rem;
+  border: 1px solid #af8a52;
+  background: #15120eeb;
+}
+.sedan-hud span:empty { display: none; }
+.sedan-hud button { color: #ffb74d; cursor: pointer; white-space: nowrap; touch-action: manipulation; }
+@media (pointer: coarse) {
+  .sedan-hud button { min-height: 44px; }
+}

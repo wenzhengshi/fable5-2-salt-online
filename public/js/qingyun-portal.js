@@ -251,19 +251,23 @@
           actorCamera.projectionMatrixInverse.copy(renderCamera.projectionMatrixInverse);
           actorCamera.updateMatrixWorld(true);
           renderer.setRenderTarget(target);
-          scene.updateMatrixWorld();
+          // Hidden port scenery is not drawn on this map. Avoid walking that entire subtree.
+          scene.updateWorldMatrix(false, false);
+          for (const root of scene.children) if (root.visible) root.updateMatrixWorld(true);
           scene.matrixWorldAutoUpdate = false;
           renderer.render(scene, actorCamera);
         });
         renderer.setRenderTarget(null);
-        renderer.clearDepth();
-        renderer.toneMapping = toneMapping;
-        camera.updateMatrixWorld(true);
-        viewCamera.matrixAutoUpdate = false;
-        viewCamera.matrixWorldAutoUpdate = false;
-        viewCamera.matrixWorld.copy(camera.matrixWorld);
-        viewCamera.matrixWorldInverse.copy(camera.matrixWorldInverse);
-        renderer.render(scene, viewCamera);
+        if (!game.frontier?.renderingThirdPerson) {
+          renderer.toneMapping = toneMapping;
+          renderer.clearDepth();
+          camera.updateMatrixWorld(true);
+          viewCamera.matrixAutoUpdate = false;
+          viewCamera.matrixWorldAutoUpdate = false;
+          viewCamera.matrixWorld.copy(camera.matrixWorld);
+          viewCamera.matrixWorldInverse.copy(camera.matrixWorldInverse);
+          renderer.render(scene, viewCamera);
+        }
       } finally {
         scene.matrixWorldAutoUpdate = matrices;
         renderer.toneMapping = toneMapping;
@@ -317,7 +321,7 @@
         }
         if (active) {
           updateCombatants(dt);
-          if (!zone.atReturnGate(player.pos) || game.time.t - lastRequest < .8) return;
+          if (game.sedan?.riding || !zone.atReturnGate(player.pos) || game.time.t - lastRequest < .8) return;
           lastRequest = game.time.t;
           const mp = window.__mp;
           if (mp?.connected) {
@@ -333,7 +337,7 @@
         const inside = zone.atGate(player.pos);
         crossing = inside || (crossing && distance < 2.5);
         label.material.map = !map && preparing && distance < 5 ? connectingTitle : gateTitle;
-        if (!crossing || !map || game.time.t - lastRequest < .8) return;
+        if (game.sedan?.riding || !crossing || !map || game.time.t - lastRequest < .8) return;
         const mp = window.__mp;
         if (mp?.connected) {
           lastRequest = game.time.t;

@@ -29,7 +29,7 @@ function fighter(player) {
   };
 }
 
-function pushSample(player, at, force) {
+function pushSample(player, at, force, armor = 0) {
   if (!player || player.id == null || !player.pos) return null;
   const now = Number(at) || Date.now();
   const id = String(player.id);
@@ -46,22 +46,24 @@ function pushSample(player, at, force) {
     y: round(player.pos.y),
     z: round(player.pos.z),
     yaw: round(player.yaw),
-    pitch: round(player.pitch)
+    pitch: round(player.pitch),
+    armor: armor & 3
   };
-  list.push(sample);
+  if (last?.t === now) list[list.length - 1] = sample;
+  else list.push(sample);
   while (list.length && (now - list[0].t > RETENTION_MS || list.length > MAX_SAMPLES)) {
     list.shift();
   }
   return sample;
 }
 
-function recordPlayer(player, at) {
-  pushSample(player, at, false);
+function recordPlayer(player, at, armor = 0, force = false) {
+  pushSample(player, at, force, armor);
 }
 
-function recordPlayers(players, at) {
+function recordPlayers(players, at, armorFor = () => 0) {
   if (!players) return;
-  for (const player of players) recordPlayer(player, at);
+  for (const player of players) recordPlayer(player, at, armorFor(player));
 }
 
 function trimEvents(list, now, max) {
@@ -103,19 +105,19 @@ function recordHit(attacker, victim, damage, hpAfter, killed, at) {
 function trackFor(player, from, now) {
   if (!player) return [];
   const list = histories.get(String(player.id)) || [];
-  return list
-    .filter((sample) => sample.t >= from && sample.t <= now + 20)
-    .map((sample) => [
-      Math.round(sample.t - now),
-      sample.x,
-      sample.y,
-      sample.z,
-      sample.yaw,
-      sample.pitch
+  let first = list.findIndex(sample => sample.t >= from);
+  if (first === -1) return [];
+  // Carry equipment from the sample immediately before the window into its first frame.
+  if (first > 0 && list[first].t > from) first--;
+  return list.slice(first)
+    .filter(sample => sample.t <= now)
+    .map(sample => [
+      Math.round(Math.max(from, sample.t) - now),
+      sample.x, sample.y, sample.z, sample.yaw, sample.pitch, sample.armor
     ]);
 }
 
-function ensureTrack(track, player, from, now) {
+function ensureTrack(track, player, from, now, armor) {
   const output = track.slice();
   if (!output.length) {
     const x = round(player.pos.x);
@@ -123,8 +125,8 @@ function ensureTrack(track, player, from, now) {
     const z = round(player.pos.z);
     const yaw = round(player.yaw);
     const pitch = round(player.pitch);
-    output.push([Math.round(from - now), x, y, z, yaw, pitch]);
-    output.push([0, x, y, z, yaw, pitch]);
+    output.push([Math.round(from - now), x, y, z, yaw, pitch, armor]);
+    output.push([0, x, y, z, yaw, pitch, armor]);
   } else if (output.length === 1) {
     output.unshift([Math.round(from - now)].concat(output[0].slice(1)));
   }
@@ -136,7 +138,8 @@ function ensureTrack(track, player, from, now) {
       round(player.pos.y),
       round(player.pos.z),
       round(player.yaw),
-      round(player.pitch)
+      round(player.pitch),
+      armor
     ]);
   }
   return output;
@@ -146,16 +149,18 @@ function bearingTo(from, to) {
   return (Math.atan2(to.x - from.x, -(to.z - from.z)) * 180 / Math.PI + 360) % 360;
 }
 
-function build(victim, killer, at) {
+function build(victim, killer, at, armorFor = () => 0) {
   if (!victim || killer == null) return null;
   const now = Number(at) || Date.now();
   const from = now - WINDOW_MS;
 
-  pushSample(victim, now, true);
-  pushSample(killer, now, true);
+  const victimArmor = armorFor(victim);
+  const killerArmor = armorFor(killer);
+  pushSample(victim, now, true, victimArmor);
+  pushSample(killer, now, true, killerArmor);
 
-  const victimTrack = ensureTrack(trackFor(victim, from, now), victim, from, now);
-  const killerTrack = ensureTrack(trackFor(killer, from, now), killer, from, now);
+  const victimTrack = ensureTrack(trackFor(victim, from, now), victim, from, now, victimArmor);
+  const killerTrack = ensureTrack(trackFor(killer, from, now), killer, from, now, killerArmor);
   const victimLast = victimTrack[victimTrack.length - 1];
   const killerLast = killerTrack[killerTrack.length - 1];
   const distance = Math.round(Math.hypot(

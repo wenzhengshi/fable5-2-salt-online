@@ -43,7 +43,7 @@
     const copy = document.createElement('span');
     copy.className = 'salt-repo-copy';
     const label = document.createElement('b');
-    label.textContent = t('repo');
+    label.textContent = variant === 'title' ? 'GitHub' : t('repo');
     const url = document.createElement('em');
     url.textContent = REPO_URL;
     url.dir = 'ltr';
@@ -75,7 +75,7 @@
     const copy = document.createElement('span');
     copy.className = 'salt-repo-copy';
     const label = document.createElement('b');
-    label.textContent = t('appMarket');
+    label.textContent = variant === 'title' ? window.__SALT_I18N__.messages.deployment.android : t('appMarket');
     const meta = document.createElement('em');
     meta.textContent = t('appMarketMeta');
     copy.append(label, meta);
@@ -95,8 +95,8 @@
       const mount = document.createElement('div');
       mount.className = 'mp-title-repo';
       mount.setAttribute('data-mp-repo', 'title');
-      mount.append(createRepoLink('title'), createMarketLink('title'));
-      titleMain.appendChild(mount);
+      mount.append(createMarketLink('title'), createRepoLink('title'));
+      (titleMain.querySelector('.home-links') || titleMain).appendChild(mount);
     }
 
     const paused = document.querySelector('.m-screen[data-s="paused"]');
@@ -189,6 +189,7 @@
   let stateTimer = 0;
   let lastStateAt = 0;
   let everJoined = false;
+  const pendingFrontier = new Map();
   let pendingRename = null;
 
   const respawn = {
@@ -394,6 +395,7 @@
 
   function setConnection(state) {
     el.chip.dataset.state = state;
+    updateTitleLine();
     if (state === 'online') {
       el.dot.title = t('connected');
     } else if (state === 'connecting') {
@@ -420,24 +422,13 @@
   function updateTitleLine() {
     const line = document.querySelector('[data-mp-title]');
     if (!line) return;
-    setText(line, t('titleLine') + ' · ' + t('titleOnline', { n: onlineCount }));
+    const state = el.chip.dataset.state;
+    if (line.dataset.state === state) return;
+    line.dataset.state = state;
+    setText(line, t(state === 'online' ? 'connected' : state === 'offline' ? 'disconnected' : 'connecting'));
   }
 
   function decorateTitle() {
-    const title = document.querySelector('.m-screen[data-s="title"]');
-    if (!title) return;
-    let line = title.querySelector('[data-mp-title]');
-    if (!line) {
-      const premise = title.querySelector('.m-premise');
-      line = document.createElement('p');
-      line.className = 'm-premise mp-title-line';
-      line.setAttribute('data-mp-title', '');
-      if (premise && premise.parentNode) {
-        premise.parentNode.insertBefore(line, premise.nextSibling);
-      } else {
-        title.appendChild(line);
-      }
-    }
     updateTitleLine();
   }
 
@@ -905,7 +896,8 @@
         y,
         z,
         yaw: replayNumber(row[4], 0),
-        pitch: replayNumber(row[5], 0)
+        pitch: replayNumber(row[5], 0),
+        armor: replayNumber(row[6], 0) & 3
       });
     }
     samples.sort((a, b) => a.t - b.t);
@@ -1639,8 +1631,20 @@
     avatar.texture.needsUpdate = true;
   }
 
+  function syncAvatarArmor(avatar, anchors) {
+    if (anchors) {
+      avatar.armor?.dispose();
+      avatar.armor = window.SaltFrontierArmor?.mount(THREE, avatar.body, avatar.soldierKind, anchors);
+    }
+    avatar.armor?.update(avatar.data?.armor);
+  }
+
   function clearAvatarFallback(avatar) {
     if (!avatar || !avatar.body) return;
+    if (avatar.fallbackBuilt) {
+      avatar.armor?.dispose();
+      avatar.armor = null;
+    }
     for (const child of avatar.body.children.slice()) {
       if (!child.userData || !child.userData.mpHunterFallback) continue;
       avatar.body.remove(child);
@@ -1656,6 +1660,8 @@
   function resetAvatarModel(avatar) {
     if (!avatar || !avatar.body) return;
     chaseLightCleanup(avatar);
+    avatar.armor?.dispose();
+    avatar.armor = null;
     if (avatar.machineUpgradeTimer) {
       window.clearTimeout(avatar.machineUpgradeTimer);
       avatar.machineUpgradeTimer = 0;
@@ -1669,6 +1675,7 @@
     clearAvatarFallback(avatar);
     avatar.legs = [];
     avatar.arms = [];
+    avatar.viewWeaponParts = null;
     avatar.soldierKind = null;
     avatar.machine = false;
   }
@@ -1735,9 +1742,11 @@
       mesh.userData.mpHunterFallback = true;
       avatar.body.add(mesh);
     }
+    avatar.viewWeaponParts = [rifle, rifleTrim];
     avatar.legs = [legL, legR];
     avatar.arms = [armL, armR];
     avatar.machine = false;
+    syncAvatarArmor(avatar, { head, chest: torso, baseHelmet: helmet, baseVest: vest });
   }
 
   function buildMachineFallbackAvatar(avatar, kind) {
@@ -1798,6 +1807,8 @@
       mesh.userData.mpHunterFallback = true;
       avatar.body.add(mesh);
     }
+    const [chest, second, third] = parts;
+    syncAvatarArmor(avatar, { chest, head: kind === 'hound' ? third : second, machineFallback: true });
     scheduleMachineFallbackUpgrade(avatar, kind);
   }
 
@@ -1818,6 +1829,7 @@
       avatar.machine = true;
       avatar.legs = [];
       avatar.arms = [];
+      syncAvatarArmor(avatar, made.armorAnchors);
       return true;
     } catch (err) {
       console.error('[mp] machine avatar mount failed', err);
@@ -1896,10 +1908,12 @@
       avatar.hunter = hunter.model;
       avatar.rig = hunter.rig;
       avatar.weapon = hunter.weapon || null;
+      avatar.viewWeaponParts = hunter.weaponParts || null;
       avatar.soldierKind = hunter.kind || normalizeSoldier(kind);
       avatar.machine = false;
       avatar.legs = [];
       avatar.arms = [];
+      syncAvatarArmor(avatar, hunter.armorAnchors);
     } catch (err) {
       console.error('[mp] soldier avatar mount failed', err);
       buildFallbackAvatar(avatar, kind);
@@ -2005,6 +2019,7 @@
       arms: [],
       hunter: null,
       rig: null,
+      armor: null,
       weapon: null,
       machine: false,
       droneLight: null,
@@ -2028,6 +2043,7 @@
 
   function disposeAvatar(avatar) {
     avatar.disposed = true;
+    avatar.armor?.dispose();
     if (avatar.machineUpgradeTimer) {
       window.clearTimeout(avatar.machineUpgradeTimer);
       avatar.machineUpgradeTimer = 0;
@@ -2074,6 +2090,7 @@
         resetAvatarModel(avatar);
         requestHunterAvatar(avatar, soldier);
       }
+      syncAvatarArmor(avatar);
       if (avatar.lastHp !== item.hp || avatar.lastShield !== item.shield) {
         avatar.lastHp = item.hp;
         avatar.lastShield = item.shield;
@@ -2094,6 +2111,46 @@
         avatars.delete(id);
       }
     }
+  }
+
+  function updateAvatarWeapon(avatar, id, visible) {
+    if (avatar.machine) {
+      if (avatar.weapon) avatar.weapon.visible = visible;
+      return;
+    }
+    const arsenal = window.SaltArsenal;
+    const rifle = avatar.weapon;
+    const parts = avatar.viewWeaponParts;
+    const mount = rifle || (parts?.length ? avatar.body : null);
+    const current = avatar.equippedModel;
+    if (current && (current.parent !== mount || current.userData.arsenalId !== id || id === 'pac9')) {
+      current.removeFromParent();
+      avatar.equippedModel = null;
+    }
+    if (!mount) return;
+    if (visible && id && id !== 'pac9' && !avatar.equippedModel && arsenal) {
+      const model = arsenal.clone(id);
+      if (model) {
+        model.userData.arsenalId = id;
+        model.name = 'equipped-arsenal-model';
+        if (!rifle) model.position.set(.28, 1.12, -.22);
+        mount.add(model);
+        avatar.equippedModel = model;
+      } else if (!avatar.loadingWeapon) {
+        avatar.loadingWeapon = true;
+        arsenal.load().then(() => { avatar.loadingWeapon = false; }).catch(() => {});
+      }
+    }
+    if (rifle) {
+      rifle.visible = visible;
+      // Keep the invisible IK grip anchors active in the rig.
+      const anchors = rifle.userData.anchors;
+      for (const part of rifle.children) {
+        if (part !== anchors?.right && part !== anchors?.left && part !== avatar.equippedModel) part.visible = !avatar.equippedModel;
+      }
+    }
+    for (const mesh of parts || []) mesh.visible = visible && !avatar.equippedModel;
+    if (avatar.equippedModel) avatar.equippedModel.visible = visible;
   }
 
   function updateAvatars(dt) {
@@ -2135,11 +2192,13 @@
         if (avatar.legs[1]) avatar.legs[1].rotation.x *= 0.9;
       }
       const kind = avatar.soldierKind || normalizeSoldier(avatar.data && avatar.data.soldier);
+      updateAvatarWeapon(avatar, avatar.data?.weapon || 'pac9', avatar.data?.weapon !== null && avatar.data?.carSeat !== 0);
       try { updateAvatarDroneLight(avatar, kind); } catch (err) { /* ignore */ }
       const targetLabelY = isMachine(kind) ? (kind === 'drone' ? 1.35 : 1.05) : 2.28;
       if (avatar.body) {
         avatar.body.rotation.y += (0 - avatar.body.rotation.y) * pose;
-        avatar.body.rotation.x += (0 - avatar.body.rotation.x) * pose;
+        const lean = avatar.data?.carSeat > 0 ? .17 : 0;
+        avatar.body.rotation.x += (lean - avatar.body.rotation.x) * pose;
         avatar.body.position.y += (0 - avatar.body.position.y) * pose;
       }
       avatar.label.position.y += (targetLabelY - avatar.label.position.y) * pose;
@@ -2199,6 +2258,7 @@
         if (origin && dir && G.game && G.game.state === 'playing' && !respawn.active) {
           send({
             type: 'shot',
+            weapon: opts?.weapon || 'pac9',
             origin: { x: origin.x, y: origin.y, z: origin.z },
             dir: { x: dir.x, y: dir.y, z: dir.z }
           });
@@ -2308,10 +2368,11 @@
     lastStateAt = now;
     const state = G.game && G.game.state;
     const player = G.player;
-    const active = player.alive && !respawn.active && !document.hidden &&
+    const active = player.alive && !respawn.active && !G.frontier?.airborne && !document.hidden &&
       (state === 'playing' || state === 'paused');
     send({
       type: 'state',
+      weapon: G.weapon?.arsenalId || 'pac9',
       pos: { x: player.pos.x, y: player.pos.y, z: player.pos.z },
       yaw: player.yaw,
       pitch: player.pitch,
@@ -2680,7 +2741,11 @@
         try {
           const point = await requestSpawnMap(map);
           if (point && ws === socket && socket.readyState === 1 && inMatch()) {
-            if (expedition?.active?.id === map) {
+            if (map === window.SaltFrontierRules?.map && !game.frontier.airborne) {
+              const enter = await expedition.prepareEntry(map);
+              if (ws !== socket || socket.readyState !== 1 || !inMatch()) return;
+              enter(point);
+            } else if (expedition?.active?.id === map && !game.frontier?.airborne) {
               const spawn = expedition.spawn(point);
               player.pos.set(spawn.x, spawn.y, spawn.z);
               player.lastSafe.copy(player.pos);
@@ -2753,7 +2818,7 @@
       reconnectDelay = 1200;
       setConnection('online');
       everJoined = false;
-      send({ type: 'join', name: myName, soldier: mySoldier, spawns: spawnsFromLevel() });
+      send({ type: 'join', name: myName, soldier: mySoldier, spawns: spawnsFromLevel(), frontier: !!window.SaltFrontierRules });
       window.clearInterval(pingTimer);
       pingTimer = window.setInterval(() => {
         if (ws && ws.readyState === 1) send({ type: 'ping', t: performance.now() });
@@ -2783,6 +2848,7 @@
       myId = null;
       pendingRename = null;
       onlineCount = 0;
+      window.SaltMapSelect?.setPopulation(null);
       pingMs = null;
       rosterData = [];
       updateChip();
@@ -2818,6 +2884,13 @@
 
   function handleMessage(msg) {
     if (!msg || typeof msg.type !== 'string') return;
+    if (msg.type.startsWith('frontier')) {
+      const frontier = window.__G?.frontier;
+      if (frontier) frontier.onMessage(msg);
+      else if (msg.type === 'frontierInventory' || msg.type === 'frontierStock') {
+        pendingFrontier.set(msg.type, msg);
+      }
+    }
     notifyMessage(msg);
     switch (msg.type) {
       case 'welcome': {
@@ -2910,6 +2983,7 @@
       }
       case 'snapshot': {
         onlineCount = Number(msg.online) || 0;
+        window.SaltMapSelect?.setPopulation(msg.mapCounts);
         if (msg.you) {
           const previousAlive = selfStats.alive;
           selfStats = {
@@ -2959,7 +3033,7 @@
           }
         } catch (err) { /* ignore */ }
         try {
-          G.player.damage(amount, from || undefined);
+          (G.frontier?.serverDamage || G.player.damage)(amount, from || undefined);
         } catch (err) { /* ignore */ }
         break;
       }
@@ -3071,6 +3145,10 @@
 
   function attachGame(game) {
     G = game;
+    if (game.frontier) {
+      for (const message of pendingFrontier.values()) game.frontier.onMessage(message);
+      pendingFrontier.clear();
+    }
     THREE = game.THREE;
     scene = game.scene;
     if (!scene || !THREE) return;
@@ -3197,6 +3275,53 @@
     get roster() { return rosterData.slice(); },
     get respawn() { return { active: respawn.active, until: respawn.until }; },
     get game() { return G; },
+    createSelfView() {
+      if (!G || !THREE || !scene) return null;
+      const kind = normalizeSoldier(mySoldier);
+      const player = G.player;
+      const avatar = createAvatar({ id: myId, name: myName, color: myColor, soldier: kind,
+        x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw });
+      avatar.group.name = 'frontier-self-avatar';
+      avatar.label.visible = false;
+      avatar.group.getObjectByName('mp-avatar-ring').visible = false;
+      avatar.group.visible = false;
+      scene.add(avatar.group);
+      const grip = new THREE.Vector3();
+      let held = null;
+      return {
+        kind,
+        model: avatar.group,
+        update(dt, armor, armed, gesture, prop) {
+          avatar.data.armor = armor;
+          syncAvatarArmor(avatar);
+          avatar.group.position.copy(player.pos);
+          avatar.group.rotation.y = player.yaw;
+          avatar.rig?.update(dt, { moving: Math.hypot(player.vel.x, player.vel.z) > .6,
+            sprint: !!player.sprinting, gesture });
+          const rifleVisible = armed && (!gesture || gesture.kind === 'reload' || !avatar.rig?.actionHand);
+          updateAvatarWeapon(avatar, G.weapon?.arsenalId || 'pac9', rifleVisible);
+          const hand = gesture && avatar.rig?.actionHand?.(gesture.kind, grip);
+          const nextProp = hand ? prop : null;
+          if (held !== nextProp) {
+            held?.removeFromParent();
+            held = nextProp;
+            if (held) avatar.group.add(held);
+          }
+          if (held) {
+            held.position.copy(hand);
+            avatar.group.worldToLocal(held.position);
+            held.scale.setScalar(gesture.kind === 'reload' ? 1 : .62);
+            held.rotation.set(gesture.tilt, 0, 0);
+            if (gesture.kind !== 'reload') held.translateY(-.085);
+          }
+          return hand;
+        },
+        dispose() {
+          held?.removeFromParent();
+          disposeAvatar(avatar);
+        }
+      };
+    },
     get avatarList() {
       return [...avatars.values()]
         .filter((avatar) => avatar.group.visible && avatar.data)
@@ -3231,6 +3356,7 @@
     onBinary,
     syncState: () => sendState(true),
     requestSpawnMap,
+    resetFlight() { unitFlightY = 0; unitFlightPrev = null; },
     send,
     sendBinary,
     refreshSpawns() {

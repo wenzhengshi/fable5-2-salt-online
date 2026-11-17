@@ -11,13 +11,27 @@
   let status;
   const inputs = [];
   const actions = [];
+  const populationLabels = new Map();
+  let mapCounts = null;
+
+  function setPopulation(counts) {
+    mapCounts = counts;
+    for (const [id, label] of populationLabels) {
+      const count = counts?.[id];
+      const known = Number.isSafeInteger(count) && count >= 0;
+      const text = known ? copy.playerCount.replace('{n}', count) : '—';
+      if (label.textContent === text) continue;
+      label.textContent = text;
+      label.title = known ? text : copy.playerCountUnavailable;
+      label.classList.toggle('populated', known && count > 0);
+    }
+  }
 
   function mount(host) {
     const group = document.createElement('fieldset');
     group.className = 'spawn-picker';
-    group.innerHTML = '<legend></legend><p class="spawn-picker-hint"></p><div class="spawn-grid"></div>';
+    group.innerHTML = '<legend></legend><div class="spawn-grid"></div>';
     group.querySelector('legend').textContent = copy.title;
-    group.querySelector('.spawn-picker-hint').textContent = copy.hint;
     const grid = group.querySelector('.spawn-grid');
     for (const id of ['port', 'qingyun', 'bayhaven', 'mothlight', 'dustfall']) {
       const card = document.createElement('label');
@@ -35,7 +49,7 @@
       });
       inputs.push(input);
       const preview = document.createElement('img');
-      preview.src = '/maps/previews/' + id + '.webp';
+      preview.src = '/maps/previews/' + id + '.webp' + (id === 'port' ? '?v=home2' : '');
       preview.alt = '';
       preview.width = 720;
       preview.height = 408;
@@ -43,13 +57,17 @@
       const name = document.createElement('span');
       name.className = 'spawn-name';
       name.textContent = names[id];
-      card.append(input, preview, name);
+      const population = document.createElement('span');
+      population.className = 'spawn-population';
+      populationLabels.set(id, population);
+      card.append(input, preview, name, population);
       grid.append(card);
     }
     status = document.createElement('p');
     status.className = 'spawn-status';
     status.setAttribute('role', 'status');
     host.append(group, status);
+    setPopulation(mapCounts);
     actions.push(...host.parentElement.querySelectorAll('.m-title-main .m-actions button'));
   }
 
@@ -91,5 +109,5 @@
     }
   }
 
-  window.SaltMapSelect = { mount, deploy };
+  window.SaltMapSelect = { mount, deploy, setPopulation };
 })();

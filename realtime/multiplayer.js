@@ -35,7 +35,7 @@ const TICK_MS = 100;
 const RESPAWN_MS = 5000;
 const PROTECT_MS = 2000;
 const MAX_HP = 100;
-const HIT_DAMAGE = 34;
+const arsenal = require('../public/js/arsenal-rules');
 const MAX_NAME = 16;
 const WORLD_LIMIT = 900;
 const MAX_MSG_PER_SEC = 160;
@@ -64,7 +64,7 @@ const EXTERNAL_PLATFORM = { x0: 82, x1: 126, z0: -12, z1: 28, top: 0.22 };
 const FOCUS_BLOCKED_TYPES = new Set([
   'state', 'soldier', 'spawns', 'chat', 'voiceState', 'rename',
   'shot', 'hit', 'died', 'respawn', 'boatBoard', 'boatLeave',
-  'boatPose', 'boatInvite', 'mapEnter', 'mapReturn', 'mapLeave', 'qingyunEnter', 'qingyunLeave', 'qingyunReturn'
+  'boatPose', 'boatInvite', 'sedanBoard', 'sedanLeave', 'sedanPose', 'sedanPortal', 'sedanReady', 'mapEnter', 'mapReturn', 'mapLeave', 'qingyunEnter', 'qingyunLeave', 'qingyunReturn'
 ]);
 
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
@@ -523,8 +523,9 @@ function publicFighter(player) {
 }
 
 function killPlayer(victim, killer, now) {
-  const replay = killer ? deathReplay.build(victim, killer, now) : null;
+  const replay = killer ? deathReplay.build(victim, killer, now, frontier.equipmentFlags) : null;
   removeFromBoat(victim, true);
+  sedan.remove(victim);
   victim.alive = false;
   victim.hp = 0;
   victim.streak = 0;
@@ -552,6 +553,28 @@ function killPlayer(victim, killer, now) {
     respawnAt: victim.respawnAt
   });
 }
+
+function applyPlayerDamage(target, attacker, amount, armor, now) {
+  const damage = frontier.armor(target, amount, armor, now);
+  target.hp = Math.max(0, target.hp - damage);
+  const killed = target.hp <= 0;
+  if (attacker !== target) deathReplay.recordHit(attacker, target, damage, target.hp, killed, now);
+  send(target.ws, { type: 'damaged', amount: damage, hp: target.hp, from: {
+    ...publicFighter(attacker), pos: attacker.pos
+  } });
+  if (attacker !== target) send(attacker.ws, {
+    type: 'hitConfirm', targetId: target.id, damage, hp: target.hp, killed
+  });
+  if (killed) killPlayer(target, attacker === target ? null : attacker, now);
+}
+
+const frontierRules = require('../public/js/frontier-rules');
+const frontier = require('../services/frontier')({
+  send, participants: () => players.values(), sameMap, damage: applyPlayerDamage,
+  onEquipmentChange: (player, mask, now) => deathReplay.recordPlayer(player, now, mask, true)
+});
+
+const sedan = require('../services/sedan')(players, send, frontier.dropping);
 
 function uniqueName(candidate, self) {
   const clean = sanitizeName(candidate);
@@ -648,6 +671,7 @@ function setFocusLock(player, until, recordId, options) {
   player.focusDurationMs = Number(meta.durationMs) || focusMode.MANUAL_DURATION_MS;
   player.focusTrigger = String(meta.trigger || (player.focusKind === 'auto' ? 'continuous_play' : 'manual')).slice(0, 40);
   removeFromBoat(player, true);
+  sedan.remove(player);
   player.active = false;
   player.alive = false;
   player.hp = 0;
@@ -743,6 +767,7 @@ function handleMessage(player, raw) {
         playerAuthority.resetWeaponState(player);
       }
       player.joined = true;
+      player.frontier = msg.frontier === true;
       const focused = player.focusUntil > now;
       if (focused) {
         player.active = false;
@@ -764,6 +789,7 @@ function handleMessage(player, raw) {
         } : null,
         focus: focusPayload(player)
       });
+      frontier.inventory(player);
       if (!focused && !resumed) broadcast({ type: 'notice', kind: 'join', name: player.name, id: player.id });
       break;
     }
@@ -884,8 +910,15 @@ function handleMessage(player, raw) {
       }
       break;
     }
+    case 'sedanBoard':
+    case 'sedanLeave':
+    case 'sedanPose':
+    case 'sedanPortal':
+    case 'sedanReady':
+      sedan.handle(player, msg, now);
+      break;
     case 'boatBoard': {
-      if (!player.joined || !player.alive || (player.inQingyun || player.mapId)) {
+      if (!player.joined || !player.alive || player.carSeat != null || (player.inQingyun || player.mapId)) {
         send(player.ws, { type: 'boatDenied', reason: 'unavailable' });
         break;
       }
@@ -1011,10 +1044,12 @@ function handleMessage(player, raw) {
       player.pitch = 0;
       player.moving = player.sprint = false;
       player.motionBudget = null;
+      frontier.enter(player, now);
       send(player.ws, { type: 'spawnMapResult', map: msg.map, ok: true, pos: player.pos });
       break;
     }
     case 'qingyunEnter': {
+      if (player.carSeat != null) break;
       if (!player.joined || !player.alive || !player.active || player.boatSeat != null ||
           player.inQingyun || player.mapId || !qingyun.atGate(player.pos, 1.25)) break;
       player.inQingyun = true;
@@ -1030,6 +1065,7 @@ function handleMessage(player, raw) {
       break;
     }
     case 'qingyunReturn': {
+      if (player.carSeat != null) break;
       if (!player.joined || !player.alive || !player.active || !player.inQingyun ||
           !qingyun.atReturnGate(player.pos, .1)) break;
       player.inQingyun = false;
@@ -1045,6 +1081,7 @@ function handleMessage(player, raw) {
       break;
     }
     case 'qingyunLeave': {
+      if (player.carSeat != null) break;
       // The normal redeploy flow can bring a player back to the port.
       if (!player.inQingyun) break;
       player.inQingyun = false;
@@ -1055,6 +1092,7 @@ function handleMessage(player, raw) {
       break;
     }
     case 'mapEnter': {
+      if (player.carSeat != null) break;
       const map = Object.hasOwn(expeditions.maps, msg.map) ? expeditions.maps[msg.map] : null;
       if (!map || !player.joined || !player.alive || !player.active || player.boatSeat != null ||
           !player.inQingyun || player.mapId || !expeditions.near(player.pos, map.gate, .9)) break;
@@ -1067,14 +1105,17 @@ function handleMessage(player, raw) {
       player.shotCredits = 0;
       player.pendingShot = null;
       player.motionBudget = null;
+      frontier.enter(player, now);
       send(player.ws, { type: 'mapEntered', map: map.id, pos: player.pos });
       break;
     }
     case 'mapReturn':
     case 'mapLeave': {
+      if (player.carSeat != null) break;
       const map = expeditions.maps[player.mapId];
       if (!map) break;
       if (msg.type === 'mapReturn' && (!player.active || !player.alive || !expeditions.near(player.pos, map.exit, .9))) break;
+      player.frontierDrop = null;
       player.mapId = null;
       player.inQingyun = msg.type === 'mapReturn';
       player.pos = { ...(player.inQingyun ? map.hub : player.spawns[0]) };
@@ -1136,9 +1177,16 @@ function handleMessage(player, raw) {
       }).finally(() => { player.signBusy = false; });
       break;
     }
+    case 'frontierLand':
+    case 'frontierPick':
+    case 'frontierUse':
+    case 'frontierDiscard':
+    case 'frontierWear':
+      frontier.handle(player, msg, now);
+      break;
     case 'state': {
-      if (!player.joined) break;
-      if (player.boatSeat == null) {
+      if (!player.joined || frontier.dropping(player, now)) break;
+      if (player.boatSeat == null && player.carSeat == null) {
         let candidate;
         const map = expeditions.maps[player.mapId];
         const rawZ = Number(msg.pos?.z);
@@ -1169,6 +1217,11 @@ function handleMessage(player, raw) {
       if (Number.isFinite(Number(msg.yaw))) player.yaw = Number(msg.yaw);
       if (Number.isFinite(Number(msg.pitch))) player.pitch = clamp(Number(msg.pitch), -1.6, 1.6);
       if (typeof msg.active === 'boolean') player.active = msg.active;
+      if (typeof msg.weapon === 'string' && Object.hasOwn(arsenal, msg.weapon)) {
+        if (player.frontier && frontierRules.canEquip(frontier.items(player), msg.weapon, player.mapId)) {
+          player.weaponId = ['hound', 'drone'].includes(player.soldier) ? 'pac9' : msg.weapon;
+        }
+      }
       if (player.active && player.alive) player.hasDeployed = true;
       player.moving = !!msg.moving;
       player.sprint = !!msg.sprint;
@@ -1181,9 +1234,14 @@ function handleMessage(player, raw) {
       break;
     }
     case 'shot': {
-      if (!player.active || !player.alive) break;
+      if (!player.active || !player.alive || player.carSeat === 0) break;
+      const profile = player.frontier && typeof msg.weapon === 'string' && Object.hasOwn(arsenal, msg.weapon) &&
+        !['hound', 'drone'].includes(player.soldier)
+        ? arsenal[msg.weapon] : arsenal.pac9;
+      if (player.frontier && !frontierRules.canEquip(frontier.items(player), profile.id, player.mapId)) break;
       player.pendingShot = null;
       if (now - player.lastShotAt < 55) { monitor(player, 'fireRate', now); break; }
+      if (profile.model && now - (player.lastWeaponShot?.[profile.id] || 0) < 1000 / profile.rate - 35) break;
       player.lastShotAt = now;
       const origin = safeVec(msg.origin);
       if (player.mapId && origin && Number.isFinite(msg.origin.z) && Number.isFinite(msg.origin.x)) {
@@ -1201,10 +1259,14 @@ function handleMessage(player, raw) {
         monitor(player, 'shotOrigin', now);
         break;
       }
-      if (!playerAuthority.consumeShot(player, now)) { monitor(player, 'reloadBypass', now); break; }
+      if (!playerAuthority.consumeShot(player, now, profile)) { monitor(player, 'reloadBypass', now); break; }
       moderation.sharedCombat(player, now, roadSigns.mapOf(player) || 'port');
       deathReplay.recordShot(player, origin, dir, now);
       playerAuthority.acceptShotCredit(player, now, origin, dir);
+      player.pendingShot.weapon = profile.id;
+      (player.lastWeaponShot ||= Object.create(null))[profile.id] = now;
+      player.weaponId = profile.id;
+      if (profile.id === 'knife') break;
       broadcast(
         { type: 'shot', id: player.id, origin, dir },
         (other) => other !== player && other.active && sameMap(other, player)
@@ -1228,37 +1290,21 @@ function handleMessage(player, raw) {
         player.pos.y - target.pos.y,
         player.pos.z - target.pos.z
       );
-      if (dist > 90) { monitor(player, 'hitRange', now); break; }
       if (!shot) { monitor(player, 'hitWithoutShot', now); break; }
+      const profile = arsenal[shot.weapon] || arsenal.pac9;
+      if (dist > profile.range + (profile.id === 'knife' ? .65 : 0)) { monitor(player, 'hitRange', now); break; }
       if (!playerAuthority.alignedHit(shot, target)) { monitor(player, 'hitOffAxis', now); break; }
-      target.hp = Math.max(0, target.hp - HIT_DAMAGE);
-      const killed = target.hp <= 0;
-      deathReplay.recordHit(player, target, HIT_DAMAGE, target.hp, killed, now);
-      send(target.ws, {
-        type: 'damaged',
-        amount: HIT_DAMAGE,
-        hp: target.hp,
-        from: {
-          id: player.id,
-          name: player.name,
-          color: player.color,
-          soldier: player.soldier,
-          pos: player.pos
-        }
-      });
-      send(player.ws, {
-        type: 'hitConfirm',
-        targetId: target.id,
-        damage: HIT_DAMAGE,
-        hp: target.hp,
-        killed
-      });
-      if (killed) killPlayer(target, player, now);
+      const horizontal = Math.hypot(shot.dir.x, shot.dir.z);
+      const hitY = horizontal > .001 ? shot.origin.y + shot.dir.y *
+        Math.hypot(target.pos.x - shot.origin.x, target.pos.z - shot.origin.z) / horizontal : target.pos.y;
+      const helmet = !['hound', 'drone'].includes(target.soldier) && hitY >= target.pos.y + 1.45;
+      applyPlayerDamage(target, player, profile.damage, helmet ? 'helmet' : 'vest', now);
       break;
     }
     case 'died': {
-      if (!player.alive) break;
+      if (!player.alive || frontier.dropping(player, now)) break;
       removeFromBoat(player, true);
+      sedan.remove(player);
       player.alive = false;
       player.hp = 0;
       player.streak = 0;
@@ -1374,6 +1420,7 @@ function addPlayer(ws, req, signOwner) {
     previous.ws = ws;
     if (retained) {
       removeFromBoat(previous, true);
+      sedan.remove(previous);
       old.terminate();
     }
     previous.active = false;
@@ -1486,6 +1533,7 @@ function sendWelcome(player) {
 function removePlayer(player, reason) {
   if (!players.has(player.id)) return;
   removeFromBoat(player, true);
+  sedan.remove(player);
   const hadVoice = player.voice.enabled;
   players.delete(player.id);
   if (reconnectPlayers.get(player.reconnectToken) === player) {
@@ -1566,15 +1614,22 @@ function tick() {
       serverTime: now
     });
   }
+  frontier.tick(now);
   syncBoatOccupants();
-  deathReplay.recordPlayers(players.values(), now);
+  sedan.sync();
+  deathReplay.recordPlayers(players.values(), now, frontier.equipmentFlags);
   deathReplay.prune(now);
   const roster = rosterPayload();
   const visibleByMap = new Map();
+  const mapCounts = Object.fromEntries(['port', 'qingyun', ...Object.keys(expeditions.maps)].map(id => [id, 0]));
   const mapKey = player => player.inQingyun ? 'qingyun' : player.mapId || 'port';
   for (const player of players.values()) {
-    if (!player.active || !player.alive) continue;
     const key = mapKey(player);
+    if (player.joined && player.ws.readyState === 1 && player.focusUntil <= now &&
+        (player.active || (!player.alive && player.respawnAt > 0) || frontier.dropping(player, now))) {
+      mapCounts[key]++;
+    }
+    if (!player.active || !player.alive) continue;
     if (!visibleByMap.has(key)) visibleByMap.set(key, []);
     visibleByMap.get(key).push({
       id: player.id,
@@ -1587,6 +1642,10 @@ function tick() {
       yaw: round(player.yaw),
       pitch: round(player.pitch),
       hp: Math.round(player.hp),
+      armor: frontier.equipmentFlags(player),
+      carSeat: player.carSeat ?? null,
+      weapon: player.frontier && !frontierRules.canEquip(frontier.items(player), player.weaponId || 'pac9', player.mapId)
+        ? null : player.weaponId || 'pac9',
       moving: !!player.moving,
       sprint: !!player.sprint,
       shield: now < player.protectedUntil
@@ -1601,10 +1660,12 @@ function tick() {
       type: 'snapshot',
       t: now,
       online: players.size,
+      mapCounts,
       players: visibleByMap.get(mapKey(player)) || [],
       roster,
       voice,
       boat: boatState,
+      sedan: sedan.snapshot(mapKey(player), player),
       you: {
         id: player.id,
         name: player.name,

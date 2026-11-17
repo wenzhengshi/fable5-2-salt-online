@@ -13,6 +13,9 @@ function clamp(value, min, max) {
 
 function resetWeaponState(player) {
   if (!player) return;
+  player.arsenalStock = Object.create(null);
+  player.weaponId = 'pac9';
+  player.lastWeaponShot = null;
   player.weaponAmmo = WEAPON_MAG_SIZE;
   player.weaponLastShotAt = 0;
   player.weaponReloadUntil = 0;
@@ -38,28 +41,31 @@ function clampDronePosition(position, soldier, boatSeat) {
   return next;
 }
 
-function consumeShot(player, now) {
+function consumeShot(player, now, profile) {
   if (!player) return false;
   const at = Number(now) || Date.now();
   if (!Number.isFinite(player.weaponAmmo)) resetWeaponState(player);
-  if (player.weaponReloadUntil > at) return false;
-  if (player.weaponReloadUntil && player.weaponReloadUntil <= at) {
-    player.weaponAmmo = WEAPON_MAG_SIZE;
-    player.weaponReloadUntil = 0;
+  if (profile?.id === 'knife') return true;
+  const limit = profile?.mag || WEAPON_MAG_SIZE;
+  const delay = profile?.model ? (profile.reload + .45) * 1000 : WEAPON_EMPTY_RELOAD_MS;
+  let stock = player;
+  if (profile?.model) {
+    player.arsenalStock ||= Object.create(null);
+    stock = player.arsenalStock[profile.id] ||= { weaponAmmo: limit, weaponLastShotAt: 0, weaponReloadUntil: 0 };
   }
-  if (player.weaponLastShotAt &&
-      at - player.weaponLastShotAt >= WEAPON_IDLE_RESET_MS) {
-    player.weaponAmmo = WEAPON_MAG_SIZE;
+  if (stock.weaponReloadUntil > at) return false;
+  if (stock.weaponReloadUntil || (stock.weaponLastShotAt &&
+      at - stock.weaponLastShotAt >= WEAPON_IDLE_RESET_MS)) {
+    stock.weaponAmmo = limit;
+    stock.weaponReloadUntil = 0;
   }
-  if (player.weaponAmmo <= 0) {
-    player.weaponReloadUntil = at + WEAPON_EMPTY_RELOAD_MS;
+  if (stock.weaponAmmo <= 0) {
+    stock.weaponReloadUntil = at + delay;
     return false;
   }
-  player.weaponAmmo -= 1;
-  player.weaponLastShotAt = at;
-  if (player.weaponAmmo <= 0) {
-    player.weaponReloadUntil = at + WEAPON_EMPTY_RELOAD_MS;
-  }
+  stock.weaponAmmo--;
+  stock.weaponLastShotAt = at;
+  if (stock.weaponAmmo <= 0) stock.weaponReloadUntil = at + delay;
   return true;
 }
 
@@ -96,8 +102,9 @@ function alignedHit(shot, target) {
   const z = target.pos.z - origin.z;
   const forward = x * dir.x + y * dir.y + z * dir.z;
   // Covers the collision box and client interpolation without accepting shots far off-axis.
-  const tolerance = 2.65 + Math.min(Math.max(forward, 0) * .015, 1.35);
-  return forward >= -1 && forward <= 93 && x * x + y * y + z * z - forward * forward <= tolerance * tolerance;
+  const melee = shot.weapon === 'knife';
+  const tolerance = melee ? .95 : 2.65 + Math.min(Math.max(forward, 0) * .015, 1.35);
+  return forward >= (melee ? -.15 : -1) && forward <= 93 && x * x + y * y + z * z - forward * forward <= tolerance * tolerance;
 }
 
 function observeMovement(player, candidate, now) {

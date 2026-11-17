@@ -185,6 +185,7 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       model,
       rig,
       bones,
+      armorAnchors: { head: kind === 'hound' ? bones.head : bones.gimbalYaw, chest: bones.body },
       kind,
       preview,
       dispose() {

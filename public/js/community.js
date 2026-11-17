@@ -249,11 +249,10 @@
     }
 
     if (variant === 'title') {
-      const repo = host.querySelector('[data-mp-repo="title"]');
-      const note = host.querySelector('.m-note');
-      if (repo) repo.insertAdjacentElement('afterend', mount);
-      else if (note) note.insertAdjacentElement('afterend', mount);
-      else host.appendChild(mount);
+      const links = host.querySelector('.home-links') || host;
+      const github = links.querySelector('.salt-repo:not(.salt-market)');
+      if (github) github.before(mount);
+      else links.appendChild(mount);
       return;
     }
 

@@ -105,6 +105,11 @@
 
     const torsoBaseY = torso.position.y;
     const headBaseY = head.position.y;
+    const armBases = [armL.position.clone(), armR.position.clone()];
+    const shoulder = new THREE.Vector3();
+    const wrist = new THREE.Vector3();
+    const along = new THREE.Vector3();
+    const down = new THREE.Vector3(0, -1, 0);
     let elapsed = 0;
     let walk = 0;
 
@@ -118,13 +123,32 @@
         const swing = moving ? Math.sin(walk) * 0.5 : Math.sin(elapsed * 1.4) * 0.018;
         legL.rotation.x = swing;
         legR.rotation.x = -swing;
-        armL.rotation.x = -swing * 0.5;
-        armR.rotation.x = -0.35 + swing * 0.18;
+        armL.position.copy(armBases[0]);
+        armR.position.copy(armBases[1]);
+        armL.scale.y = armR.scale.y = 1;
+        armL.rotation.set(-swing * .5, 0, .16);
+        armR.rotation.set(-.35 + swing * .18, 0, -.12);
+        const gesture = state?.gesture;
+        rifle.rotation.x = rifleTrim.rotation.x = gesture?.kind === 'reload' ? -.26 * gesture.blend : 0;
+        head.rotation.x = gesture?.kind === 'drink' ? -.16 * gesture.blend : 0;
+        if (gesture) {
+          const arm = gesture.kind === 'reload' ? armL : armR;
+          shoulder.copy(arm.position).y += .24;
+          wrist.copy(arm.position).addScaledVector(down, .24).lerp(gesture.position, gesture.blend);
+          along.copy(wrist).sub(shoulder);
+          arm.position.copy(shoulder).lerp(wrist, .5);
+          arm.scale.y = Math.max(.1, along.length()) / .52;
+          arm.quaternion.setFromUnitVectors(down, along.normalize());
+        }
         torso.position.y = torsoBaseY + (moving ? Math.abs(Math.sin(walk * 2)) * 0.012 : 0);
         vest.position.y = torso.position.y + 0.02;
         head.position.y = headBaseY + (moving ? Math.abs(Math.sin(walk * 2)) * 0.008 : 0);
         helmet.position.y = head.position.y + 0.02;
         visor.position.y = head.position.y - 0.01;
+      },
+      actionHand(kind, out) {
+        const arm = kind === 'reload' ? armL : armR;
+        return arm.localToWorld(out.set(0, -.26, 0));
       }
     };
     rig.update(0.016, { moving: false, sprint: false });
@@ -133,6 +157,8 @@
       model,
       rig,
       kind: KIND,
+      weaponParts: [rifle, rifleTrim],
+      armorAnchors: { head, chest: torso, baseHelmet: helmet, baseVest: vest },
       preview,
       dispose() {
         for (const mesh of parts) {

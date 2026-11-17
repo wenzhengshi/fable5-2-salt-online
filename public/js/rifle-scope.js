@@ -35,7 +35,7 @@
     function aiming() {
       const unit = window.__mp?.soldier;
       return !game.roadSigns?.editing && game.game.state === 'playing' && game.player.alive && game.player.enabled &&
-        game.input.ads && !window.__saltBoat?.riding && !game.weapon.stub && !['drone', 'hound'].includes(unit);
+        game.input.ads && !game.sedan?.driving && !window.__saltBoat?.riding && !game.weapon.stub && game.weapon.arsenalId !== "knife" && !['drone', 'hound'].includes(unit);
     }
 
     game.renderer.domElement.addEventListener('wheel', event => {

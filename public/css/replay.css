@@ -1,8 +1,16 @@
-#sr-launch {
+#sr-tools {
   position: absolute;
   z-index: 66;
   top: calc(143px + var(--sat));
-  left: var(--gr);
+  left: var(--gl);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+#sr-launch,
+#sr-camera {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -19,8 +27,12 @@
   -webkit-backdrop-filter: blur(8px);
 }
 
-#sr-launch[hidden] { display: none; }
-#sr-launch:hover { border-color: var(--signal); color: var(--signal); }
+#sr-launch[hidden],
+#sr-camera[hidden] { display: none; }
+#sr-tools button:hover,
+#sr-tools button:focus-visible { border-color: var(--signal); color: var(--signal); }
+#sr-camera { min-width: 40px; min-height: 36px; justify-content: center; padding: 0; }
+#sr-camera:disabled { opacity: .55; }
 #sr-launch i {
   position: relative;
   width: 10px;
@@ -115,7 +127,7 @@
 .sr-dialog {
   position: relative;
   width: min(1060px, calc(var(--vp-w, 100vw) - 36px));
-  max-height: calc(100dvh - 36px);
+  max-height: calc(var(--vp-h, 100dvh) - 36px);
   overflow: auto;
   border: 1px solid rgba(232, 228, 218, .22);
   background:
@@ -338,7 +350,10 @@
     #070a0c;
   background-size: 28px 28px;
 }
-#sr-video { display: block; width: 100%; height: 100%; background: #050709; object-fit: contain; }
+#sr-video,
+#sr-photo { position: absolute; inset: 0; display: block; width: 100%; height: 100%; background: #050709; object-fit: contain; }
+#sr-photo[hidden] { display: none; }
+#sr-photo { -webkit-touch-callout: default; }
 #sr-video:not([src]) { visibility: hidden; }
 #sr-player-empty {
   position: absolute;
@@ -411,9 +426,9 @@
 }
 
 @media (max-width: 760px) {
-  #sr-launch { top: calc(132px + var(--sat)); left: max(10px, env(safe-area-inset-left, 0px)); }
+  #sr-tools { top: calc(132px + var(--sat)); left: max(10px, var(--sal)); }
   #sr-modal { padding: 0; place-items: end center; }
-  .sr-dialog { width: 100%; max-height: 94dvh; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 14px 14px 0 0; }
+  .sr-dialog { width: 100%; max-height: calc(var(--vp-h, 100dvh) * .94); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 14px 14px 0 0; }
   .sr-head { padding: 18px 54px 14px 17px; }
   .sr-head h2 { font-size: 34px; }
   .sr-intro { font-size: 11px; }

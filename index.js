@@ -15,7 +15,7 @@ const { version: RELEASE_VERSION } = require('./package.json');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const ASSET_VERSION = '20261118-boss-split-v' + RELEASE_VERSION;
+const ASSET_VERSION = '20261118-port-hound-aim-v' + RELEASE_VERSION;
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));

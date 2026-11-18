@@ -134,6 +134,10 @@ body { background: var(--ink); color: var(--bone); overflow: hidden; font-family
 .h-warn.on.flash-a { animation-name: warn-b; }
 
 /* crosshair + hit marker */
+.portal-hold { position: absolute; left: 50%; top: 61%; transform: translateX(-50%); z-index: 12;
+  padding: 8px 14px; border: 1px solid #73e6f498; background: #07171de8; color: #d9faff;
+  text-align: center; white-space: nowrap; font: 600 13px/1.2 var(--f-label); }
+.portal-hold[hidden] { display: none; }
 .h-cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transition: opacity .1s; }
 .h-cross.off { opacity: 0; }
 .h-cross i { position: absolute; left: 0; top: 0; background: var(--bone); box-shadow: 0 0 0 1px rgba(0, 0, 0, .4); transition: transform .06s linear; }

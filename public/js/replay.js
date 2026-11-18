@@ -8,6 +8,7 @@
   const DB_NAME = 'saltline-replay-db';
   const STORE = 'clips';
   const MAX_CLIPS = 8;
+  const MAX_PHOTOS = 12;
   const MAX_DURATION_MS = 3 * 60 * 1000;
   const MAX_DURATION_SECONDS = MAX_DURATION_MS / 1000;
   const FPS = 30;
@@ -90,6 +91,7 @@
     stopPromise: null,
     stopResolve: null,
     starting: false,
+    takingPhoto: false,
     memoryOnly: false,
     downloadReadyAt: 0,
     hasAudio: false
@@ -147,6 +149,19 @@
     return document.getElementById('view');
   }
 
+  function isPhoto(clip) {
+    return clip.kind === 'photo';
+  }
+
+  function fileStamp(now) {
+    return now.getFullYear() + [now.getMonth() + 1, now.getDate()].map(twoDigits).join('') +
+      '-' + [now.getHours(), now.getMinutes(), now.getSeconds()].map(twoDigits).join('');
+  }
+
+  function twoDigits(value) {
+    return String(value).padStart(2, '0');
+  }
+
   function canRecordCanvas() {
     const canvas = gameCanvas();
     return !!(mimeType && canvas && typeof canvas.captureStream === 'function' && typeof MediaRecorder !== 'undefined');
@@ -202,7 +217,7 @@
     return window.SaltModal.confirm({
       tone: 'danger',
       kicker: t('kicker'),
-      title: t('deleteTitle'),
+      title: t(isPhoto(clip) ? 'photoDeleteTitle' : 'deleteTitle'),
       message: t('deleteMessage', { name: clip.fileName }),
       confirmText: t('deleteConfirm'),
       cancelText: t('cancel'),
@@ -242,19 +257,33 @@
       try {
         request = action(store);
       } catch (err) {
+        tx.abort();
+        db.close();
         reject(err);
         return;
       }
-      tx.oncomplete = () => resolve(request ? request.result : undefined);
-      tx.onerror = () => reject(tx.error || new Error('indexedDB transaction failed'));
-      tx.onabort = () => reject(tx.error || new Error('indexedDB transaction aborted'));
+      tx.oncomplete = () => {
+        db.close();
+        resolve(request ? request.result : undefined);
+      };
+      tx.onabort = () => {
+        db.close();
+        reject(tx.error || new Error('indexedDB transaction aborted'));
+      };
     }));
+  }
+
+  function sortAndLimit(rows) {
+    const sorted = rows.slice().sort((a, b) => b.createdAt - a.createdAt);
+    let photos = 0;
+    let videos = 0;
+    return sorted.filter((row) => isPhoto(row) ? ++photos <= MAX_PHOTOS : ++videos <= MAX_CLIPS);
   }
 
   async function loadClips() {
     try {
       const rows = await dbRequest('readonly', (store) => store.getAll());
-      state.clips = (Array.isArray(rows) ? rows : []).sort((a, b) => b.createdAt - a.createdAt);
+      state.clips = sortAndLimit(Array.isArray(rows) ? rows : []);
     } catch (err) {
       state.memoryOnly = true;
       state.clips = [];
@@ -263,50 +292,52 @@
   }
 
   async function saveClip(clip) {
-    state.clips.unshift(clip);
-    state.clips.sort((a, b) => b.createdAt - a.createdAt);
-    if (state.clips.length > MAX_CLIPS) state.clips.length = MAX_CLIPS;
+    await libraryReady;
+    state.clips = sortAndLimit([clip, ...state.clips]);
     try {
       await dbRequest('readwrite', (store) => {
         store.put(clip);
-        for (const stale of state.clips.slice(MAX_CLIPS)) store.delete(stale.id);
-        return null;
+        const request = store.getAll();
+        request.onsuccess = () => {
+          const rows = request.result;
+          const keep = new Set(sortAndLimit(rows).map((row) => row.id));
+          for (const row of rows) if (!keep.has(row.id)) store.delete(row.id);
+        };
       });
-      try {
-        const all = await dbRequest('readonly', (store) => store.getAll());
-        const keep = new Set(state.clips.map((item) => item.id));
-        for (const row of all) if (!keep.has(row.id)) await deleteClip(row.id, false);
-      } catch (err) { /* ignore cleanup errors */ }
       state.memoryOnly = false;
     } catch (err) {
       state.memoryOnly = true;
     }
     selectClip(clip.id);
+    return !state.memoryOnly;
   }
 
-  async function deleteClip(id, refresh = true) {
+  async function deleteClip(id) {
     state.clips = state.clips.filter((clip) => clip.id !== id);
     if (state.selectedId === id) {
       state.selectedId = null;
       if (state.selectedUrl) URL.revokeObjectURL(state.selectedUrl);
       state.selectedUrl = '';
       const video = document.querySelector('#sr-video');
-      if (video) {
+      if (video?.hasAttribute('src')) {
         video.pause();
         video.removeAttribute('src');
         video.load();
       }
+      const image = document.querySelector('#sr-photo');
+      image?.removeAttribute('src');
+      if (image) image.hidden = true;
     }
     try {
       await dbRequest('readwrite', (store) => store.delete(id));
     } catch (err) { /* memory-only clips still delete from UI */ }
-    if (refresh) {
-      renderLibrary();
-      if (state.clips[0]) selectClip(state.clips[0].id);
-    }
+    renderLibrary();
+    if (state.clips[0]) selectClip(state.clips[0].id);
   }
 
   function createUi() {
+    const tools = document.createElement('div');
+    tools.id = 'sr-tools';
     const launch = document.createElement('button');
     launch.id = 'sr-launch';
     launch.type = 'button';
@@ -314,7 +345,15 @@
     launch.innerHTML = '<i aria-hidden="true"></i><span></span><em>F9</em>';
     launch.querySelector('span').textContent = t('launch');
     launch.setAttribute('aria-label', t('launchHint'));
-    document.getElementById('app')?.appendChild(launch);
+    const photo = document.createElement('button');
+    photo.id = 'sr-camera';
+    photo.type = 'button';
+    photo.hidden = true;
+    photo.title = t('photoHint');
+    photo.setAttribute('aria-label', t('photoHint'));
+    photo.innerHTML = '<svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+    tools.append(launch, photo);
+    document.getElementById('app')?.appendChild(tools);
 
     const recording = document.createElement('div');
     recording.id = 'sr-recording';
@@ -352,7 +391,7 @@
       '  <div class="sr-layout">',
       '    <aside class="sr-library"><div class="sr-library-head"><b id="sr-library-title"></b><span id="sr-count"></span></div><ol id="sr-list"></ol><p id="sr-empty"></p></aside>',
       '    <section class="sr-player">',
-      '      <div class="sr-video-wrap"><video id="sr-video" controls playsinline preload="metadata"></video><div id="sr-player-empty"><i></i><b></b><span></span></div></div>',
+      '      <div class="sr-video-wrap"><video id="sr-video" controls playsinline preload="metadata"></video><img id="sr-photo" hidden /><div id="sr-player-empty"><i></i><b></b><span></span></div></div>',
       '      <div class="sr-meta"><div><b id="sr-clip-name"></b><span id="sr-clip-details"></span></div><div class="sr-actions"><button class="sr-download" type="button"><span></span></button><button class="sr-delete" type="button"></button></div></div>',
       '      <p class="sr-local-note"></p>',
       '    </section>',
@@ -370,6 +409,7 @@
     modal.querySelector('.sr-record-btn span').textContent = t('start');
     modal.querySelector('#sr-library-title').textContent = t('library');
     modal.querySelector('#sr-empty').textContent = t('empty');
+    modal.querySelector('#sr-photo').alt = t('photoPreview');
     modal.querySelector('#sr-player-empty i').textContent = '▶';
     modal.querySelector('#sr-player-empty b').textContent = t('selectHint');
     modal.querySelector('#sr-player-empty span').textContent = t('localOnly');
@@ -380,6 +420,7 @@
     document.getElementById('app')?.appendChild(modal);
 
     launch.addEventListener('click', openModal);
+    photo.addEventListener('click', takePhoto);
     recording.querySelector('[data-sr-stop]').addEventListener('click', () => stopRecording());
     modal.querySelector('[data-sr-record]').addEventListener('click', () => {
       if (state.recorder) stopRecording();
@@ -395,13 +436,18 @@
       if (!clip) return;
       const allowed = await confirmDeleteClip(clip);
       if (!allowed) return;
-      deleteClip(clip.id).then(() => toast(t('deleted')));
+      deleteClip(clip.id).then(() => toast(t(isPhoto(clip) ? 'photoDeleted' : 'deleted')));
     });
     document.addEventListener('keydown', (event) => {
       if (window.SaltModal && window.SaltModal.isOpen) return;
       if (event.key === 'Escape' && !modal.hidden) {
         event.preventDefault();
         closeModal();
+      }
+      if (event.code === 'F8' && !event.repeat && modal.hidden && !photo.hidden) {
+        if (event.target?.closest?.('input, textarea, select, [contenteditable]')) return;
+        event.preventDefault();
+        takePhoto();
       }
       if (event.code === 'F9' && !event.repeat) {
         const target = event.target;
@@ -411,7 +457,7 @@
         else startRecording();
       }
     }, true);
-    return { launch, recording, modal };
+    return { launch, photo, recording, modal };
   }
 
   const ui = createUi();
@@ -460,17 +506,31 @@
     if (state.selectedUrl) URL.revokeObjectURL(state.selectedUrl);
     state.selectedUrl = URL.createObjectURL(clip.blob);
     const video = ui.modal.querySelector('#sr-video');
-    video.src = state.selectedUrl;
-    video.load();
+    const image = ui.modal.querySelector('#sr-photo');
+    image.hidden = !isPhoto(clip);
+    if (isPhoto(clip)) {
+      if (video.hasAttribute('src')) {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      }
+      image.src = state.selectedUrl;
+    } else {
+      image.removeAttribute('src');
+      video.src = state.selectedUrl;
+      video.load();
+    }
     ui.modal.querySelector('#sr-player-empty').hidden = true;
     const download = ui.modal.querySelector('.sr-download');
     download.hidden = false;
     ui.modal.querySelector('.sr-delete').hidden = false;
     ui.modal.querySelector('#sr-clip-name').textContent = clip.fileName;
-    ui.modal.querySelector('#sr-clip-details').textContent = t(clip.hasAudio ? 'clipDetailsAudio' : 'clipDetails', {
+    ui.modal.querySelector('#sr-clip-details').textContent = t(isPhoto(clip) ? 'photoDetails' : (clip.hasAudio ? 'clipDetailsAudio' : 'clipDetails'), {
       duration: formatTime(clip.durationMs),
       size: formatBytes(clip.size),
-      date: formatDate(clip.createdAt)
+      date: formatDate(clip.createdAt),
+      width: clip.width,
+      height: clip.height
     });
     renderLibrary();
   }
@@ -485,10 +545,13 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'sr-item' + (clip.id === state.selectedId ? ' is-active' : '');
-      button.innerHTML = '<i>REC</i><span><b></b><em></em></span><small></small>';
+      button.innerHTML = '<i></i><span><b></b><em></em></span><small></small>';
+      button.querySelector('i').textContent = isPhoto(clip) ? 'PNG' : 'REC';
       button.querySelector('b').textContent = clip.fileName;
       button.querySelector('em').textContent = clip.unit || t('unknownUnit');
-      button.querySelector('small').textContent = formatTime(clip.durationMs) + ' · ' + formatBytes(clip.size);
+      button.querySelector('small').textContent = isPhoto(clip)
+        ? formatBytes(clip.size)
+        : formatTime(clip.durationMs) + ' · ' + formatBytes(clip.size);
       button.addEventListener('click', () => selectClip(clip.id));
       item.appendChild(button);
       list.appendChild(item);
@@ -650,12 +713,6 @@
       return;
     }
     const now = new Date();
-    const stamp = now.getFullYear() +
-      String(now.getMonth() + 1).padStart(2, '0') +
-      String(now.getDate()).padStart(2, '0') + '-' +
-      String(now.getHours()).padStart(2, '0') +
-      String(now.getMinutes()).padStart(2, '0') +
-      String(now.getSeconds()).padStart(2, '0');
     const extension = /mp4/i.test(actualType) ? 'mp4' : 'webm';
     const clip = {
       id: 'replay_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7),
@@ -666,7 +723,7 @@
       blob,
       hasAudio,
       unit: recordingUnit(),
-      fileName: 'saltline-replay-' + stamp + '.' + extension
+      fileName: 'saltline-replay-' + fileStamp(now) + '.' + extension
     };
     await saveClip(clip);
     if (IS_WECHAT) {
@@ -682,12 +739,67 @@
     setButtonState();
   }
 
+  function captureNextFrame(game, canvas) {
+    return new Promise((resolve, reject) => {
+      const capture = () => {
+        delete game.captureScreenshotFrame;
+        window.clearTimeout(timer);
+        const width = canvas.width;
+        const height = canvas.height;
+        try {
+          canvas.toBlob((blob) => {
+            if (blob?.size) resolve({ blob, width, height });
+            else reject(new Error('Empty screenshot'));
+          }, 'image/png');
+        } catch (err) {
+          reject(err);
+        }
+      };
+      const timer = window.setTimeout(() => {
+        if (game.captureScreenshotFrame === capture) delete game.captureScreenshotFrame;
+        reject(new Error('No rendered frame'));
+      }, 2500);
+      game.captureScreenshotFrame = capture;
+    });
+  }
+
+  async function takePhoto() {
+    if (state.takingPhoto) return;
+    const game = window.__G;
+    const canvas = gameCanvas();
+    if (!window.__ready || !game || typeof canvas?.toBlob !== 'function') return;
+    const now = new Date();
+    const createdAt = now.getTime();
+    state.takingPhoto = true;
+    ui.photo.disabled = true;
+    try {
+      const { blob, width, height } = await captureNextFrame(game, canvas);
+      const saved = await saveClip({
+        id: 'photo_' + createdAt.toString(36) + '_' + Math.random().toString(36).slice(2, 7),
+        kind: 'photo',
+        createdAt,
+        width,
+        height,
+        size: blob.size,
+        blob,
+        unit: recordingUnit(),
+        fileName: 'saltline-photo-' + fileStamp(now) + '-' + String(now.getMilliseconds()).padStart(3, '0') + '.png'
+      });
+      toast(t(saved ? 'photoSaved' : 'photoMemoryOnly'));
+    } catch (err) {
+      toast(t('photoFailed'));
+    } finally {
+      state.takingPhoto = false;
+      ui.photo.disabled = false;
+    }
+  }
+
   function downloadSelected() {
     const clip = selectedClip();
     if (!clip) return;
     if (IS_WECHAT) {
-      highlightWeChatWarning();
-      toast(t('wechatDownloadBlocked'));
+      if (!isPhoto(clip)) highlightWeChatWarning();
+      toast(t(isPhoto(clip) ? 'photoWechatSave' : 'wechatDownloadBlocked'));
       return;
     }
     const now = Date.now();
@@ -703,18 +815,19 @@
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 30000);
-    toast(t('downloaded'));
+    toast(t(isPhoto(clip) ? 'photoDownloaded' : 'downloaded'));
   }
 
   function refreshLaunchVisibility() {
     const ready = !!gameCanvas() && !!window.__ready;
     ui.launch.hidden = !ready;
+    ui.photo.hidden = !ready || typeof gameCanvas()?.toBlob !== 'function';
     if (ready) setButtonState();
   }
 
   window.setInterval(refreshLaunchVisibility, 500);
   refreshLaunchVisibility();
-  loadClips().then(() => {
+  const libraryReady = loadClips().then(() => {
     if (state.clips[0]) selectClip(state.clips[0].id);
   });
 
@@ -728,6 +841,7 @@
     stop: stopRecording,
     open: openModal,
     close: closeModal,
-    download: downloadSelected
+    download: downloadSelected,
+    takePhoto
   };
 })();

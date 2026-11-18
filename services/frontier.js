@@ -71,11 +71,13 @@ module.exports = function createFrontier({ send, participants, sameMap, damage, 
   function stockChanged() {
     for (const player of participants()) if (player.mapId === rules.map) stock(player);
   }
-  function enter(player, now) {
+  function enter(player, now, insert = true) {
     player.frontierDrop = null;
     if (!player.frontier || player.mapId !== rules.map) return;
-    player.frontierDrop = { anchor: { ...player.pos }, started: now };
-    player.active = false;
+    if (insert) {
+      player.frontierDrop = { anchor: { ...player.pos }, started: now };
+      player.active = false;
+    }
     stock(player);
   }
   function dropping(player, now) {

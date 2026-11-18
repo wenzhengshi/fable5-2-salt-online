@@ -313,6 +313,7 @@
       const floor = physics.groundHeight(hit.point.x, hit.point.z, hit.point.y + .35);
       if (Math.abs(floor - hit.point.y) > .75) return null;
       hit.point.y = floor;
+      if (game.expedition?.onFixedGround(hit.point) === false) return null;
       return hit.point;
     }
 
@@ -329,7 +330,8 @@
 
     function occupied(point) {
       for (const sign of entries.values()) {
-        if (planarDistance(sign.pos, point) < 3) return true;
+        if (planarDistance(sign.pos, point) < 3 &&
+            !window.SaltRoadSignRules.separateFloors(map, sign.pos, point)) return true;
       }
       return false;
     }

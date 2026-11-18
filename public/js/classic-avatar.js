@@ -110,6 +110,7 @@
     const wrist = new THREE.Vector3();
     const along = new THREE.Vector3();
     const down = new THREE.Vector3(0, -1, 0);
+    const foot = new THREE.Vector3();
     let elapsed = 0;
     let walk = 0;
 
@@ -145,6 +146,22 @@
         head.position.y = headBaseY + (moving ? Math.abs(Math.sin(walk * 2)) * 0.008 : 0);
         helmet.position.y = head.position.y + 0.02;
         visor.position.y = head.position.y - 0.01;
+        const fall = state?.fall;
+        if (fall) {
+          armL.rotation.set(fall.armL, 0, -.7 * fall.flare);
+          armR.rotation.set(fall.armR, 0, .7 * fall.flare);
+          legL.rotation.x = fall.legL;
+          legR.rotation.x = fall.legR;
+          head.rotation.x = .1 + fall.brace * .27;
+          bootL.position.copy(foot.set(0, -.34, -.04).applyQuaternion(legL.quaternion).add(legL.position));
+          bootR.position.copy(foot.set(0, -.34, -.04).applyQuaternion(legR.quaternion).add(legR.position));
+          bootL.rotation.x = legL.rotation.x;
+          bootR.rotation.x = legR.rotation.x;
+        } else if (bootL.rotation.x || bootR.rotation.x) {
+          bootL.position.set(-.16, .08, -.04);
+          bootR.position.set(.16, .08, -.04);
+          bootL.rotation.x = bootR.rotation.x = 0;
+        }
       },
       actionHand(kind, out) {
         const arm = kind === 'reload' ? armL : armR;

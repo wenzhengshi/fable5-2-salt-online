@@ -173,7 +173,7 @@
       groundHeight, raycast, moveCapsule, inLake,
       moveDrone(previous, candidate, radius) {
         flightTarget.set(candidate.x, candidate.y, candidate.z);
-        const travel = sweep(previous, flightTarget, radius, [.15, .45, .7]);
+        const travel = sweep(previous, flightTarget, radius, [.12, .64, 1.18]);
         flightTarget.copy(previous).addScaledVector(direction, travel);
         if (inLake(flightTarget.x, flightTarget.z)) flightTarget.y = Math.max(.55, flightTarget.y);
         return flightTarget;

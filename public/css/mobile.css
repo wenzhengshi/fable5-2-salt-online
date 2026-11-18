@@ -220,11 +220,10 @@
     gap: 5px;
     padding-inline: 6px;
   }
-  body:has(.menu[data-screen="title"]) #sr-launch {
+  body:has(.menu[data-screen="title"]) #sr-tools {
     top: calc(var(--sat) + 97px);
     left: auto;
     right: var(--gr);
-    min-height: 36px;
   }
   body:has(.menu[data-screen="title"]) .vc-rail {
     top: calc(var(--sat) + 140px);

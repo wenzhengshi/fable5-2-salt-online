@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const storage = require('../config/storage');
 const { maps } = require('../public/js/expedition-zones');
+const lift = require('../public/js/bayhaven-lift');
 const rules = require('../public/js/frontier-rules');
 const { canonical } = require('../public/js/container-password');
 const { isBlocked } = require('./contentFilter');
@@ -83,6 +84,12 @@ module.exports = function createContainers({ send, players, frontier, gold, shop
           planar(row.pos, point) < 8 && Math.abs(row.pos.y - point.y) < 4) ||
         [...players.values()].some(other => other.active && other.alive && other.mapId === map.id &&
           planar(other.pos, point) < 4 && Math.abs(other.pos.y - point.y) < 3)) throw new Error('position');
+    if (map.id === 'bayhaven') {
+      const dx = point.yaw % 2 === 0 ? 3.4 : 1.55;
+      const dz = point.yaw % 2 === 0 ? 1.55 : 3.4;
+      if (lift.overlaps(point.x, point.z - map.offset, dx, dz) &&
+          lift.floorFor(point.x, point.y, point.z - map.offset, dx, dz) === null) throw new Error('position');
+    }
     return { x: point.x, y: point.y, z: point.z };
   }
   function handle(player, msg, now) {

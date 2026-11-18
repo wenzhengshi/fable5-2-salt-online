@@ -59,6 +59,18 @@
 - `GET /admin/signs`：需要管理员会话且已完成首次密码修改；支持 `?page=<n>` 分页，列出各地图路牌及其坐标、归属状态。
 - `POST /admin/signs/:id/flag`：表单字段 `csrf`、`page`。将指定路牌标记为违规并返回 `303 /admin/signs?page=<n>...`；游戏中牌面文字会替换为违规提示。
 
+### 在线玩家审核
+
+- `GET /admin/moderation`：需要管理员会话且已完成首次密码修改；展示已加入战场的玩家、同 IP / 浏览器指纹 / 身份组合告警和当前封禁名单。`?result=kicked|banned|revoked|unavailable` 用于显示操作结果提示。
+- `POST /admin/moderation/ban/:token`：表单字段 `csrf`、`duration`、`reason`。`duration` 只能是 `day`、`week` 或 `permanent`，`reason` 最多 120 字；成功后封禁对应身份节点并断开其全部连接，返回 `303 /admin/moderation?result=banned`。目标无有效身份或参数不合法时返回 `result=unavailable`。
+- `POST /admin/moderation/kick/:token`：表单字段 `csrf`。仅踢出当前已加入战场的玩家并关闭其连接，返回 `303 /admin/moderation?result=kicked` 或 `result=unavailable`。
+- `POST /admin/moderation/revoke/:id`：表单字段 `csrf`。按封禁记录 ID 解除封禁，返回 `303 /admin/moderation?result=revoked` 或 `result=unavailable`。
+
+### 商店定价
+
+- `GET /admin/shop`：需要管理员会话且已完成首次密码修改；列出通行证、路牌与装扮商品的当前价格、默认价格和自定义状态，`?result=saved` 表示上次保存成功。
+- `POST /admin/shop/:key`：表单字段 `csrf`、`action`、`price`。`action=save` 时 `price` 必须为正数，最多 6 位小数；`action=reset` 恢复默认价格。成功后原子保存到 `data/shop-prices.json`，向全服广播 `shopPrices`，并返回 `303 /admin/shop?result=saved`。未知商品或非法价格返回 `400`。
+
 ### 全服备份
 
 - `POST /admin/backup`：表单字段 `csrf`。先刷新排行榜、路牌、聊天、专注与游玩时长等持久化数据，再生成 ZIP 下载；同一时间仅允许一份备份任务。失败时返回后台错误页。
@@ -275,7 +287,9 @@
 | `mapEnter` | `map` | 从青云宗枢纽进入传送门地图；`map` 为 `bayhaven`、`dustfall` 或 `mothlight`。仅允许存活、未上船、当前位于青云宗且靠近对应枢纽门的玩家发送 |
 | `mapReturn` | 无 | 从传送门地图返回青云宗；仅允许存活玩家在对应回程门附近发送 |
 | `mapLeave` | 无 | 部署或重连流程用于清理地图状态，并把玩家放回其出生点；不要求位于回程门附近 |
+| `spawnMap` | `map` | 从首页地图选择器直接部署；`map` 为 `port`、`qingyun` 或远征地图 ID。结果通过 `spawnMapResult` 返回，专注期间同样会被拒绝 |
 | `signList` | 无 | 请求当前地图 52 米内的路牌；同一连接 600 ms 内重复请求会被忽略 |
+| `signCheck` | `requestId`, `pos` | 预检指定位置能否立牌；`requestId` 必须是正整数，结果通过 `signCheckResult` 返回。同一连接 400 ms 内重复请求会被忽略 |
 | `signPlace` | `text`, `style`, `pos` | 在玩家 5 米内的平坦地面创建路牌，文字最多 32 字，颜色为 `blue` 或 `yellow`。服务端强制执行每日 10 块、短时冷却、突发、身份节点、网络来源、地图容量和区域密度限制 |
 | `signRemove` | `id` | 拔除自己的路牌；必须位于牌子 5 米内，且北京时间已到次日零点 |
 | `goldList` | 无 | 请求当前地图的金标目标、地面掉落、当日配额和随身余额；同一连接 700 ms 内重复请求会被忽略 |
@@ -286,6 +300,13 @@
 | `ordinaryGoldHit` | `id`, `kind`, `point`, `killed`, `weak`, `floor` | 上报普通机器狗 / 无人机的权威击毁信息；服务端结合弹道、落点和独立抽签决定是否有 5% 幸运掉落，每日本类掉落最多 8 份 |
 | `containerList` | 无 | 请求当前地图附近的集装箱；同一连接 1200 ms 内重复请求会被忽略 |
 | `containerAction` | `request`, `action`, 可选 `password`, `id`, `point`, `color`, `text`, `item`, `amount` | 集装箱操作。`action` 为 `issue`、`create`、`open`、`close`、`move`、`sign`、`deposit`、`withdraw`、`locate`、`depositGold` 或 `withdrawGold`；`deposit` / `withdraw` 的 `amount` 为指定物品件数（正整数），`depositGold` / `withdrawGold` 的 `amount` 为微盐线币整数。省略或为 `all` 时沿用快捷数量（消耗品 1 个、其他物品尽量全部；金币全部存入或取出）；密码由服务器生成，成功 / 失败结果通过同名 `request` 关联 |
+| `shopList` | 无 | 请求商店商品价格与玩家已购状态；商品管理端调价后也会主动广播 `shopPrices` |
+| `shopBuy` | `key`, `price`, `request?` | 购买商店商品；`price` 必须与服务端当前价格一致，`request` 为客户端关联 ID。结果通过 `shopResult` 返回，300 ms 冷却内的重复请求返回 `busy` |
+| `frontierLand` | `point` | 提交西部荒原运输机跳伞落点；服务端校验最短开伞时间与落点范围，成功后广播 `frontierLanded` |
+| `frontierWear` | `amount` | 同步防弹衣耐久消耗；`amount` 为 1–40 的整数，80 ms 冷却内的重复请求会被忽略 |
+| `frontierPick` | `id` | 拾取西部荒原地面补给；服务端校验地图、距离、补给刷新时间和背包容量 |
+| `frontierUse` | `item`, 可选 `health`, `point` | 使用饮料、医疗包或安静卡；治疗类消息可携带客户端预计血量，安静卡可携带 15 米内的投掷落点 |
+| `frontierDiscard` | `item` | 丢弃一个消耗品；`item` 为 `drink`、`medkit` 或 `quiet` |
 | `focusEnd` | 无 | 手动 30 分钟或自动 20 分钟到期后请求结束只读观战并恢复出生；未到期时返回 `focusState.denied: true` |
 | `ping` | `t` | 延迟探测，服务端回 `pong` |
 
@@ -326,8 +347,11 @@
 | `qingyunReturned` | `pos` | 已从青云宗返回港口；`pos` 为港口回程落点 |
 | `mapEntered` | `map`, `pos` | 已从青云宗进入传送门地图；`map` 为地图 ID，`pos` 为服务器指定的落点 |
 | `mapReturned` | `pos` | 已从传送门地图返回青云宗；`pos` 为青云宗枢纽落点 |
+| `spawnMapResult` | `map`, `ok`, 可选 `pos`, `reason` | 首页直接部署结果；`ok: true` 时 `pos` 为服务器指定落点，`reason: "locked"` 表示通行证或地图进入条件不满足 |
+| `mapDenied` | `map`, `reason` | 传送门地图进入失败；`reason` 为 `locked`，轿车跨图和青云枢纽进入失败时均会返回 |
 | `signList` | `map`, `signs[]` | 当前地图可见路牌；每项含 `id`、位置、朝向、颜色、牌面文字、提交时间、可拔除时间、本人归属、保护区状态与 `flagged` 违规标记 |
 | `signChange` | `map`, `id`, `removed`, `sign` | 路牌新增、更新或拔除通知；`removed: true` 时不带 `sign` |
+| `signCheckResult` | `requestId`, 可选 `reason` | 立牌位置预检结果，与客户端 `signCheck.requestId` 对应；`reason` 省略表示可以立牌，失败时为 `identity`、`map`、`range`、`gate`、`occupied`、`busy` 或 `storage` |
 | `signResult` | `action`, `id`, `reason`, `removed`, `remaining` | 路牌操作结果；`action` 为 `place` 或 `remove`，`id` 为对应路牌 ID。成功放置时 `remaining` 为今日剩余额度；失败原因可为 `cooldown`、`burst`、`daily`、`density`、`ownerLimit`、`networkLimit`、`mapFull`、`occupied`、`gate`、`range`、`text`、`style`、`owner`、`tomorrow`、`identity`、`storage` 或 `busy` |
 | `signFlagged` | 无 | 自己创建的路牌被管理员标记为违规，客户端显示牌面已替换提示 |
 | `goldList` | `map`, `targets[]`, `drops[]`, `reward`, `issued`, `remaining`, `remainingTargets`, `remainingGold`, `totalGold`, `carried` | 当前地图的金标目标和地面掉落列表；`remaining` 为当前地图尚未击毁的目标数，`remainingTargets` / `remainingGold` / `totalGold` 为全服今日剩余目标数、剩余待派发金币额度和今日派发总额度；金标机器狗与无人机为主动攻击单位，进入射程后会锁定、预警并开火；`reward`、`remainingGold`、`totalGold` 与 `carried` 使用微盐线币整数，1 盐线币 = 1,000,000 微盐线币 |
@@ -340,6 +364,10 @@
 | `containerList` | `map`, `containers[]` | 附近集装箱快照；每项含 `id`、`color`、`pos`、`yaw`、`sign`、`gold` 和 `open`，其中 `gold` 为微盐线币整数，供客户端在系统牌上显示箱内余额 |
 | `containerResult` | `request`, 可选 `password`, `id`, `open`, `items`, `gold`, `moved`, `withdrawn`, `location`, `error` | 与客户端 `request` 对应的操作结果；`moved` 为本次实际存入或取出的物品件数 / 微盐线币整数，`withdrawn` 为本次取出的微盐线币整数，`error` 可为 `unavailable`、`busy`、`range`、`password`、`inUse`、`closed`、`position`、`item`、`amount`、`exists`、`identity`、`text`、`inside`、`exit`、`draft`、`storage` 或 `unavailable` |
 | `containerClosed` | `id` | 开门租约到期、玩家远离或状态失效后，服务器强制关箱上锁 |
+| `shopPrices` | `prices` | 商店价格表发生变化或玩家请求 `shopList` 后的完整商品报价；客户端据此刷新购买按钮和余额提示 |
+| `bossExplosion` | `map`, `positions[]` | 传送门 Boss 的爆炸预警 / 命中位置，广播给当前地图内已加入战局的玩家 |
+| `goldKillReward` | `amount`, `bonus` | 击毁普通金标单位后的固定奖励；`bonus: true` 表示同时抽中地面掉落 |
+| `bossReward` | `amount`, `reason` | 传送门 Boss 结算后按身份节点派发的奖励；`amount` 为微盐线币整数，`reason` 为结算原因 |
 
 客户端在 `open` 成功后立即关闭模态面板并恢复移动，改用非遮挡 HUD 提示玩家走进箱内；进入箱体后可直接点 HUD 的金币按钮，也可按 `K` 或点「集装箱」重新打开存取面板。存取面板为金币和每种物品提供数量输入，可指定数量存入或取出，留空时沿用原有快捷数量；服务器在物品数量超过库存或背包容量时拒绝请求。服务器仍要求玩家位于箱体内才接受 `depositGold` 与 `withdrawGold`。附近有玩家且持有随身金币时，桌面端金币 HUD 的赠币按钮显示 `Y` 键提示，也可直接按 `Y` 打开赠币面板。选定接收方后还会弹出对象与数量确认框；接收方接受后才转账，双方都会收到最终结果提示。
 | `voiceState` | `player{id,name,color,enabled,muted,speaking}` | 开麦、静音、说话状态变化 |
@@ -352,6 +380,7 @@
 | `hitConfirm` | `targetId`, `damage`, `hp`, `killed`, `blocked` | 命中确认 |
 | `respawned` | `pos`, `yaw`, `protectedUntil` | 复活成功 |
 | `respawnWait` | `ms` | 复活等待剩余毫秒 |
+| `deathAck` | `respawnIn`, `respawnAt` | 客户端主动上报 `died` 后的死亡确认，包含固定复活等待时长与服务端复活时间戳 |
 | `notice` | `kind`, `name`, `id`, `previous`, `reason` | 加入 / 离开 / 复活 / 改名通知 |
 | `shot` | `id`, `origin`, `dir` | 其他玩家射击特效 |
 | `focusState` | `active`, `until`, `remainingMs`, `recordId`, `kind`, `durationMs`, `trigger`, `scope`, `playMs`, `ended`, `expired`, `denied`, `spawn` | 专注状态变化。`active: true` 表示进入只读观战，手动开启后持续 30 分钟。 |

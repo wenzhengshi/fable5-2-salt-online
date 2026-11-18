@@ -62,15 +62,23 @@
     const model = template.clone(true);
     const left = model.getObjectByName('left-leg');
     const right = model.getObjectByName('right-leg');
+    const leftArm = model.getObjectByName('left-arm');
+    const rightArm = model.getObjectByName('right-arm');
     const weapon = model.getObjectByName('lunar-weapon');
     let step = 0;
     return {
       model,
-      update(dt, moving, armed) {
+      update(dt, moving, armed, fall) {
         if (moving) step += dt * 8;
         const angle = moving ? Math.sin(step) * .43 : 0;
         left.rotation.x = THREE.MathUtils.lerp(left.rotation.x, angle, Math.min(1, dt * 12));
         right.rotation.x = -left.rotation.x;
+        leftArm.rotation.set(fall?.armL || 0, 0, fall ? -.72 * fall.flare : 0);
+        rightArm.rotation.set(fall?.armR || 0, 0, fall ? .72 * fall.flare : 0);
+        if (fall) {
+          left.rotation.x = fall.legL;
+          right.rotation.x = fall.legR;
+        }
         weapon.visible = !!armed;
       }
     };

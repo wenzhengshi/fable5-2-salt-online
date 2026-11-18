@@ -10,6 +10,8 @@
     'audio-tap.js',
     'qingyun-zone.js',
     'expedition-zones.js',
+    'bayhaven-lift.js',
+    'portal-arrival.js',
     'terrain-ray.js',
     'portal-boss-rules.js',
     'portal-bosses.js',

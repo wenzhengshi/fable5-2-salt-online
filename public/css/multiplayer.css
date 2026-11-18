@@ -452,7 +452,9 @@ body.is-playing .mp-net { opacity: 0.78; }
   pointer-events: none;
 }
 
-.mp-respawn[hidden] { display: none; }
+.mp-respawn[hidden],
+body:has(.menu.panel-open) .mp-respawn,
+body.mp-respawning .menu[data-screen="paused"] .m-screen[data-s="paused"] { display: none; }
 
 .mp-respawn-card {
   width: min(660px, 92vw);

@@ -1,26 +1,37 @@
 (() => {
   'use strict';
 
-  const { HEIGHT, TEAM_SIZE, SMALL_HEIGHT, STOMP_RADIUS, rayDistance, weakPoint, seesWeakPoint, weakPointDistance, splitProgress, splitPosition } = window.SaltPortalBossRules;
+  const { HEIGHT, TEAM_SIZE, SMALL_HEIGHT, STOMP_RADIUS, BOSS_NAMES, flightBoxes, rayDistance, HOUND_HEAD_MARK, seesWeakPoint, weakPointRadius, weakRayDistance, splitProgress, splitStretch, splitPosition } = window.SaltPortalBossRules;
   const english = document.documentElement.lang === 'en-US';
-  const names = english ? { cat: 'Giant tabby', hound: 'Giant hound' }
-    : { cat: '奶油虎斑巨猫', hound: '巨型机器狗' };
   const targetHeight = boss => boss.height || (boss.phase === 'active' ? HEIGHT : SMALL_HEIGHT[boss.kind]);
-  let catAsset;
+  const catModels = { cat: 'cream-tabby-boss', watercolor: 'watercolor-cat-boss' };
+  const catAssets = new Map();
 
-  async function loadCat(THREE) {
-    const response = await fetch('/models/cream-tabby-boss.bin');
+  async function loadCat(THREE, modelName) {
+    const response = await fetch('/models/' + modelName + '.bin');
     if (!response.ok) throw new Error('Cat mesh unavailable');
     const view = new DataView(await response.arrayBuffer());
-    if (view.getUint32(0) !== 0x43415431) throw new Error('Invalid cat mesh');
+    const format = view.getUint32(0);
+    const textured = format === 0x43415432;
+    if (!textured && format !== 0x43415431) throw new Error('Invalid cat mesh');
     const vertices = view.getUint32(4, true), count = view.getUint32(8, true);
     const frameCount = view.getUint32(12, true), coatVertices = view.getUint32(16, true);
     const geometry = new THREE.BufferGeometry();
     let offset = 20;
-    geometry.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(view.buffer, offset, vertices * 3), 3, true));
+    const colors = new Uint8Array(view.buffer, offset, vertices * 3);
+    geometry.setAttribute('color', textured
+      ? new THREE.BufferAttribute(Float32Array.from(colors, color => color * 2 / 255), 3)
+      : new THREE.BufferAttribute(colors, 3, true));
     offset += vertices * 3;
-    const index = new Uint32Array(count);
-    for (let i = 0; i < count; i++, offset += 4) index[i] = view.getUint32(offset, true);
+    if (textured) {
+      const uv = new Float32Array(vertices * 2);
+      for (let i = 0; i < uv.length; i++, offset += 2) uv[i] = view.getUint16(offset, true) / 65535;
+      geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    }
+    const index = textured ? new Uint16Array(count) : new Uint32Array(count);
+    for (let i = 0; i < count; i++, offset += index.BYTES_PER_ELEMENT) {
+      index[i] = textured ? view.getUint16(offset, true) : view.getUint32(offset, true);
+    }
     geometry.setIndex(new THREE.BufferAttribute(index, 1));
     const poses = [];
     const normals = [];
@@ -40,12 +51,24 @@
     geometry.morphAttributes.position = poses.slice(1);
     geometry.morphAttributes.normal = normals.slice(1);
     geometry.computeBoundingSphere();
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff, vertexColors: true, roughness: textured ? .74 : .84, side: THREE.DoubleSide
+    });
+    if (textured) {
+      const texture = await new THREE.TextureLoader().loadAsync('/models/' + modelName + '.webp');
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.anisotropy = 4;
+      material.map = texture;
+    }
+    if (!textured) addCoatDetail(THREE, geometry, material, vertices, coatVertices);
+    return { geometry, material, stompIndex: frameCount - 2, gaitPoses: frameCount - 2 };
+  }
+
+  function addCoatDetail(THREE, geometry, material, vertices, coatVertices) {
     const coatMask = new Uint8Array(vertices);
     coatMask.fill(255, 0, coatVertices);
     geometry.setAttribute('isCoat', new THREE.BufferAttribute(coatMask, 1, true));
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xffffff, vertexColors: true, roughness: .84, side: THREE.DoubleSide
-    });
     material.onBeforeCompile = shader => {
       shader.vertexShader = 'attribute float isCoat; varying float vCoat; varying vec3 vCoatPosition;\n' +
         shader.vertexShader.replace('#include <begin_vertex>',
@@ -59,7 +82,6 @@
           diffuseColor.rgb *= 1.0 + vCoat * detail * (0.095*strands + 0.047*fiber);
         `);
     };
-    return { geometry, material, stompIndex: frameCount - 2, gaitPoses: frameCount - 2 };
   }
 
   function install(game) {
@@ -75,11 +97,12 @@
       polygonOffsetFactor: -3, side: THREE.DoubleSide
     });
     const angles = new THREE.Box3();
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffdf29 }));
-    dot.name = 'boss-overhead-marker';
-    dot.visible = false;
-    scene.add(dot);
+    const markRim = new THREE.CircleGeometry(.026, 24).rotateX(-Math.PI / 2);
+    const markCenter = new THREE.CircleGeometry(.019, 24).rotateX(-Math.PI / 2);
+    const rimMaterial = new THREE.MeshBasicMaterial({ color: 0x211b07, polygonOffset: true, polygonOffsetFactor: -1 });
+    const markMaterial = new THREE.MeshBasicMaterial({ color: 0xffed29, toneMapped: false,
+      polygonOffset: true, polygonOffsetFactor: -2 });
+    const markWorld = new THREE.Vector3();
     const neckGeometry = new THREE.SphereGeometry(1, 16, 10);
     const neckMaterial = new THREE.MeshStandardMaterial({ color: 0x565d5e, roughness: .68, metalness: .35 });
     const neckAxis = new THREE.Vector3();
@@ -95,12 +118,17 @@
 
     function loadActor(actor, kind, now) {
       if (actor.model || actor.loading || now < actor.retryAt) return;
-      if (kind === 'cat') {
+      const modelName = catModels[kind];
+      if (modelName) {
         actor.loading = true;
-        catAsset ||= loadCat(THREE).catch(error => { catAsset = null; throw error; });
-        catAsset.then(asset => {
+        if (!catAssets.has(modelName)) catAssets.set(modelName, loadCat(THREE, modelName).catch(error => {
+          catAssets.delete(modelName);
+          throw error;
+        }));
+        catAssets.get(modelName).then(asset => {
+          if (actors.get(actor.data.id) !== actor) return;
           const mesh = new THREE.Mesh(asset.geometry, asset.material);
-          mesh.name = 'cream-tabby-boss';
+          mesh.name = modelName;
           actor.model = mesh;
           actor.root.add(mesh);
           actor.pose = (dt, moving, windup) => {
@@ -139,6 +167,18 @@
       actor.root.add(normalized);
       actor.model = normalized;
       actor.dispose = () => hound.dispose();
+      const head = hound.bones?.head;
+      if (head && !actor.data.parentId) {
+        const marker = new THREE.Mesh(markRim, rimMaterial);
+        const center = new THREE.Mesh(markCenter, markMaterial);
+        center.position.y = .0006;
+        marker.add(center);
+        marker.name = 'boss-overhead-marker';
+        marker.position.set(HOUND_HEAD_MARK.x, HOUND_HEAD_MARK.y, HOUND_HEAD_MARK.z);
+        marker.visible = false;
+        head.add(marker);
+        actor.weakMarker = marker;
+      }
       const gun = hound.bones?.gun;
       const restPitch = gun?.rotation.x || 0;
       actor.pose = (dt, moving, windup, idle, aim) => {
@@ -166,7 +206,7 @@
       const track = document.createElement('div');
       const fill = document.createElement('i');
       track.className = 'portal-boss-track';
-      label.textContent = names[boss.kind] + (boss.parentId ? (english ? ' · Split' : '分身') : '');
+      label.textContent = BOSS_NAMES[boss.kind][english ? 'en' : 'zh'] + (boss.parentId ? (english ? ' · Split' : '分身') : '');
       const status = document.createElement('small');
       status.className = 'portal-boss-status';
       status.hidden = !!boss.parentId;
@@ -194,7 +234,8 @@
         actor.dispose?.();
         actors.delete(id);
       }
-      for (const boss of bosses) {
+      for (const data of bosses) {
+        const boss = data.variant === 'watercolor' ? { ...data, kind: data.variant } : data;
         const actor = actors.get(boss.id) || createActor(boss);
         if (!actor.data || actor.data.id !== boss.id) {
           actor.root.position.set(boss.x, boss.y, boss.z);
@@ -203,7 +244,8 @@
           actor.shrink = 0;
         } else if (actor.data.phase === 'active' && boss.phase === 'idle') {
           actor.shrink = performance.now() + 440;
-        } else if (boss.phase === 'active' && actor.shrink) {
+        } else if (boss.phase === 'active' && (actor.shrink ||
+          (boss.kind === 'hound' && Math.hypot(boss.x - actor.data.x, boss.z - actor.data.z) > 3))) {
           actor.root.position.set(boss.x, boss.y, boss.z);
           actor.shrink = 0;
         }
@@ -247,16 +289,16 @@
       const map = currentMap();
       const active = online && receivedMap === map && ['playing', 'dead'].includes(game.game.state);
       let showHud = false;
-      dot.visible = false;
       const serverTime = Date.now() - serverClock;
       const splitting = new Map();
       for (const { data } of actors.values()) {
-        if (data?.birth) splitting.set(data.parentId, splitProgress(data.birth, serverTime));
+        if (data?.birth) splitting.set(data.parentId, splitStretch(data.birth, serverTime));
       }
       for (const actor of actors.values()) {
         const boss = actor.data;
         const visible = !!(active && boss && !actor.exploding);
         if (actor.neck) actor.neck.visible = false;
+        if (actor.weakMarker) actor.weakMarker.visible = false;
         actor.root.visible = visible;
         actor.ring.visible = visible && !!boss.attack;
         const fighting = boss?.phase === 'active';
@@ -283,15 +325,9 @@
             Math.cos(boss.yaw - actor.root.rotation.y)) * mix;
         }
         actor.height += (target - actor.height) * mix;
-        const stretch = .085 * Math.sin(Math.PI * (splitting.get(boss.id) || 0));
+        const stretch = splitting.get(boss.id) || 0;
         actor.root.scale.set(actor.height * (1 + stretch), actor.height * (1 - stretch), actor.height * (1 + stretch));
         if (boss.birth) splitVisual(actor, splitProgress(boss.birth, serverTime), serverTime);
-        const point = drone ? weakPoint(boss) : null;
-        if (seesWeakPoint(point, game.player.pos)) {
-          dot.position.set(point.x, point.y, point.z);
-          dot.scale.setScalar(point.radius * .75);
-          dot.visible = true;
-        }
         let windup = 0;
         if (boss.attack) {
           const { x, y, z, at, radius } = boss.attack;
@@ -312,6 +348,11 @@
           }
         }
         actor.pose?.(dt, boss.moving, Math.max(0, windup), boss.phase === 'idle' && !boss.moving, boss.aim);
+        if (actor.weakMarker && drone && fighting && game.game.state === 'playing') {
+          // Use the smoothed head transform so the decal stays on the plate.
+          actor.weakMarker.getWorldPosition(markWorld);
+          actor.weakMarker.visible = seesWeakPoint(markWorld, game.player.eye || game.player.pos);
+        }
         if (showRow && now >= lastHud) {
           actor.hp.textContent = boss.hp + ' / ' + boss.maxHp;
           if (!boss.parentId) {
@@ -341,21 +382,43 @@
     function intersect(origin, dir, range, drone = false) {
       if (receivedMap !== currentMap()) return null;
       let nearest = range;
-      for (const { data } of actors.values()) {
-        if (!data || (data.birth && splitProgress(data.birth, Date.now() - serverClock) < 1)) continue;
+      const now = Date.now() - serverClock;
+      for (const { data, weakMarker, height } of actors.values()) {
+        if (!data || (data.birth && splitProgress(data.birth, now) < 1)) continue;
         const body = rayDistance(data, origin, dir, nearest);
-        const direct = drone ? weakPointDistance(data, game.player.pos, origin, dir, body ?? nearest) : null;
+        const direct = drone && weakMarker?.visible && data.phase === 'active'
+          ? weakRayDistance(weakMarker.getWorldPosition(markWorld), origin, dir, nearest, weakPointRadius(height))
+          : null;
         const distance = direct ?? body;
         if (distance !== null) nearest = distance;
       }
       return nearest < range ? nearest : null;
     }
 
+    function weakAim(origin, direction, range) {
+      if (receivedMap !== currentMap()) return false;
+      for (const { data, weakMarker, height, root } of actors.values()) {
+        if (!root.visible || !weakMarker?.visible || data?.phase !== 'active') continue;
+        const visibleRadius = height * .021;
+        const distance = weakRayDistance(weakMarker.getWorldPosition(markWorld), origin, direction, range, visibleRadius);
+        if (distance !== null && !game.physics.raycast(origin, direction, distance)) return true;
+      }
+      return false;
+    }
+
     function exploded(id) {
       const actor = actors.get(id);
       if (actor) actor.exploding = true;
     }
-    return { snapshot, update, intersect, exploded };
+    function droneBodies() {
+      if (receivedMap !== currentMap() || game.game.state !== 'playing') return [];
+      return [...actors.values()].flatMap(actor =>
+        actor.root.visible && actor.model && !actor.exploding
+          ? flightBoxes(actor.data.kind, actor.root.position, actor.root.rotation.y, actor.root.scale)
+          : []
+      );
+    }
+    return { snapshot, update, intersect, weakAim, exploded, droneBodies };
   }
 
   window.installPortalBosses = install;

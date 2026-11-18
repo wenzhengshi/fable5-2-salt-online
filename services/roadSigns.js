@@ -5,7 +5,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { DATA_DIR } = require('../config/storage');
 const { isBlocked } = require('./contentFilter');
-const { zones: signZones, protectedSpot } = require('../public/js/road-sign-rules');
+const { zones: signZones, protectedSpot, separateFloors } = require('../public/js/road-sign-rules');
+const lift = require('../public/js/bayhaven-lift');
 const signStyles = require('../public/js/road-sign-styles');
 const mapOf = player => player.mapId || (player.inQingyun ? 'qingyun' : null);
 
@@ -161,8 +162,12 @@ function createRegistry(options = {}) {
 
   async function list(map, pos, owner) {
     await init();
+    const verticalDistance = map === 'bayhaven' && lift.shelter(pos, signZones.bayhaven.offset);
+    const range = sign => verticalDistance
+      ? Math.hypot(distance(sign.pos, pos), sign.pos.y - pos.y)
+      : distance(sign.pos, pos);
     return nearby(map, pos, viewRadius)
-      .sort((a, b) => distance(a.pos, pos) - distance(b.pos, pos))
+      .sort((a, b) => range(a) - range(b))
       .slice(0, 120).map(sign => publicSign(sign, owner));
   }
 
@@ -231,8 +236,10 @@ function createRegistry(options = {}) {
     if (!inside(map, point) || distance(point, player.pos) > 5 ||
         Math.abs(point.y - player.pos.y) > 2.5 || player.soldier === 'drone') return { reason: 'range' };
     const pos = Object.fromEntries(['x', 'y', 'z'].map(axis => [axis, Math.round(point[axis] * 100) / 100]));
+    if (map.id === 'bayhaven' && lift.overlaps(pos.x, pos.z - map.offset) && pos.y >= lift.BASE - .09 &&
+        lift.floorFor(pos.x, pos.y, pos.z - map.offset, .10) === null) return { reason: 'range' };
     if (protectedSpot(map.id, pos)) return { reason: 'gate' };
-    if (nearby(map.id, pos, spacing - .001).length) return { reason: 'occupied' };
+    if (nearby(map.id, pos, spacing - .001).some(sign => !separateFloors(map.id, sign.pos, pos))) return { reason: 'occupied' };
     return { pos };
   }
 
@@ -330,13 +337,14 @@ function createRegistry(options = {}) {
       for (const current of signs.values()) if (current.map === map.id) mapTotal += 1;
       if (mapTotal >= limits.mapTotal) return { reason: 'mapFull' };
 
-      const area = nearby(map.id, pos, limits.densityRadius);
+      const area = nearby(map.id, pos, limits.densityRadius).filter(sign => !separateFloors(map.id, sign.pos, pos));
       const areaOwner = area.filter(current => current.owner === identities.owner).length;
       const areaNetwork = identities.network
         ? area.filter(current => current.network === identities.network).length
         : 0;
       const cell = zones.get(map.id)?.get(bucketKey(bucket(pos.x), bucket(pos.z)));
-      if ((cell?.size || 0) >= limits.cellSigns || area.length >= limits.densitySigns) return { reason: 'density' };
+      const cellCount = cell ? [...cell].filter(sign => !separateFloors(map.id, sign.pos, pos)).length : 0;
+      if (cellCount >= limits.cellSigns || area.length >= limits.densitySigns) return { reason: 'density' };
       if (areaOwner >= limits.densityOwner) return { reason: 'ownerLimit' };
       if (areaNetwork >= limits.densityNetwork) return { reason: 'networkLimit' };
 

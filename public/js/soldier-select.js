@@ -306,13 +306,73 @@
   }
 
   function resizePreview() {
+    if (overlay.hidden) return;
+    const width = overlay.clientWidth;
+    const height = overlay.clientHeight;
+    overlay.classList.toggle('ss-compact', width > height && height <= 600);
     if (!state.renderer || !state.camera) return;
-    const rect = el.preview.getBoundingClientRect();
-    const width = Math.max(1, Math.round(rect.width || el.preview.clientWidth || 480));
-    const height = Math.max(1, Math.round(rect.height || el.preview.clientHeight || 620));
+    sizePreview(el.preview.clientWidth || 480, el.preview.clientHeight || 620);
+    frameLiveModel();
+  }
+
+  function sizePreview(width, height) {
     state.renderer.setSize(width, height, false);
     state.camera.aspect = width / height;
     state.camera.updateProjectionMatrix();
+  }
+
+  function getPreviewBounds(model) {
+    const THREE = window.__G.THREE;
+    const bounds = new THREE.Box3();
+    const part = new THREE.Box3();
+    state.pivot.updateMatrixWorld(true);
+    model.traverseVisible((node) => {
+      if (!node.isMesh || !node.geometry) return;
+      if (node.isSkinnedMesh) node.computeBoundingBox();
+      else if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+      const box = node.isSkinnedMesh ? node.boundingBox : node.geometry.boundingBox;
+      if (box && !box.isEmpty()) bounds.union(part.copy(box).applyMatrix4(node.matrixWorld));
+    });
+    return bounds;
+  }
+
+  function previewYaw(kind) {
+    return kind === 'drone' ? -0.55 : -Math.PI / 2 - (kind === 'hound' ? 0.38 : 0.16);
+  }
+
+  function frameModel(bounds, kind) {
+    const { camera } = state;
+    if (!bounds || bounds.isEmpty()) {
+      camera.position.set(0, 1.02, 4.15);
+      camera.lookAt(0, 0.92, 0);
+      return;
+    }
+    const THREE = window.__G.THREE;
+    const center = bounds.getCenter(new THREE.Vector3());
+    const direction = new THREE.Vector3(0, kind === 'drone' ? 0.64 : kind === 'hound' ? 0.38 : 0.08, 1).normalize();
+    camera.position.copy(center).add(direction);
+    camera.lookAt(center);
+    const inverse = camera.quaternion.clone().invert();
+    const slope = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.76;
+    const corner = new THREE.Vector3();
+    let distance = camera.near;
+    for (const x of [bounds.min.x, bounds.max.x]) {
+      for (const y of [bounds.min.y, bounds.max.y]) {
+        for (const z of [bounds.min.z, bounds.max.z]) {
+          corner.set(x, y, z).sub(center).applyQuaternion(inverse);
+          distance = Math.max(distance, corner.z + Math.max(
+            Math.abs(corner.x) / (slope * camera.aspect),
+            Math.abs(corner.y) / slope,
+            camera.near
+          ));
+        }
+      }
+    }
+    camera.position.copy(center).addScaledVector(direction, distance);
+  }
+
+  function frameLiveModel() {
+    frameModel(state.current?.previewBounds, state.current?.kind);
   }
 
   function clearPreviewModel() {
@@ -342,7 +402,10 @@
       return;
     }
     state.current = made;
+    state.pivot.rotation.y = previewYaw(unit);
     state.pivot.add(made.model);
+    if (isMachine(unit)) made.previewBounds = getPreviewBounds(made.model);
+    frameLiveModel();
     if (made.armorAnchors) {
       const sameSize = unit === 'classic' || isMachine(unit) ? made.model.scale.x : 1;
       made.armor = window.SaltFrontierArmor?.mount(window.__G.THREE, state.pivot,
@@ -366,10 +429,10 @@
     state.last = now;
     state.elapsed += dt;
     if (state.pivot) {
-      const previewYaw = -Math.PI / 2 - 0.16;
+      const yaw = previewYaw(state.current?.kind);
       state.pivot.rotation.y = state.reducedMotion
-        ? previewYaw
-        : previewYaw + Math.sin(state.elapsed * 0.34) * 0.16;
+        ? yaw
+        : yaw + Math.sin(state.elapsed * 0.34) * 0.16;
     }
     if (state.current && state.current.rig) {
       try {
@@ -392,37 +455,37 @@
     state.raf = 0;
   }
 
-  async function startThumbnails() {
-    if (state.thumbsStarted) return;
-    state.thumbsStarted = true;
-    if (!ensurePreview()) return;
+  function startThumbnails() {
+    if (!state.open || state.thumbsStarted || !ensurePreview()) return;
     try {
       clearPreviewModel();
-      state.pivot.rotation.y = -Math.PI / 2 - 0.16;
+      sizePreview(256, 192);
       for (const kind of UNIT_KINDS) {
+        const card = el.cards.find((item) => item.dataset.kind === kind);
+        if (!card || card.classList.contains('has-thumb')) continue;
         const api = modelApiFor(kind);
         if (!api || typeof api.create !== 'function') continue;
         const made = api.create(kind, { preview: true });
         if (!made || !made.model) continue;
+        state.pivot.rotation.y = previewYaw(kind);
         state.pivot.add(made.model);
-        made.model.updateMatrixWorld(true);
-        if (kind === 'hound' || kind === 'drone') made.model.scale.multiplyScalar(1.12);
-        await new Promise((resolve) => window.requestAnimationFrame(resolve));
-        state.renderer.render(state.scene, state.camera);
-        await new Promise((resolve) => window.requestAnimationFrame(resolve));
-        const url = state.renderer.domElement.toDataURL('image/png');
-        state.pivot.remove(made.model);
-        if (typeof made.dispose === 'function') made.dispose();
-        const card = overlay.querySelector(`.ss-card[data-kind="${kind}"]`);
-        const img = card && card.querySelector('.ss-thumb');
-        if (img && url) {
-          img.src = url;
+        try {
+          frameModel(getPreviewBounds(made.model), kind);
+          state.renderer.render(state.scene, state.camera);
+          const img = card.querySelector('.ss-thumb');
+          img.src = state.renderer.domElement.toDataURL('image/png');
           img.hidden = false;
           card.classList.add('has-thumb');
+        } finally {
+          state.pivot.remove(made.model);
+          made.dispose?.();
         }
       }
+      state.thumbsStarted = el.cards.every((card) => card.classList.contains('has-thumb'));
     } catch (err) {
       console.warn('[soldier-select] thumbnail render skipped', err && err.message);
+    } finally {
+      resizePreview();
     }
   }
 
@@ -438,9 +501,10 @@
       return;
     }
     setModelState(t('loading'));
-    Promise.all(UNIT_KINDS.map((kind) => modelApiFor(kind).whenReady(kind))).then(async (ready) => {
+    Promise.all(UNIT_KINDS.map((kind) => modelApiFor(kind).whenReady(kind))).then((ready) => {
+      if (!state.open) return;
       if (ready.some(Boolean)) {
-        await startThumbnails();
+        startThumbnails();
         mountPreviewModel(state.selected);
       }
       const selectedIndex = UNIT_KINDS.indexOf(state.selected);
@@ -536,6 +600,8 @@
   }
   el.confirm.addEventListener('click', confirm);
   window.addEventListener('resize', resizePreview);
+  window.addEventListener('saltline:layoutchange', resizePreview);
+  if (typeof ResizeObserver === 'function') new ResizeObserver(resizePreview).observe(el.preview);
   function openFromSettings(event) {
     const trigger = event.target && event.target.closest
       ? event.target.closest('[data-soldier-setting]')

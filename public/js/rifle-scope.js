@@ -48,10 +48,11 @@
       get power() { return aiming() ? powers[index] : 1; },
       update() {
         const power = this.power;
-        const visible = power > 1 && game.weapon.ads > .65;
+        const fallView = game.portalArrival?.showingFall;
+        const visible = !fallView && power > 1 && game.weapon.ads > .65;
         scope.hidden = !visible;
         const text = power + '×';
-        const adjusting = game.input.touch && aiming();
+        const adjusting = !fallView && game.input.touch && aiming();
         if (zoom.hidden === adjusting) zoom.hidden = !adjusting;
         if (adjusting) {
           if (readout.textContent !== text) readout.textContent = text;

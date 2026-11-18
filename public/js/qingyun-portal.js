@@ -2,6 +2,7 @@
   'use strict';
 
   const zone = window.SaltQingyunZone;
+  const arrival = window.SaltPortalArrival;
   const assets = '/maps/';
   let loading;
 
@@ -36,13 +37,15 @@
   window.installQingyunPortal = function (game) {
     const { THREE, scene, camera, viewCamera, physics, player, renderer } = game;
     const preloadDistance = 52;
+    const hold = arrival.holdPrompt();
     const gate = new THREE.Group();
     gate.name = 'qingyun-time-tunnel';
-    gate.position.set(zone.gate.x, zone.gate.y, zone.gate.z);
+    gate.position.set(zone.gate.x, physics.groundHeight(zone.gate.x, zone.gate.z, zone.gate.y) + .06, zone.gate.z);
 
     const ringMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.22, 1.9, 2.8) });
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, .095, 12, 80), ringMaterial);
-    ring.scale.y = 1.12;
+    ring.rotation.x = -Math.PI / 2;
+    ring.scale.y = .5;
     gate.add(ring);
     const vortex = new THREE.Mesh(new THREE.CircleGeometry(1.23, 80), new THREE.ShaderMaterial({
       transparent: true,
@@ -72,7 +75,9 @@
         }
       `
     }));
-    vortex.scale.y = 1.12;
+    vortex.rotation.x = -Math.PI / 2;
+    vortex.scale.y = .5;
+    vortex.position.y = .012;
     gate.add(vortex);
 
     function signTexture(chinese, english) {
@@ -91,7 +96,7 @@
     const label = new THREE.Sprite(new THREE.SpriteMaterial({
       map: signTexture('时空隧道', 'TIME RIFT'), depthWrite: false
     }));
-    label.position.y = 1.76;
+    label.position.y = .72;
     label.scale.set(3.6, .675, 1);
     gate.add(label);
     gate.visible = false;
@@ -105,7 +110,7 @@
     const returnGates = [zone.returnGate, zone.mainReturnGate, zone.hubReturnGate].map((point, index) => {
       const portal = gate.clone();
       portal.name = ['qingyun-return-tunnel', 'qingyun-main-return-tunnel', 'qingyun-hub-return-tunnel'][index];
-      portal.position.set(point.x, point.y + 1.45, point.z);
+      portal.position.set(point.x, point.y + .06, point.z);
       portal.children.find(child => child.isSprite).material = returnLabel;
       scene.add(portal);
       return portal;
@@ -116,7 +121,6 @@
     let preparing = null;
     let lastRequest = -Infinity;
     let retryAfter = 0;
-    let crossing = false;
     let inQingyun = false;
     let encounterCooldown = 0;
     let combatants = [];
@@ -152,19 +156,20 @@
       });
     }
 
-    function land(pos) {
+    function land(pos, animate = false) {
       player.pos.set(pos.x, pos.y, pos.z);
       player.lastSafe.copy(player.pos);
       player.vel.set(0, 0, 0);
       player.onGround = true;
       player.yaw = Math.PI;
       player.pitch = 0;
-      crossing = false;
+      hold(null);
       label.material.map = gateTitle;
       inQingyun = zone.contains(pos);
       lastRequest = game.time.t;
       if (inQingyun) map?.resetFrameHistory();
       player.syncView();
+      if (animate) game.portalArrival?.start();
     }
 
     const oldRaycast = physics.raycast.bind(physics);
@@ -280,6 +285,7 @@
     }
 
     game.events.on('game:state', event => {
+      if (event.state !== 'playing') hold(null);
       if (event.state === 'title' || event.state === 'intro') {
         inQingyun = false;
         combatants = [];
@@ -297,6 +303,7 @@
         rim.material.color.copy(tint).multiplyScalar(2.25);
         disc.material = vortex.material.clone();
         disc.material.uniforms.tint.value.set(tint.r, tint.g, tint.b).multiplyScalar(1.65);
+        rim.scale.y = disc.scale.y = .68;
         name.material = label.material.clone();
         name.material.map = signTexture(title);
         name.material.color.copy(tint).lerp(new THREE.Color(0xffffff), .55);
@@ -314,37 +321,38 @@
         gate.visible = !active && game.game.state === 'playing';
         vortex.material.uniforms.time.value += dt;
         ringMaterial.color.setRGB(.16, 1.45 + Math.sin(game.time.t * 3) * .4, 2.4);
-        if (game.game.state !== 'playing' || !player.alive || window.__saltBoat?.riding) {
-          crossing = false;
+        if (game.game.state !== 'playing' || !player.alive || window.__saltBoat?.riding || game.sedan?.riding || game.portalArrival?.active) {
+          hold(null);
           label.material.map = gateTitle;
           return;
         }
         if (active) {
           updateCombatants(dt);
-          if (game.sedan?.riding || !zone.atReturnGate(player.pos) || game.time.t - lastRequest < .8) return;
+          if (!hold(zone.atReturnGate(player.pos) ? 'return' : null, game.time.t, arrival.still(game)) ||
+              game.time.t - lastRequest < .8) return;
           lastRequest = game.time.t;
           const mp = window.__mp;
           if (mp?.connected) {
             mp.syncState();
             mp.send({ type: 'qingyunReturn' });
           } else {
-            land(zone.returnLanding);
+            land(zone.returnLanding, true);
           }
           return;
         }
         const distance = Math.hypot(player.pos.x - zone.gate.x, player.pos.z - zone.gate.z);
         if (distance < preloadDistance) prepare();
         const inside = zone.atGate(player.pos);
-        crossing = inside || (crossing && distance < 2.5);
         label.material.map = !map && preparing && distance < 5 ? connectingTitle : gateTitle;
-        if (game.sedan?.riding || !crossing || !map || game.time.t - lastRequest < .8) return;
+        if (!hold(inside ? 'enter' : null, game.time.t, arrival.still(game)) || !map ||
+            game.time.t - lastRequest < .8) return;
         const mp = window.__mp;
         if (mp?.connected) {
           lastRequest = game.time.t;
           mp.syncState();
           mp.send({ type: 'qingyunEnter' });
         } else {
-          land(zone.landing);
+          land(zone.landing, true);
         }
       },
       render(dt, frameTime) {

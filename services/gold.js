@@ -3,7 +3,7 @@
 const { randomInt, randomUUID } = require('node:crypto');
 const storage = require('../config/storage');
 const { zones } = require('../public/js/road-sign-rules');
-const { hit, eraFor, rewardFor } = require('../public/js/gold-rules');
+const { hit, eraFor, rewardFor, parse } = require('../public/js/gold-rules');
 const arsenal = require('../public/js/arsenal-rules');
 const bossRewards = require('./bossRewards');
 const pickupLog = require('./goldPickups');
@@ -13,6 +13,8 @@ const DAY = 86400000;
 const BONUS_CHANCE = 25;
 const BONUS_PITY = 5;
 const FIXED_KILL_REWARD = 10;
+const PLAYER_DEATH_DROP = parse('0.05');
+const DEATH_DROP_VIEW = 64;
 const DAILY_BONUS_BUDGET_MULTIPLIER = 8;
 
 function ordinaryBudget(data, day) {
@@ -41,6 +43,7 @@ const dayOf = now => Math.floor((now + 8 * 3600000) / DAY);
 const mapOf = player => player.inQingyun ? 'qingyun' : player.mapId || 'port';
 const closeTo = (player, pos) => Math.hypot(player.pos.x - pos.x, player.pos.z - pos.z) <= 2.45 &&
   Math.abs(player.pos.y - pos.y) <= 1.8;
+const liveDrop = (drop, now) => drop.until === null || drop.until > now;
 
 function schedule(day, epoch) {
   const lanes = Object.entries(LOCATIONS).flatMap(([map, positions]) => positions.map((ground, index) =>
@@ -117,7 +120,7 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
         saved.count += extra;
         saved.launchDroneBoost = true;
       } else data.dispatch = schedule(day, saved?.epoch ?? day);
-      for (const [id, row] of Object.entries(data.drops)) if (row.until <= now) delete data.drops[id];
+      for (const [id, row] of Object.entries(data.drops)) if (!liveDrop(row, now)) delete data.drops[id];
     });
   }
   function available(player, now) {
@@ -132,7 +135,9 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     const rows = Object.values(dispatch.targets);
     const targets = rows.filter(row => row.map === map && live(row, now))
       .map(({ id, kind, pos, hp }) => ({ id, kind, pos, hp }));
-    const drops = Object.values(data.drops || {}).filter(row => row.map === map && row.until > now)
+    const drops = Object.values(data.drops || {}).filter(row => row.map === map && liveDrop(row, now) &&
+      (row.until !== null || Math.hypot(player.pos.x - row.pos.x, player.pos.y - row.pos.y,
+        player.pos.z - row.pos.z) <= DEATH_DROP_VIEW))
       .map(({ id, pos, amount }) => ({ id, pos, amount }));
     const open = rows.filter(row => row.hp > 0 && row.until > now);
     const remainingGold = open.reduce((total, row) => total + (row.reward || 0), 0);
@@ -150,6 +155,26 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
   }
   function broadcastAll(now) {
     for (const player of players.values()) if (player.joined) list(player, now);
+  }
+
+  function dropOnDeath(victim, pos, now) {
+    const owner = victim.signOwner;
+    const current = load().carried?.[owner];
+    if (!owner || !Number.isSafeInteger(current) || current <= 0 ||
+        ![pos.x, pos.y, pos.z].every(Number.isFinite)) return;
+    rotate(now);
+    const map = mapOf(victim);
+    let dropped = false;
+    change(data => {
+      const balance = data.carried[owner];
+      if (!Number.isSafeInteger(balance) || balance <= 0) return;
+      const amount = Math.min(balance, PLAYER_DEATH_DROP);
+      const id = randomUUID();
+      data.carried[owner] = balance - amount;
+      data.drops[id] = { id, map, pos, amount, until: null };
+      dropped = true;
+    });
+    if (dropped) broadcast(map, now);
   }
   function pendingAmount(owner) {
     let total = 0;
@@ -299,13 +324,15 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     rotate(now);
     if (!available(player, now) || !player.signOwner || typeof msg.id !== 'string') return;
     const drop = load().drops?.[msg.id];
-    if (!drop || drop.map !== mapOf(player) || drop.until <= now || !closeTo(player, drop.pos)) return;
+    if (!drop || drop.map !== mapOf(player) || !liveDrop(drop, now) || !closeTo(player, drop.pos)) return;
     let collected = 0;
     change(data => {
       const saved = data.drops[msg.id];
-      if (!saved || saved.map !== drop.map || saved.until <= now || !closeTo(player, saved.pos)) return;
+      if (!saved || saved.map !== drop.map || !liveDrop(saved, now) || !closeTo(player, saved.pos)) return;
+      const balance = (data.carried[player.signOwner] || 0) + saved.amount;
+      if (!Number.isSafeInteger(balance)) return;
       delete data.drops[msg.id];
-      data.carried[player.signOwner] = (data.carried[player.signOwner] || 0) + saved.amount;
+      data.carried[player.signOwner] = balance;
       collected = saved.amount;
     });
     if (collected) {
@@ -430,6 +457,6 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     nextRotationCheck = now + 10000;
     try { rotate(now); } catch (error) { console.error('[gold] dispatch storage:', error.message); }
   }
-  return { handle, shoot, ordinaryHit, deposited, tick, reserved: pendingAmount,
+  return { handle, shoot, ordinaryHit, deposited, dropOnDeath, tick, reserved: pendingAmount,
     settleBossReward, bossBudget: now => bossRewards.budgetFor(load(), now) };
 };

@@ -34,7 +34,7 @@
     return 1;
   }
 
-  function chooseContact(contact, previous, current) {
+  function chooseContact(contact, previous, current, settings) {
     const { minX, maxX, minY, maxY, minZ, maxZ } = contact.bounds;
     const candidates = [
       {
@@ -71,7 +71,9 @@
     candidates.sort((left, right) => (
       left.priority - right.priority || Math.abs(left.delta) - Math.abs(right.delta)
     ));
-    return candidates[0];
+    return candidates.find(candidate => candidate.axis !== 'y' ||
+      (current.y + candidate.delta >= (settings.minY ?? -Infinity) &&
+       current.y + candidate.delta <= (settings.maxY ?? Infinity)));
   }
 
   function resolve(position, boxes, options) {
@@ -105,7 +107,7 @@
             current.z <= bounds.minZ || current.z >= bounds.maxZ) {
           continue;
         }
-        const contact = chooseContact({ bounds }, previous, current);
+        const contact = chooseContact({ bounds }, previous, current, settings);
         if (!selected || contact.priority < selected.contact.priority ||
             (contact.priority === selected.contact.priority &&
              Math.abs(contact.delta) < Math.abs(selected.contact.delta))) {
@@ -159,11 +161,70 @@
     };
   }
 
+  function sweep(position, boxes, options) {
+    const from = options?.previous;
+    if (!validVector(from)) return resolve(position, boxes, options);
+    const radius = finite(options.radius, .72);
+    const bottom = finite(options.bottom, .12);
+    const top = finite(options.top, 1.2);
+    const axes = ['x', 'y', 'z'];
+    const contacts = [];
+    for (const box of boxes) {
+      if (!validBox(box)) continue;
+      const low = [box.min.x - radius, box.min.y - top, box.min.z - radius];
+      const high = [box.max.x + radius, box.max.y - bottom, box.max.z + radius];
+      if (axes.some((axis, i) => Math.max(from[axis], position[axis]) < low[i] - .05 ||
+          Math.min(from[axis], position[axis]) > high[i] + .05)) continue;
+      contacts.push({ box, low, high });
+    }
+    const current = resolve(from, contacts.map(contact => contact.box), options);
+    const motion = axes.map(axis => position[axis] - from[axis]);
+    for (let pass = 0; pass < 3; pass++) {
+      let time = 1;
+      let stopped = -1;
+      for (const { low, high } of contacts) {
+        let enter = -Infinity;
+        let exit = Infinity;
+        let side = -1;
+        for (let i = 0; i < 3; i++) {
+          const start = current[axes[i]];
+          const delta = motion[i];
+          if (Math.abs(delta) < 1e-8) {
+            if (start <= low[i] || start >= high[i]) { exit = -1; break; }
+            continue;
+          }
+          const a = (low[i] - start) / delta;
+          const b = (high[i] - start) / delta;
+          if (Math.min(a, b) > enter) { enter = Math.min(a, b); side = i; }
+          exit = Math.min(exit, Math.max(a, b));
+        }
+        if (side >= 0 && enter >= 0 && enter < time && exit > enter) {
+          time = enter;
+          stopped = side;
+        }
+      }
+      const step = stopped < 0 ? time : Math.max(0, time - EPSILON / Math.abs(motion[stopped]));
+      axes.forEach((axis, i) => { current[axis] += motion[i] * step; });
+      if (stopped < 0) break;
+      if (stopped !== 1) current.hitWall = true;
+      else if (motion[1] > 0) current.blockedUp = true;
+      else current.blockedDown = true;
+      current.hit = true;
+      for (let i = 0; i < 3; i++) motion[i] = i === stopped ? 0 : motion[i] * (1 - step);
+    }
+    const settled = resolve(current, boxes, options);
+    if (!settled.hit) return current;
+    settled.hitWall ||= current.hitWall;
+    settled.blockedUp ||= current.blockedUp;
+    settled.blockedDown ||= current.blockedDown;
+    return settled;
+  }
+
   function isInsideAirWall(position) {
     if (!validVector(position)) return false;
     const bounded = clampToBounds(position, AIR_WALL, AIR_WALL.padding);
     return !bounded.clampedX && !bounded.clampedZ;
   }
 
-  return Object.freeze({ resolve, clampToBounds, isInsideAirWall, AIR_WALL, PORT_PLAYER_START });
+  return Object.freeze({ resolve, sweep, clampToBounds, isInsideAirWall, AIR_WALL, PORT_PLAYER_START });
 });

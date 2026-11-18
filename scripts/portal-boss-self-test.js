@@ -8,9 +8,9 @@ const path = require('node:path');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'salt-portal-bosses-'));
 process.env.DATA_DIR = dataDir;
 const storage = require('../config/storage');
-const { createPortalBosses } = require('../services/portalBosses');
+const { createPortalBosses, houndPathClear } = require('../services/portalBosses');
 const { maps } = require('../public/js/expedition-zones');
-const { rayDistance, weakPoint, seesWeakPoint, weakPointDistance, splitPosition, SPLIT_ANIMATION_MS } = require('../public/js/portal-boss-rules');
+const { rayDistance, weakPoint, seesWeakPoint, weakRayDistance, splitStretch, splitPosition, SPLIT_ANIMATION_MS } = require('../public/js/portal-boss-rules');
 const { pac9 } = require('../public/js/arsenal-rules');
 
 const player = id => ({ id, map: 'dustfall', active: true, alive: true, joined: true, ws: { readyState: 1 } });
@@ -52,7 +52,7 @@ try {
   const home = catOf(world);
   teammate.pos = at(home, 35, 10);
   assert.equal(home.phase, 'idle');
-  assert.equal(world.snapshot('dustfall').length, 2);
+  assert.equal(world.snapshot('dustfall').length, 3);
   shooter.pos = at(home, 0, -9);
   bystander.pos = at(home, 0, -11);
   outsider.pos = at(home, 0, 1);
@@ -208,11 +208,15 @@ try {
   world.tick(60800);
   assert.equal(volleys.length, 3);
 
+  const houndArena = { x: 0, y: home.y, z: home.z - 47, yaw: 0 };
+  assert.equal(houndPathClear('dustfall', home, home, 26), false, 'A grown hound cannot overlap the buildings by the gate');
+  assert.equal(houndPathClear('dustfall', houndArena, houndArena, 26), true);
+  assert.equal(houndPathClear('dustfall', houndArena, { ...houndArena, z: home.z }, 26), false);
   storage.updateJson('portal-bosses.json', saved => ({
     ...saved, [home.id]: null,
-    [hound.id]: { phase: 'active', hp: 3000, x: home.x, y: home.y, z: home.z, yaw: 0 }
+    [hound.id]: { phase: 'active', hp: 3000, ...houndArena }
   }));
-  shooter.pos = at(home, 0, -30);
+  shooter.pos = at(houndArena, 0, -19);
   world = make();
   world.tick(70000);
   world.tick(70700);
@@ -220,9 +224,9 @@ try {
   assert.deepEqual(bullets.at(-1), { id: shooter.id, boss: hound.id, amount: 9 });
 
   storage.updateJson('portal-bosses.json', saved => ({ ...saved, [home.id]: null,
-    [hound.id]: { phase: 'active', hp: 600, x: home.x, y: home.y, z: home.z, yaw: 0, elapsed: 59950 }
+    [hound.id]: { phase: 'active', hp: 600, ...houndArena, elapsed: 59950 }
   }));
-  shooter.pos = at(home, 0, -25);
+  shooter.pos = at(houndArena, 0, -19);
   world = make();
   world.tick(80000);
   const formed = world.snapshot('dustfall').find(boss => boss.parentId === hound.id);
@@ -235,14 +239,14 @@ try {
   assert.equal(end.z, formed.z);
   assert.equal(make().snapshot('dustfall').find(boss => boss.id === formed.id).birth.at, 80000);
   const bigDog = world.snapshot('dustfall').find(boss => boss.id === hound.id);
-  const point = weakPoint(bigDog);
+  const point = weakPoint({ ...bigDog, weakStretch: splitStretch(formed.birth, 80200) });
   assert.ok(!weakPoint(formed));
   shooter.pos = { x: point.x, y: point.y + 4, z: point.z };
   const from = { ...shooter.pos, y: shooter.pos.y + .9 };
   const down = { x: 0, y: -1, z: 0 };
   assert.ok(seesWeakPoint(point, shooter.pos));
-  assert.ok(!seesWeakPoint(point, { ...shooter.pos, x: point.x + 5 }));
-  assert.equal(weakPointDistance(bigDog, shooter.pos, from, { x: 1, y: 0, z: 0 }, 100), null);
+  assert.ok(!seesWeakPoint(point, { ...shooter.pos, x: point.x + 7 }));
+  assert.equal(weakRayDistance(point, from, { x: 1, y: 0, z: 0 }, 100), null);
   assert.equal(world.shot(shooter, from, down, pac9, 80100), true);
   assert.equal(hits.at(-1).teamBlocked, true, 'Infantry cannot bypass the shield from above');
   shooter.soldier = 'drone';
@@ -253,7 +257,89 @@ try {
   assert.ok(!world.snapshot('dustfall').some(boss => boss.parentId));
   assert.equal(make().snapshot('dustfall').find(boss => boss.id === hound.id).phase, 'idle');
 
-  console.log('Portal bosses passed: patrol, shared HP, attack, damage multipliers, three-player shield, growth, splits, persistence and ranged attacks');
+  storage.writeJson('portal-bosses.json', {
+    [hound.id]: { phase: 'active', hp: 600, ...houndArena, elapsed: 0 }
+  });
+  const runner = { ...player('runner'), pos: at(houndArena, 0, -45) };
+  const movingWorld = createPortalBosses({
+    mapKey: person => person.map,
+    players: () => [runner, shooter],
+    damage() {},
+    send: (_, message) => hits.push(message)
+  });
+  shooter.active = false;
+  movingWorld.tick(85000);
+  const shownHead = weakPoint(movingWorld.snapshot('dustfall').find(boss => boss.id === hound.id));
+  for (let time = 85100; time <= 85300; time += 100) movingWorld.tick(time);
+  const actualDog = movingWorld.snapshot('dustfall').find(boss => boss.id === hound.id);
+  shooter.active = true;
+  // The client is still showing an earlier pose, with the head raised by the gait.
+  shooter.pos = { x: shownHead.x + 4, y: shownHead.y + .15, z: shownHead.z };
+  const shownOrigin = { ...shooter.pos, y: shooter.pos.y + 1.15 };
+  const raisedHead = .45;
+  const length = Math.hypot(4, 1.3 - raisedHead);
+  const atDecal = { x: -4 / length, y: (raisedHead - 1.3) / length, z: 0 };
+  assert.equal(weakRayDistance(weakPoint(actualDog), shownOrigin, atDecal, pac9.range), null);
+  assert.equal(movingWorld.shot(shooter, shownOrigin, atDecal, pac9, 85310), true);
+  assert.equal(hits.at(-1).killed, true, 'A drone can hit the head in a recent server pose');
+
+  const portHound = world.snapshot('port').find(boss => boss.kind === 'hound');
+  storage.writeJson('portal-bosses.json', {
+    [portHound.id]: { phase: 'active', hp: 600, x: 23, y: 0, z: 19, yaw: Math.PI }
+  });
+  const portWorld = make();
+  const dockDog = portWorld.snapshot('port')[0];
+  const decal = weakPoint(dockDog);
+  const dockEye = { x: decal.x + 5.5, y: decal.y + .42, z: decal.z };
+  outsider.soldier = 'drone';
+  outsider.pos = { ...dockEye, y: dockEye.y - .9 };
+  const dockShot = { x: -5.5 / Math.hypot(5.5, .42), y: -.42 / Math.hypot(5.5, .42), z: 0 };
+  assert.equal(portWorld.shot(outsider, dockEye, { x: -1, y: 0, z: 0 }, pac9, 85400), true);
+  assert.equal(hits.at(-1).teamBlocked, true, 'A horizontal body shot still respects the shield');
+  assert.equal(portWorld.shot(outsider, dockEye, dockShot, pac9, 85500), true);
+  assert.equal(hits.at(-1).killed, true, 'A shallow downward shot at the yellow plate works in port');
+
+  storage.writeJson('portal-bosses.json', {});
+  world = make();
+  const watercolor = service => service.snapshot('dustfall').find(boss => boss.kind === 'watercolor' && !boss.parentId);
+  const smallCat = watercolor(world);
+  assert.ok(smallCat);
+  assert.ok(!world.snapshot('port').some(boss => boss.kind === 'watercolor'));
+  assert.equal(shoot(world, smallCat, .26, 86000), true);
+  const giantCat = watercolor(world);
+  assert.equal(giantCat.height, 20);
+  assert.equal(giantCat.hp, giantCat.maxHp - pac9.damage);
+  assert.equal(catOf(world).phase, 'idle');
+  assert.equal(watercolor(make()).hp, giantCat.hp);
+  storage.updateJson('portal-bosses.json', state => ({
+    ...state, [giantCat.id]: { ...state[giantCat.id], elapsed: 59950 }
+  }));
+  world = make();
+  world.tick(86100);
+  assert.equal(watercolor(world).height, 26);
+  assert.ok(make().snapshot('dustfall').some(boss => boss.parentId === giantCat.id && boss.kind === 'watercolor'));
+
+  for (const [map, dx, dz] of [['port', 0, -25], ['bayhaven', 0, 25], ['bayhaven', -25, 0]]) {
+    storage.writeJson('portal-bosses.json', {});
+    const local = make().snapshot(map).find(boss => boss.kind === 'hound');
+    storage.writeJson('portal-bosses.json', {
+      [local.id]: { ...local, phase: 'active', hp: local.maxHp, elapsed: 0 }
+    });
+    const witness = { ...player('detour'), map, pos: at(local, dx, dz) };
+    const routeWorld = createPortalBosses({ mapKey: p => p.map, players: () => [witness], send() {}, damage() {} });
+    let previous = routeWorld.snapshot(map)[0];
+    let travelled = 0;
+    for (let i = 0; i < 120; i++) {
+      routeWorld.tick(90000 + 100 * i);
+      const current = routeWorld.snapshot(map)[0];
+      assert.ok(houndPathClear(map, previous, current, current.height), map + ': detours must avoid buildings');
+      travelled += Math.hypot(current.x - previous.x, current.z - previous.z);
+      previous = current;
+    }
+    assert.ok(travelled > 4, map + ': boss should leave a blocked line of pursuit');
+  }
+
+  console.log('Portal bosses passed: patrol, obstacle detours, shared HP, attack, damage multipliers, three-player shield, growth, splits, persistence and ranged attacks');
 } finally {
   fs.rmSync(dataDir, { recursive: true, force: true });
 }

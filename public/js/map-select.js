@@ -10,6 +10,8 @@
   let selected = 'port';
   let loading = false;
   let status;
+  let loadingView;
+  let loadingMessage;
   const inputs = [];
   const actions = [];
   const populationLabels = new Map();
@@ -77,6 +79,21 @@
     status.className = 'spawn-status';
     status.setAttribute('role', 'status');
     host.append(group, status);
+    loadingView = document.createElement('div');
+    loadingView.className = 'spawn-loading';
+    loadingView.hidden = true;
+    loadingView.innerHTML = `
+      <div class="spawn-loading-content">
+        <div class="spawn-loading-art" aria-hidden="true">
+          <span class="spawn-loading-runner">
+            <img src="/maps/previews/deployment-runner.webp" alt="" decoding="async" width="3072" height="224">
+          </span>
+        </div>
+        <p class="spawn-loading-message" role="status"></p>
+        <div class="spawn-loading-track" aria-hidden="true"></div>
+      </div>`;
+    loadingMessage = loadingView.querySelector('.spawn-loading-message');
+    document.getElementById('app').append(loadingView);
     setPopulation(mapCounts);
     const menu = host.closest('.menu');
     const titleActions = menu?.querySelector('.m-title-main .m-actions');
@@ -89,7 +106,7 @@
     if (game.game.state !== 'title' || loading) return;
     const id = selected;
     if (id === 'port') {
-      launch();
+      launch(() => game.portalArrival?.start());
       return;
     }
 
@@ -100,13 +117,16 @@
     requestLock();
     loading = true;
     for (const control of [...inputs, ...actions]) control.disabled = true;
-    status.textContent = copy.loading.replace('{map}', names[id]);
+    status.textContent = '';
+    loadingView.hidden = false;
+    loadingMessage.textContent = copy.loading.replace('{map}', names[id]);
 
     try {
+      await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
       let enter, fallback;
       if (id === 'qingyun') {
         await game.qingyun.preload({ warmup: false });
-        enter = game.qingyun.land;
+        enter = point => game.qingyun.land(point, true);
         fallback = qingyun.spawns[0];
       } else {
         enter = await game.expedition.prepareEntry(id);
@@ -125,6 +145,8 @@
       console.warn('[deployment]', error);
     } finally {
       loading = false;
+      loadingView.hidden = true;
+      loadingMessage.textContent = '';
       for (const control of [...inputs, ...actions]) control.disabled = false;
     }
   }

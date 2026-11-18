@@ -9,6 +9,7 @@ const deathReplay = require('../services/deathReplay');
 const { createShop } = require('../services/shop');
 const playerAuthority = require('../services/playerAuthority');
 const { createPortalBosses } = require('../services/portalBosses');
+const { BOSS_NAMES } = require('../public/js/portal-boss-rules');
 const { isInsideAirWall, PORT_PLAYER_START } = require('../public/js/flight-collision');
 const { randomUUID } = require('node:crypto');
 const moderation = require('../services/moderation').createModeration();
@@ -833,8 +834,22 @@ function syncFollowingPlayers(now) {
   }
 }
 
+function announceDeath(victim, killer, now) {
+  const message = { type: 'kill', killer: publicFighter(killer), victim: publicFighter(victim), at: now };
+  const pose = { ...victim.pos, yaw: victim.yaw, outfit: victim.outfit };
+  broadcast({ ...message, pose }, player => sameMap(player, victim));
+  broadcast(message, player => !sameMap(player, victim));
+}
+
+function beginPortalArrival(player, now) {
+  if (!player.portalFall) return;
+  player.active = false;
+  player.protectedUntil = Math.max(player.protectedUntil || 0, now + 4000);
+}
+
 function killPlayer(victim, killer, now, cause = null) {
   const replay = killer ? deathReplay.build(victim, killer, now, frontier.equipmentFlags) : null;
+  const deathPosition = killer ? { ...victim.pos } : null;
   endFollowing(victim, 'down');
   endFollowersOf(victim, 'leaderDown');
   removeFromBoat(victim, true);
@@ -850,14 +865,11 @@ function killPlayer(victim, killer, now, cause = null) {
     killer.streak += 1;
     killer.bestStreak = Math.max(killer.bestStreak, killer.streak);
     touchBoard(killer.name, 1, 0, killer.streak);
+    try { gold.dropOnDeath(victim, deathPosition, now); }
+    catch (error) { console.error('[gold] player death drop failed:', error.message); }
   }
   touchBoard(victim.name, 0, 1, 0);
-  broadcast({
-    type: 'kill',
-    killer: publicFighter(killer),
-    victim: publicFighter(victim),
-    at: now
-  });
+  announceDeath(victim, killer, now);
   send(victim.ws, {
     type: 'youDied',
     by: publicFighter(killer) || cause,
@@ -903,8 +915,8 @@ const portalBosses = createPortalBosses({
     const damage = frontier.armor(target, amount, 'vest', now);
     target.hp = Math.max(0, target.hp - damage);
     const cause = {
-      id: boss.id, name: boss.kind === 'cat' ? '奶油虎斑巨猫' : '巨型机器狗',
-      color: '#ff6f44', soldier: boss.kind === 'cat' ? null : 'hound'
+      id: boss.id, name: BOSS_NAMES[boss.kind].zh,
+      color: '#ff6f44', soldier: boss.kind === 'hound' ? 'hound' : null
     };
     send(target.ws, { type: 'damaged', amount: damage, hp: target.hp, bossDamage: true, from: {
       ...cause, pos: { x: origin.x, y: origin.y, z: origin.z }
@@ -1116,6 +1128,7 @@ function handleMessage(player, raw) {
       }
       player.joined = true;
       player.frontier = msg.frontier === true;
+      player.portalFall = msg.portalFall === true;
       const focused = player.focusUntil > now;
       if (focused) {
         player.active = false;
@@ -1422,7 +1435,8 @@ function handleMessage(player, raw) {
       player.pitch = 0;
       player.moving = player.sprint = false;
       player.motionBudget = null;
-      frontier.enter(player, now);
+      frontier.enter(player, now, !player.portalFall);
+      beginPortalArrival(player, now);
       send(player.ws, { type: 'spawnMapResult', map: msg.map, ok: true, pos: player.pos });
       break;
     }
@@ -1439,6 +1453,7 @@ function handleMessage(player, raw) {
       player.shotCredits = 0;
       player.pendingShot = null;
       player.motionBudget = null;
+      beginPortalArrival(player, now);
       send(player.ws, { type: 'qingyunEntered', pos: player.pos });
       break;
     }
@@ -1455,6 +1470,7 @@ function handleMessage(player, raw) {
       player.shotCredits = 0;
       player.pendingShot = null;
       player.motionBudget = null;
+      beginPortalArrival(player, now);
       send(player.ws, { type: 'qingyunReturned', pos: player.pos });
       break;
     }
@@ -1487,7 +1503,8 @@ function handleMessage(player, raw) {
       player.shotCredits = 0;
       player.pendingShot = null;
       player.motionBudget = null;
-      frontier.enter(player, now);
+      frontier.enter(player, now, !player.portalFall);
+      beginPortalArrival(player, now);
       send(player.ws, { type: 'mapEntered', map: map.id, pos: player.pos });
       break;
     }
@@ -1507,6 +1524,7 @@ function handleMessage(player, raw) {
       player.shotCredits = 0;
       player.pendingShot = null;
       player.motionBudget = null;
+      if (msg.type === 'mapReturn') beginPortalArrival(player, now);
       send(player.ws, { type: 'mapReturned', pos: player.pos });
       break;
     }
@@ -1716,12 +1734,7 @@ function handleMessage(player, raw) {
       player.deaths += 1;
       player.respawnAt = now + RESPAWN_MS;
       touchBoard(player.name, 0, 1, 0);
-      broadcast({
-        type: 'kill',
-        killer: null,
-        victim: publicFighter(player),
-        at: now
-      });
+      announceDeath(player, null, now);
       send(player.ws, { type: 'deathAck', respawnIn: RESPAWN_MS, respawnAt: player.respawnAt });
       break;
     }
@@ -2103,7 +2116,11 @@ function tick() {
     // This state is superseded by the next tick. Let slow clients catch up.
     if (player.ws.readyState !== 1 || player.ws.bufferedAmount > 64 * 1024) continue;
     const key = mapKey(player);
-    if (!bossesByMap.has(key)) bossesByMap.set(key, portalBosses.snapshot(key));
+    if (!bossesByMap.has(key)) {
+      // Keep cat geometry available to tabs still running the previous client.
+      bossesByMap.set(key, portalBosses.snapshot(key).map(boss =>
+        boss.kind === 'watercolor' ? { ...boss, kind: 'cat', variant: 'watercolor' } : boss));
+    }
     send(player.ws, {
       type: 'snapshot',
       t: now,

@@ -169,6 +169,7 @@
   let localUnitRequest = 0;
   let localUnitKind = null;
   let localDroneLight = null;
+  let localDowned = null;
   const qingyun = window.SaltQingyunZone;
   let unitFlightY = 0;
   let unitFlightPrev = null;
@@ -1778,20 +1779,22 @@
     return trail ? new THREE.Vector3(trail.x, trail.y || 0, trail.z) : null;
   }
 
-  function startMachineWreck(victim) {
+  function startRemoteFall(victim, pose) {
     if (!victim || !THREE) return;
+    if (String(victim.id) === String(myId)) return;
     const kind = normalizeSoldier(victim.soldier);
-    if (!isMachine(kind)) return;
-    const avatar = avatars.get(String(victim.id));
-    const pos = machineWreckPosition(victim, avatar);
+    const id = String(victim.id);
+    let avatar = avatars.get(id);
+    if (!pose && !avatar?.group.visible) return;
+    const pos = pose ? new THREE.Vector3(pose.x, pose.y, pose.z) : machineWreckPosition(victim, avatar);
     if (!pos) return;
-    if (!avatar) {
-      if (G && G.player && G.player.pos && G.player.pos.distanceTo(pos) < 45) {
-        machineBurst(pos, kind === 'drone' ? 1.25 : 1.05);
-      }
-      return;
+    if (!avatar && G?.player.pos.distanceTo(pos) < 250) {
+      avatar = createAvatar({ ...victim, ...pose, x: pos.x, y: pos.y, z: pos.z, hp: 0 });
+      if (!avatar.hunter && !avatar.fallbackBuilt && isMachine(kind)) buildMachineFallbackAvatar(avatar, kind);
+      avatars.set(id, avatar);
+      scene.add(avatar.group);
     }
-    if (avatar.wreck) return;
+    if (!avatar || avatar.wreck) return;
     chaseLightCleanup(avatar);
     const trail = snapshotTrails.get(String(victim.id));
     const samples = trail && trail.samples ? trail.samples : [];
@@ -1803,19 +1806,28 @@
       vx = clampNum((last.x - prev.x) / ((last.t - prev.t) / 1000), -12, 12);
       vz = clampNum((last.z - prev.z) / ((last.t - prev.t) / 1000), -12, 12);
     }
+    if (pose) avatar.group.rotation.y = pose.yaw;
+    dressForLunar(avatar, 0, false, false);
+    startUnitFall(avatar, kind, pos, vx, vz);
+  }
+
+  function startUnitFall(avatar, kind, pos, vx, vz) {
     avatar.group.visible = true;
     avatar.hiddenAt = 0;
     avatar.label.visible = false;
     avatar.group.position.copy(pos);
+    const altitude = kind === 'drone' ? Math.max(0, pos.y - groundHeightAt(pos.x, pos.z, pos.y + 1.5)) : 0;
     avatar.wreck = {
       kind,
       t: 0,
       smokeAt: 0,
       exploded: false,
       done: false,
+      fallRate: Math.max(1, Math.sqrt(2 * altitude / 15) / 1.9),
       vel: new THREE.Vector3(vx * 0.55, kind === 'drone' ? -0.8 : -0.2, vz * 0.55),
       spin: (Math.random() < 0.5 ? -1 : 1) * (kind === 'drone' ? 6.5 : 3.2)
     };
+    if (!isMachine(kind)) return;
     try {
       if (G.fx && G.fx.sparks) G.fx.sparks(pos, new THREE.Vector3(0, 1, 0), 16);
       if (G.fx && G.fx.smoke) G.fx.smoke(pos, { size: 0.45, life: 1.2, color: 0x24292c, rise: 0.9 });
@@ -1823,25 +1835,46 @@
     } catch (err) { /* ignore */ }
   }
 
-  function updateMachineWreck(avatar, dt) {
+  function updateUnitFall(avatar, dt) {
     const w = avatar && avatar.wreck;
     if (!w) return false;
     w.t += dt;
     const pos = avatar.group.position;
+    if (!isMachine(w.kind)) {
+      const progress = Math.min(1, w.t / .68);
+      avatar.group.rotation.x = -1.48 * progress * progress;
+      avatar.group.rotation.z = .24 * progress * Math.sign(w.spin);
+      w.vel.y -= 18 * dt;
+      pos.y = Math.max(groundHeightAt(pos.x, pos.z, pos.y + .35), pos.y + w.vel.y * dt);
+      if (w.t >= 3.5) {
+        w.done = true;
+        avatar.group.visible = false;
+        avatar.hiddenAt = Date.now();
+      }
+      return w.done;
+    }
     if (!w.exploded) {
-      w.vel.y -= (w.kind === 'drone' ? 15 : 19) * dt;
-      pos.addScaledVector(w.vel, dt);
+      const previousY = pos.y;
+      w.vel.y -= (w.kind === 'drone' ? 15 : 19) * dt * w.fallRate;
+      pos.x += w.vel.x * dt;
+      pos.y += w.vel.y * dt * w.fallRate;
+      pos.z += w.vel.z * dt;
       avatar.group.rotation.x += w.spin * 0.19 * dt;
       avatar.group.rotation.z += w.spin * 0.34 * dt;
       avatar.group.rotation.y += w.spin * 0.52 * dt;
-      const ground = groundHeightAt(pos.x, pos.z, pos.y + 1.5);
+      const ground = groundHeightAt(pos.x, pos.z, previousY + 1.5);
       const floor = ground + (w.kind === 'drone' ? 0.18 : 0.12);
       if (pos.y <= floor) {
         pos.y = floor;
+        if (w.kind === 'hound' && w.t < .55) {
+          w.vel.set(0, 0, 0);
+          avatar.group.rotation.z = Math.sign(w.spin) * 1.2 * Math.min(1, w.t / .55);
+          return false;
+        }
         w.exploded = true;
         w.explodeAt = w.t;
         w.vel.set(0, 0, 0);
-        machineBurst(pos, w.kind === 'drone' ? 1.3 : 1.05);
+        machineBurst(pos, w.kind === 'drone' ? 1.3 : 1.05, window.__saltLunarSilent);
         try {
           if (G.fx && G.fx.dust) G.fx.dust(pos, new THREE.Vector3(0.8, 1.8, 0.8));
         } catch (err) { /* ignore */ }
@@ -1873,7 +1906,63 @@
     return false;
   }
 
+  function clearLocalFall() {
+    if (localDowned) disposeAvatar(localDowned.avatar);
+    localDowned = null;
+  }
+
+  function startLocalFall(player) {
+    if (!scene || !THREE || localDowned) return;
+    const kind = normalizeSoldier(mySoldier);
+    const { pos, vel, yaw } = player;
+    const avatar = createAvatar({ id: myId, name: myName, color: myColor, soldier: kind,
+      outfit: usableOutfit(myOutfit), armor: G.frontier?.equipmentFlags, x: pos.x, y: pos.y, z: pos.z, yaw, hp: 0 });
+    if (!avatar.hunter && !avatar.fallbackBuilt && isMachine(kind)) buildMachineFallbackAvatar(avatar, kind);
+    avatar.group.name = 'local-downed-unit';
+    avatar.group.getObjectByName('mp-avatar-ring').visible = false;
+    scene.add(avatar.group);
+    dressForLunar(avatar, 0, false, false);
+    startUnitFall(avatar, kind, pos, vel.x, vel.z);
+    localDowned = {
+      avatar, yaw, dir: new THREE.Vector3(), target: new THREE.Vector3(),
+      cameraPos: new THREE.Vector3(), cameraRotation: new THREE.Quaternion()
+    };
+  }
+
+  function beginDeathView(dt) {
+    const view = localDowned;
+    if (!view || G.game.state !== 'respawning') return false;
+    const { avatar, yaw, dir, target, cameraPos, cameraRotation } = view;
+    updateUnitFall(avatar, dt);
+    const wreck = avatar.wreck;
+    if (wreck.t >= 3.15 || (isMachine(wreck.kind) ?
+        wreck.exploded && wreck.t - wreck.explodeAt >= .55 : wreck.t >= 1.1)) {
+      clearLocalFall();
+      if (respawn.active) showRespawnOverlay(pendingDeathMeta);
+      return false;
+    }
+    const camera = G.camera;
+    cameraPos.copy(camera.position);
+    cameraRotation.copy(camera.quaternion);
+    target.copy(avatar.group.position);
+    target.y += wreck.kind === 'drone' ? .25 : .55;
+    dir.set(Math.sin(yaw + 1.1), .55, Math.cos(yaw + 1.1)).normalize();
+    const obstacle = G.physics.raycast(target, dir, 4.25);
+    const distance = obstacle ? Math.max(.35, obstacle.dist - .18) : 4.25;
+    camera.position.copy(target).addScaledVector(dir, distance);
+    camera.lookAt(target);
+    return true;
+  }
+
+  function endDeathView() {
+    if (!localDowned) return;
+    G.camera.position.copy(localDowned.cameraPos);
+    G.camera.quaternion.copy(localDowned.cameraRotation);
+    G.camera.updateWorldMatrix(true, false);
+  }
+
   function showRespawnOverlay(meta) {
+    if (localDowned) return;
     el.respawn.hidden = false;
     document.body.classList.add('mp-respawning');
     el.killer.textContent = respawn.by ? t('downBy', { name: respawn.by.name }) : '';
@@ -1893,7 +1982,9 @@
     } else {
       el.killerUnit.hidden = true;
     }
-    try { prepareDeathReplay(respawn.by, meta || pendingDeathMeta); } catch (err) { stopDeathReplay(); }
+    if (!G?.game?.menus?.panelOpen) {
+      try { prepareDeathReplay(respawn.by, meta || pendingDeathMeta); } catch (err) { stopDeathReplay(); }
+    }
     el.respawnBtn.disabled = true;
     updateRespawnOverlay();
   }
@@ -1931,7 +2022,7 @@
   function startRespawn(delayMs, by, meta) {
     if (!respawn.active) {
       stopRespawnAudio();
-      if (!window.__saltLunarSilent) respawnAudio.play().catch(() => {});
+      if (!window.__saltLunarSilent && !G?.game?.menus?.panelOpen) respawnAudio.play().catch(() => {});
     }
     respawn.active = true;
     respawn.by = by || null;
@@ -1973,6 +2064,7 @@
       meta.victimYaw = Number(G.player.yaw);
     }
     if (!meta.at) meta.at = lastKillAt || Date.now();
+    try { startLocalFall(G.player); } catch (err) { clearLocalFall(); }
     if (!serverDeathNotified) {
       send({ type: 'died' });
     }
@@ -1983,7 +2075,7 @@
     try {
       G.game.state = 'respawning';
       G.hud.show(false);
-      G.game.menus.show('none');
+      if (!G.game.menus.panelOpen) G.game.menus.show('none');
       G.hud.setPrompt && G.hud.setPrompt(null);
       G.input.setGameplay(false);
       G.input.exitLock();
@@ -1994,6 +2086,8 @@
 
   function revive(spawn, protectedUntil) {
     if (!G) return;
+    clearLocalFall();
+    const keepSettings = G.game.menus.panelOpen;
     const chatComposer = captureChatComposer();
     disposeLocalDroneLight();
     const zoneSpawn = G?.expedition?.spawn(spawn);
@@ -2013,14 +2107,14 @@
       G.player.invulnerable = true;
       unitFlightY = 0;
       unitFlightPrev = null;
-      G.game.state = 'playing';
-      G.hud.show(true);
-      G.game.menus.show('none');
-      G.input.setGameplay(true);
+      G.game.state = keepSettings ? 'paused' : 'playing';
+      G.hud.show(!keepSettings);
+      if (!keepSettings) G.game.menus.show('none');
+      G.input.setGameplay(!keepSettings);
       G.render.post.fade = 0;
       G.render.post.flash = 0;
       G.render.post.saturation = 1;
-      G.audio.setPaused(false);
+      G.audio.setPaused(keepSettings);
       G.audio.setIntensity && G.audio.setIntensity(0.4);
     } catch (err) {
       console.error('[mp] revive failed', err);
@@ -2039,8 +2133,9 @@
     pendingDeathMeta = null;
     pendingServerDeath = null;
     hideRespawnOverlay();
-    toast(t('respawned'));
-    window.setTimeout(() => {
+    if (!keepSettings) toast(t('respawned'));
+    if (!keepSettings) window.setTimeout(() => {
+      if (G?.game?.state !== 'playing' || G.game.menus.panelOpen) return;
       if (chatComposerActive()) {
         if (chatComposer && chatComposer.focused && chatComposer.input.isConnected) {
           try {
@@ -2673,7 +2768,7 @@
     if (avatar.equippedModel) avatar.equippedModel.visible = visible;
   }
 
-  function dressForLunar(avatar, dt, moving, armed) {
+  function dressForLunar(avatar, dt, moving, armed, fall) {
     const enabled = !!window.__saltLunarSilent && !avatar.machine;
     if (enabled && !avatar.lunarSuit && window.SaltLunarSuit) {
       avatar.lunarSuit = window.SaltLunarSuit(THREE);
@@ -2683,7 +2778,7 @@
     if (!suit) return;
     avatar.body.visible = !enabled;
     suit.model.visible = enabled;
-    if (enabled) suit.update(dt, moving, armed);
+    if (enabled) suit.update(dt, moving, armed, fall);
   }
 
   function updateAvatars(dt) {
@@ -2695,7 +2790,7 @@
       if (!avatar.group.visible) continue;
       if (avatar.wreck && !avatar.wreck.done) {
         try {
-          updateMachineWreck(avatar, dt);
+          updateUnitFall(avatar, dt);
         } catch (err) { /* ignore */ }
         continue;
       }
@@ -2786,6 +2881,7 @@
     const combat = G.combat;
     const original = combat.playerShot;
     if (typeof original !== 'function') return;
+    const bossAimDirection = new THREE.Vector3();
     combat.playerShot = function patchedPlayerShot(origin, dir, opts) {
       let result;
       let simulated = false;
@@ -2798,16 +2894,23 @@
       };
       try {
         if (!origin || !dir || G.game?.state !== 'playing' || respawn.active) return localShot();
+        const weapon = opts?.weapon || 'pac9';
+        const range = opts?.range || 300;
+        const bossRange = Math.min(range, window.SaltArsenalRules?.[weapon]?.range || range);
+        const drone = normalizeSoldier(mySoldier) === 'drone';
+        if (drone && weapon !== 'knife' && G.portalBosses) {
+          const aim = G.camera.getWorldDirection(bossAimDirection);
+          // Use the reticle ray only when it crosses the visible decal.
+          if (G.portalBosses.weakAim(origin, aim, bossRange)) dir.copy(aim);
+        }
         if (!send({
           type: 'shot',
-          weapon: opts?.weapon || 'pac9',
+          weapon,
           origin: { x: origin.x, y: origin.y, z: origin.z },
           dir: { x: dir.x, y: dir.y, z: dir.z }
         })) return localShot();
-        const range = opts?.range || 300;
-        const gold = opts?.weapon === 'knife' ? null : G.gold?.intersect(origin, dir, range);
-        const bossRange = Math.min(range, window.SaltArsenalRules?.[opts?.weapon || 'pac9']?.range || range);
-        const bossHit = opts?.weapon === 'knife' ? null : G.portalBosses?.intersect(origin, dir, bossRange, normalizeSoldier(mySoldier) === 'drone');
+        const gold = weapon === 'knife' ? null : G.gold?.intersect(origin, dir, range);
+        const bossHit = weapon === 'knife' ? null : G.portalBosses?.intersect(origin, dir, bossRange, drone);
         if (bossHit != null && (!gold || bossHit < gold.dist) &&
             !G.physics.raycast(origin, dir, bossHit) && !G.enemies.raycast(origin, dir, bossHit)) {
           const playerAhead = [...avatars.values()].some(avatar => {
@@ -2942,7 +3045,7 @@
     lastStateAt = now;
     const state = G.game && G.game.state;
     const player = G.player;
-    const active = player.alive && !respawn.active && !G.frontier?.airborne && !document.hidden &&
+    const active = player.alive && !respawn.active && !G.frontier?.airborne && !G.portalArrival?.active && !document.hidden &&
       (state === 'playing' || state === 'paused');
     send({
       type: 'state',
@@ -2973,9 +3076,9 @@
 
   function updateUnitBadge() {
     const kind = normalizeSoldier(mySoldier);
-    const machine = isMachine(kind);
-    el.unit.hidden = !machine;
-    if (!machine) return;
+    const visible = isMachine(kind) && G?.game?.state === 'playing';
+    el.unit.hidden = !visible;
+    if (!visible) return;
     el.unitName.textContent = unitName(kind);
     const altitude = G && G.player ? Math.max(0, G.player.pos.y) : 0;
     el.unitAlt.textContent = kind === 'drone'
@@ -3188,22 +3291,24 @@
       };
       const mapCollision = G.qingyun?.active && G.qingyun.collision;
       const collision = window.SaltFlightCollision;
+      const bodies = G.portalBosses?.droneBodies() || [];
+      const options = { ...FLIGHT_COLLISION, previous: unitFlightPrev, minY,
+        maxY: G.expedition?.active ? 225 : G.qingyun?.active ? 110 : portCeiling };
       if (G.expedition?.active) {
-        let resolved = G.expedition.moveDrone(unitFlightPrev, candidate);
+        let resolved = G.expedition.moveDrone(unitFlightPrev, candidate, bodies, options);
         resolved = G.roadSigns?.clipDrone(unitFlightPrev, resolved) || resolved;
         player.pos.copy(resolved);
         unitFlightY = player.pos.y = Math.max(minY, resolved.y);
       } else if (mapCollision) {
         const previous = unitFlightPrev && qingyun.contains(unitFlightPrev) ? unitFlightPrev : player.pos;
-        let resolved = mapCollision.moveDrone(previous, candidate, .42);
+        const safe = collision.sweep(candidate, bodies, { ...options, previous });
+        let resolved = mapCollision.moveDrone(previous, safe, options.radius);
         resolved = G.roadSigns?.clipDrone(previous, resolved) || resolved;
         player.pos.copy(resolved);
         unitFlightY = player.pos.y = Math.max(minY, resolved.y);
       } else if (collision && G.physics && Array.isArray(G.physics.boxes)) {
-        const resolved = collision.resolve(candidate, getFlightCollisionBoxes(), {
-          ...FLIGHT_COLLISION,
-          previous: unitFlightPrev
-        });
+        const walls = getFlightCollisionBoxes();
+        const resolved = collision.sweep(candidate, bodies.length ? walls.concat(bodies) : walls, options);
         player.pos.x = resolved.x;
         player.pos.z = resolved.z;
         if (typeof collision.clampToBounds === 'function') {
@@ -3420,7 +3525,8 @@
       reconnectDelay = 1200;
       setConnection('online');
       everJoined = false;
-      send({ type: 'join', name: myName, soldier: mySoldier, outfit: myOutfit, spawns: spawnsFromLevel(), frontier: !!window.SaltFrontierRules });
+      send({ type: 'join', name: myName, soldier: mySoldier, outfit: myOutfit, spawns: spawnsFromLevel(),
+        frontier: !!window.SaltFrontierRules, portalFall: !!window.SaltPortalArrival });
       window.clearInterval(pingTimer);
       pingTimer = window.setInterval(() => {
         if (ws && ws.readyState === 1) send({ type: 'ping', t: performance.now() });
@@ -3558,8 +3664,8 @@
       }
       case 'qingyunEntered':
       case 'qingyunReturned': {
-        if (G?.qingyun?.collision && G.game.state === 'playing' && G.player.alive && msg.pos) {
-          G.qingyun.land(msg.pos);
+        if (G?.qingyun?.collision && ['playing', 'paused'].includes(G.game.state) && G.player.alive && msg.pos) {
+          G.qingyun.land(msg.pos, true);
           unitFlightY = 0;
           unitFlightPrev = null;
           reconcileAvatars([]);
@@ -3664,6 +3770,7 @@
         break;
       }
       case 'snapshot': {
+        G?.expedition?.setServerTime(msg.t);
         onlineCount = Number(msg.online) || 0;
         window.SaltMapSelect?.setPopulation(msg.mapCounts);
         G?.portalBosses?.snapshot(msg.bossMap, msg.bosses, msg.t, msg.bossBounty);
@@ -3799,7 +3906,7 @@
       case 'kill': {
         lastKillAt = Number(msg.at) || Date.now();
         feedKill(msg);
-        try { startMachineWreck(msg.victim); } catch (err) { /* ignore */ }
+        try { startRemoteFall(msg.victim, msg.pose); } catch (err) { /* ignore */ }
         if (msg.victim && msg.victim.id === myId) {
           // local death handler will take care of the overlay
         } else if (msg.killer && msg.killer.id === myId) {
@@ -3879,11 +3986,13 @@
     }
     try {
       game.events.on('game:state', (event) => {
+        updateUnitBadge();
         if (!event || event.state !== 'playing') disposeLocalDroneLight();
         else sendState(true);
         if (event && (event.state === 'title' || event.state === 'intro')) {
           stopRespawnAudio();
           if (event.state === 'title') {
+            clearLocalFall();
             respawn.active = false;
             respawn.by = null;
             respawn.requestedAt = 0;
@@ -4005,6 +4114,8 @@
     closeRoster() { setRoster(false); },
     get respawn() { return { active: respawn.active, until: respawn.until }; },
     get game() { return G; },
+    beginDeathView,
+    endDeathView,
     createSelfView() {
       if (!G || !THREE || !scene) return null;
       const kind = normalizeSoldier(mySoldier);
@@ -4021,16 +4132,22 @@
       return {
         kind,
         model: avatar.group,
-        update(dt, armor, armed, gesture, prop) {
+        update(dt, armor, armed, gesture, prop, fall) {
           avatar.data.armor = armor;
           avatar.data.outfit = usableOutfit(myOutfit);
           avatar.setOutfit?.(avatar.data.outfit);
           syncAvatarArmor(avatar);
-          dressForLunar(avatar, dt, Math.hypot(player.vel.x, player.vel.z) > .6, armed);
+          dressForLunar(avatar, dt, Math.hypot(player.vel.x, player.vel.z) > .6, armed, fall);
           avatar.group.position.copy(player.pos);
           avatar.group.rotation.y = player.yaw;
           avatar.rig?.update(dt, { moving: Math.hypot(player.vel.x, player.vel.z) > .6,
-            sprint: !!player.sprinting, gesture });
+            sprint: !!player.sprinting, gesture, fall });
+          if (fall && !avatar.rig && !avatar.machine) {
+            if (avatar.arms[0]) avatar.arms[0].rotation.set(fall.armL, 0, -.72 * fall.flare);
+            if (avatar.arms[1]) avatar.arms[1].rotation.set(fall.armR, 0, .72 * fall.flare);
+            if (avatar.legs[0]) avatar.legs[0].rotation.x = fall.legL;
+            if (avatar.legs[1]) avatar.legs[1].rotation.x = fall.legR;
+          }
           const rifleVisible = armed && (!gesture || gesture.kind === 'reload' || !avatar.rig?.actionHand);
           updateAvatarWeapon(avatar, G.weapon?.arsenalId || 'pac9', rifleVisible);
           const hand = gesture && avatar.rig?.actionHand?.(gesture.kind, grip);

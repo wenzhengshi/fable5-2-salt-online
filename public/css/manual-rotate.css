@@ -298,11 +298,10 @@ html.mr-force-landscape body:has(.menu[data-screen="title"]) .mp-chip {
   padding-inline: 6px;
 }
 
-html.mr-force-landscape body:has(.menu[data-screen="title"]) #sr-launch {
+html.mr-force-landscape body:has(.menu[data-screen="title"]) #sr-tools {
   top: calc(var(--sat) + 97px);
   left: auto;
   right: var(--gr);
-  min-height: 36px;
 }
 
 html.mr-force-landscape body:has(.menu[data-screen="title"]) .vc-rail {

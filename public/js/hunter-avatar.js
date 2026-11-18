@@ -495,6 +495,24 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
     }
 
     update(dt, data) {
+      const fall = data?.fall;
+      if (fall) {
+        this.armsSettled = false;
+        this.model.position.y = this.baseY;
+        this.apply({
+          'UpperArm.L': [['z', -.65 * fall.flare], ['x', fall.armL]],
+          'UpperArm.R': [['z', .65 * fall.flare], ['x', fall.armR]],
+          'LowerArm.L': [['x', -.75 - fall.brace * .21]],
+          'LowerArm.R': [['x', -.52 - fall.brace * .33]],
+          'UpperLeg.L': [['x', fall.legL], ['z', -.2]],
+          'UpperLeg.R': [['x', fall.legR], ['z', .2]],
+          'LowerLeg.L': [['x', .45 + Math.max(0, -fall.legL) * .6]],
+          'LowerLeg.R': [['x', .4 + Math.max(0, -fall.legR) * .6]],
+          Chest: [['y', fall.head * -.65], ['x', .14 + fall.brace * .28]],
+          Head: [['y', fall.head], ['x', -.16 + fall.brace * .28]]
+        });
+        return;
+      }
       const moving = !!(data && data.moving);
       const sprint = !!(data && data.sprint);
       const speed = moving ? (sprint ? 14 : 9) : 0;

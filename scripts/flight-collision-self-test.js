@@ -3,7 +3,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { resolve, clampToBounds } = require('../public/js/flight-collision');
+const { resolve, sweep, clampToBounds } = require('../public/js/flight-collision');
+const { flightBoxes } = require('../public/js/portal-boss-rules');
 
 const gameSource = fs.readFileSync(path.resolve(__dirname, '../public/js/game.bundle.js'), 'utf8');
 assert.match(
@@ -18,6 +19,23 @@ const settings = {
   top: 1.2,
   maxIterations: 6
 };
+
+const thinWall = { min: { x: 0, y: 0, z: -5 }, max: { x: .05, y: 10, z: 5 } };
+const wallSlide = sweep({ x: 6, y: 3, z: 3 }, [thinWall], {
+  ...settings, previous: { x: -6, y: 3, z: 0 }
+});
+assert.ok(wallSlide.hitWall && wallSlide.x < -.72 && wallSlide.z > 2.99);
+for (const kind of ['cat', 'hound']) {
+  const bodies = flightBoxes(kind, { x: 0, y: 0, z: 0 }, .84, { x: 20, y: 20, z: 20 });
+  const side = sweep({ x: 35, y: 10, z: 0 }, bodies, { ...settings, previous: { x: -35, y: 10, z: 0 } });
+  assert.ok(side.hitWall && side.x < 0, kind);
+  const top = sweep({ x: 0, y: 14, z: 0 }, bodies, { ...settings, previous: { x: 0, y: 26, z: 0 } });
+  assert.ok(top.blockedDown && top.y > 20, kind);
+  const grewAroundPlayer = sweep({ x: 0, y: 1.1, z: 0 }, bodies, {
+    ...settings, minY: 1.05, previous: { x: 0, y: 1.1, z: 0 }
+  });
+  assert.ok(grewAroundPlayer.hitWall && grewAroundPlayer.y >= 1.05, kind);
+}
 
 const hull = {
   min: { x: 33, y: -5, z: -90 },

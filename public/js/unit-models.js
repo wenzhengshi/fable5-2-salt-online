@@ -167,12 +167,12 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         const tuned = materials.map((material) => {
           const clone = material.clone();
-          if (clone.color) clone.color.multiplyScalar(1.35);
+          if (clone.color) clone.color.multiplyScalar(1.35).lerp(new THREE.Color(0x8799a3), 0.14);
           if (clone.emissive && clone.emissive.isColor) {
-            clone.emissive.add(new THREE.Color(0x10191c));
+            clone.emissive.add(new THREE.Color(0x26343f));
             clone.emissiveIntensity = Math.max(0.45, clone.emissiveIntensity || 0);
           }
-          if (typeof clone.metalness === 'number') clone.metalness = Math.min(0.62, clone.metalness);
+          if (typeof clone.metalness === 'number') clone.metalness = Math.min(0.46, clone.metalness);
           if (typeof clone.roughness === 'number') clone.roughness = Math.max(0.42, clone.roughness);
           clone.needsUpdate = true;
           previewMaterials.push(clone);

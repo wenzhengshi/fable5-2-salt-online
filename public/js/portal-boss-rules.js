@@ -7,12 +7,43 @@
   const GROWTH_MS = 30000;
   const MAX_STAGE = 4;
   const SPLIT_TIMES = [60000, 120000];
-  const SMALL_HEIGHT = { cat: .48, hound: .95 };
-  const STOMP_RADIUS = { cat: 3.2, hound: 3.6 };
+  const SMALL_HEIGHT = { cat: .48, watercolor: .48, hound: .95 };
+  const STOMP_RADIUS = { cat: 3.2, watercolor: 3.2, hound: 3.6 };
+  const BOSS_NAMES = {
+    cat: { zh: '奶油虎斑巨猫', en: 'Giant tabby' },
+    watercolor: { zh: '水彩巨猫', en: 'Giant watercolor cat' },
+    hound: { zh: '巨型机器狗', en: 'Giant hound' }
+  };
+  // Normalized envelopes of the animated models; the cat's tail is narrower than its body.
+  const bodyBounds = {
+    hound: [[-.25, 0, -.42, .25, 1.08, .53]],
+    cat: [[-.32, 0, -.69, .33, 1.04, .60], [-.20, .14, -1.08, .20, .87, -.65]],
+    watercolor: [[-.18, 0, -.43, .21, 1.03, .57], [-.19, .40, -.63, .19, 1.02, -.40]]
+  };
+  const HOUND_CLEARANCE = .64;
+
+  function flightBoxes(kind, position, yaw, scale) {
+    const sin = Math.sin(yaw), cos = Math.cos(yaw);
+    return bodyBounds[kind].map(([x0, y0, z0, x1, y1, z1]) => {
+      const xs = [], zs = [];
+      for (const x of [x0 * scale.x, x1 * scale.x]) for (const z of [z0 * scale.z, z1 * scale.z]) {
+        xs.push(x * cos + z * sin);
+        zs.push(z * cos - x * sin);
+      }
+      return {
+        min: { x: position.x + Math.min(...xs), y: position.y + y0 * scale.y, z: position.z + Math.min(...zs) },
+        max: { x: position.x + Math.max(...xs), y: position.y + y1 * scale.y, z: position.z + Math.max(...zs) }
+      };
+    });
+  }
   const shapes = {
     cat: [[0, .43, -.15, .21, .26, .46], [0, .72, .37, .24, .28, .22],
       [-.11, .22, .28, .075, .23, .13], [.11, .22, .28, .075, .23, .13],
       [-.13, .21, -.43, .095, .22, .13], [.13, .21, -.43, .095, .22, .13]],
+    watercolor: [[0, .50, -.02, .18, .30, .39], [.025, .77, .37, .18, .25, .20],
+      [-.075, .23, .29, .075, .24, .14], [.09, .23, .29, .075, .24, .14],
+      [-.09, .22, -.28, .08, .23, .16], [.11, .22, -.23, .08, .23, .16],
+      [-.04, .76, -.49, .12, .25, .13]],
     hound: [[0, .58, -.08, .43, .32, .64], [0, .76, .48, .29, .25, .28],
       [-.3, .25, .41, .16, .27, .22], [.3, .25, .41, .16, .27, .22],
       [-.3, .25, -.5, .16, .27, .22], [.3, .25, -.5, .16, .27, .22]]
@@ -48,32 +79,48 @@
   const SPLIT_ANIMATION_MS = 1650;
   const PORT_DRONE_CEILING = 43;
 
+  // Center of the orange strip on the hound head, local to its rig bone.
+  const HOUND_HEAD_MARK = { x: 0, y: .0645, z: .045 };
+  const HOUND_HEAD_REST_Y = .91;
+  const HOUND_HEAD_REST_Z = .61;
+  const HOUND_RIG_MIN_Y = -.11172;
+  const HOUND_RIG_HEIGHT = 1.66072;
+  const HOUND_MARK_Y = (HOUND_HEAD_REST_Y + HOUND_HEAD_MARK.y - HOUND_RIG_MIN_Y) / HOUND_RIG_HEIGHT;
+  const HOUND_MARK_Z = (HOUND_HEAD_REST_Z + HOUND_HEAD_MARK.z) / HOUND_RIG_HEIGHT;
+
+  function weakPointRadius(height) {
+    return Math.max(.85, height * .054);
+  }
+
   function weakPoint(boss) {
     if (boss.kind !== 'hound' || boss.parentId || boss.phase !== 'active') return null;
     const height = boss.height || HEIGHT;
-    return { x: boss.x + Math.sin(boss.yaw) * height * .48, y: boss.y + height * 1.025,
-      z: boss.z + Math.cos(boss.yaw) * height * .48, radius: .55 };
+    const stretch = boss.weakStretch || 0;
+    const forward = height * HOUND_MARK_Z * (1 + stretch);
+    return { x: boss.x + Math.sin(boss.yaw) * forward, y: boss.y + height * HOUND_MARK_Y * (1 - stretch),
+      z: boss.z + Math.cos(boss.yaw) * forward, radius: weakPointRadius(height) };
   }
 
-  function seesWeakPoint(point, position) {
-    return !!point && position.y - point.y >= .65 && position.y - point.y <= 14 &&
-      Math.hypot(position.x - point.x, position.z - point.z) <= 4;
+  function seesWeakPoint(point, eye, poseMargin = 0) {
+    return !!point && eye.y - point.y >= .08 - poseMargin && eye.y - point.y <= 18 + poseMargin &&
+      Math.hypot(eye.x - point.x, eye.z - point.z) <= 6 + poseMargin;
   }
 
-  function weakPointDistance(boss, playerPos, origin, dir, range) {
-    const point = weakPoint(boss);
-    if (!seesWeakPoint(point, playerPos) || dir.y >= -.45 || origin.y <= point.y + .5) return null;
-    const dx = point.x - origin.x, dy = point.y - origin.y, dz = point.z - origin.z;
-    const along = dx * dir.x + dy * dir.y + dz * dir.z;
-    const inside = point.radius ** 2 - (dx ** 2 + dy ** 2 + dz ** 2 - along ** 2);
-    if (inside < 0) return null;
-    const entry = along - Math.sqrt(inside);
-    return entry > 0 && entry < range ? entry : null;
+  function weakRayDistance(point, origin, dir, range, radius = point?.radius, poseMargin = 0) {
+    if (!seesWeakPoint(point, origin, poseMargin) || dir.y >= 0) return null;
+    const x = point.x - origin.x, y = point.y - origin.y, z = point.z - origin.z;
+    const hit = x * dir.x + y * dir.y + z * dir.z;
+    if (hit <= 0 || hit >= range) return null;
+    return Math.hypot(x - dir.x * hit, y - dir.y * hit, z - dir.z * hit) <= radius ? hit : null;
   }
 
   function splitProgress(birth, now) {
     const t = Math.max(0, Math.min(1, (now - birth.at) / SPLIT_ANIMATION_MS));
     return t * t * (3 - 2 * t);
+  }
+
+  function splitStretch(birth, now) {
+    return birth ? .085 * Math.sin(Math.PI * splitProgress(birth, now)) : 0;
   }
 
   function splitPosition(boss, now) {
@@ -87,8 +134,9 @@
     };
   }
 
-  const rules = { HEIGHT, TEAM_SIZE, TEAM_WINDOW_MS, GROWTH_MS, MAX_STAGE, SPLIT_TIMES, SMALL_HEIGHT, STOMP_RADIUS, rayDistance, SPLIT_ANIMATION_MS, PORT_DRONE_CEILING,
-    weakPoint, seesWeakPoint, weakPointDistance, splitProgress, splitPosition };
+  const rules = { HEIGHT, TEAM_SIZE, TEAM_WINDOW_MS, GROWTH_MS, MAX_STAGE, SPLIT_TIMES, SMALL_HEIGHT, STOMP_RADIUS, BOSS_NAMES, rayDistance, SPLIT_ANIMATION_MS, PORT_DRONE_CEILING,
+    HOUND_CLEARANCE, flightBoxes, HOUND_HEAD_MARK, weakPoint, seesWeakPoint, weakPointRadius, weakRayDistance,
+    splitProgress, splitStretch, splitPosition };
   if (typeof module === 'object' && module.exports) module.exports = rules;
   else root.SaltPortalBossRules = rules;
 })(globalThis);

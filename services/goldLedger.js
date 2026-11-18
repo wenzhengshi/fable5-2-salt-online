@@ -7,7 +7,7 @@ const FILE = 'gold-ledger.jsonl';
 const LEGACY_FILE = 'gold-pickups.json';
 const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 30;
-const MAPS = new Set(['port', 'qingyun', 'bayhaven', 'dustfall', 'mothlight']);
+const MAPS = new Set(['port', 'qingyun', 'bayhaven', 'dustfall', 'mothlight', 'lunar']);
 let cachedRows = null;
 let cacheStamp = '';
 

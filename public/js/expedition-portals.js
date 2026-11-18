@@ -1,6 +1,8 @@
 (() => {
   'use strict';
   const { maps, near, pickRespawn } = window.SaltExpeditionZones;
+  const liftRules = window.SaltBayhavenLift;
+  const arrival = window.SaltPortalArrival;
   const messages = (window.__SALT_I18N__ || {}).messages || {};
 
   function t(key, vars) {
@@ -16,6 +18,7 @@
   window.installExpeditionPortals = function (game) {
     const { THREE, scene, physics, player, camera, viewCamera, renderer } = game;
     const gates = new Map();
+    const hold = arrival.holdPrompt();
     const loads = new Map();
     const actorCamera = camera.clone(false);
     const localCamera = camera.clone(false);
@@ -30,6 +33,9 @@
     const hit = new THREE.Vector3();
     let active = null;
     let environment = null;
+    let bayhavenLift = null;
+    let liftJumpVelocity = 0;
+    let serverClock = null;
     let lastLocalRespawn = null;
     let returning = null;
     let lastRequest = -Infinity;
@@ -41,7 +47,7 @@
 
     function portal(nameKey, point, color) {
       const group = game.qingyun.createTunnel(t(nameKey), color);
-      group.position.set(point.x, point.y + 1.45, point.z);
+      group.position.set(point.x, point.y + .06, point.z);
       group.visible = false;
       scene.add(group);
       return group;
@@ -89,7 +95,7 @@
       window.dispatchEvent(new Event('saltline:lunar-mode'));
     }
 
-    function leave(position) {
+    function leave(position, animate = false) {
       if (!active) return;
       const target = position || active.hub;
       returning = null;
@@ -99,7 +105,8 @@
       environment = null;
       updateLunarMode();
       exitGate.visible = false;
-      game.qingyun.land(target);
+      game.qingyun.land(target, animate);
+      hold(null);
       status.style.display = 'none';
       lastRequest = game.time.t;
     }
@@ -107,8 +114,37 @@
     function collisionBoxes(x1, z1, x2, z2) {
       const world = environment.boxes(x1, z1, x2, z2);
       const extra = game.containers?.boxes(x1, z1, x2, z2);
-      return extra?.length ? [...world, ...extra] : world;
+      const tower = active.id === 'bayhaven' && bayhavenLift.boxes(x1, z1, x2, z2);
+      return tower?.length || extra?.length ? [...world, ...(tower || []), ...(extra || [])] : world;
     }
+
+    function liftTime() {
+      return serverClock === null ? Date.now() : performance.now() + serverClock;
+    }
+
+    function syncLift() {
+      liftJumpVelocity = 0;
+      if (active?.id !== 'bayhaven') return;
+      const now = liftTime();
+      const previous = bayhavenLift.top;
+      const top = bayhavenLift.setTime(now);
+      const kind = window.__mp?.soldier;
+      if (!player.alive || !player.enabled || !['playing', 'paused'].includes(game.game.state) ||
+          kind === 'drone' || game.sedan?.riding || window.__saltBoat?.riding) return;
+      const y = liftRules.carryHeight(player.pos, active.offset, previous, top, player.vel.y, player.onGround);
+      if (y === null) return;
+      player.pos.y = y;
+      player.vel.y = 0;
+      player.onGround = true;
+      liftJumpVelocity = liftRules.velocityAt(now);
+      if (game.game.state === 'paused') player.syncView();
+    }
+
+    game.events.on('player:jump', () => {
+      // The player controller supplies the jump impulse relative to the deck.
+      if (active?.id === 'bayhaven') player.vel.y += liftJumpVelocity;
+      liftJumpVelocity = 0;
+    });
 
     function ground(x, z, maxY = 240) {
       const localZ = z - active.offset;
@@ -276,6 +312,15 @@
         patrol = { ids: [], time: 0 };
         patrols.set(active.id, patrol);
       }
+      if (active.id === 'bayhaven') {
+        for (const unit of game.enemies.list.slice()) {
+          if (patrol.ids.includes(unit.id) && liftRules.shelter(unit.pos, active.offset)) {
+            game.enemies.despawn(unit);
+            patrol.ids = patrol.ids.filter(id => id !== unit.id);
+          }
+        }
+        if (liftRules.shelter(player.pos, active.offset)) return;
+      }
       if (patrol.ids.some(id => game.enemies.list.some(unit => unit.id === id && unit.alive))) {
         patrol.time = 12;
         return;
@@ -313,6 +358,10 @@
       game.qingyun.suspend();
       active = zone;
       environment = world;
+      if (zone.id === 'bayhaven') {
+        bayhavenLift ||= liftRules.mount(THREE, world.scene);
+        bayhavenLift.setTime(liftTime());
+      }
       updateLunarMode();
       for (const gate of gates.values()) gate.visible = false;
       const qingyunGate = scene.getObjectByName('qingyun-time-tunnel');
@@ -325,11 +374,14 @@
       exitGate.position.set(zone.exit.x, exitY + 1.45, zone.exit.z);
       const point = { ...position, y: ground(position.x, position.z, zone.landing.y + 2) };
       land(point, Math.PI);
-      if (zone.id === 'dustfall') game.frontier?.begin(world, point, insert);
+      hold(null);
+      if (zone.id === 'dustfall') game.frontier?.begin(world, point, false);
+      if (insert) game.portalArrival?.start();
     }
 
     let pending = null;
     game.events.on('game:state', event => {
+      if (event.state !== 'playing') hold(null);
       if (event.state === 'title' || event.state === 'intro') {
         game.frontier?.leave();
         active = environment = pending = returning = null;
@@ -342,6 +394,19 @@
 
     game.expedition = {
       get active() { return active; },
+      get coastalShelter() { return active?.id === 'bayhaven' && liftRules.shelter(player.pos, active.offset); },
+      setServerTime(time) {
+        if (!Number.isFinite(time)) return;
+        const estimate = time - performance.now();
+        serverClock = serverClock === null ? estimate : serverClock + Math.max(-10, Math.min(10, estimate - serverClock)) * .2;
+      },
+      syncLift,
+      onFixedGround(point) {
+        if (active?.id !== 'bayhaven') return true;
+        const z = point.z - active.offset;
+        return !liftRules.overlaps(point.x, z) || point.y < liftRules.BASE - .09 ||
+          liftRules.floorFor(point.x, point.y, z, .10) !== null;
+      },
       terrainHeight(x, z) {
         if (!active) return null;
         const height = Number(environment.heightAt(x, z - active.offset));
@@ -352,10 +417,14 @@
         const dx = yaw % 2 === 0 ? 3.4 : 1.55;
         const dz = yaw % 2 === 0 ? 1.55 : 3.4;
         const localZ = z - active.offset;
-        const y = environment.heightAt(x, localZ);
+        const onTower = active.id === 'bayhaven' && liftRules.overlaps(x, localZ, dx, dz);
+        const y = onTower
+          ? liftRules.floorFor(x, player.pos.y, localZ, dx, dz, 1.2)
+          : environment.heightAt(x, localZ);
+        if (y === null) return null;
         if (!Number.isFinite(y) || Math.abs(y - player.pos.y) > 1.2) return null;
         for (const a of [-dx, 0, dx]) for (const b of [-dz, 0, dz]) {
-          if (Math.abs(environment.heightAt(x + a, localZ + b) - y) > .23) return null;
+          if (!onTower && Math.abs(environment.heightAt(x + a, localZ + b) - y) > .23) return null;
         }
         if (environment.boxes(x - dx, localZ - dz, x + dx, localZ + dz).some(box =>
           box[3] > x - dx && box[0] < x + dx && box[5] > localZ - dz && box[2] < localZ + dz &&
@@ -386,20 +455,22 @@
         return { ...point, y: ground(point.x, point.z, point.y + 2) };
       },
       leave,
-      moveDrone(previous, candidate) {
+      moveDrone(previous, candidate, bodies, options) {
         const next = new THREE.Vector3(
           THREE.MathUtils.clamp(candidate.x, active.minX + .4, active.maxX - .4),
           candidate.y,
           THREE.MathUtils.clamp(candidate.z, active.minZ + .4, active.maxZ - .4)
         );
-        if (!previous) return next;
-        const direction = next.clone().sub(previous);
-        const distance = direction.length();
-        if (distance < .001) return next;
-        direction.divideScalar(distance);
-        const origin = new THREE.Vector3(previous.x, previous.y + .42, previous.z);
-        const obstruction = mapRay(origin, direction, distance + .42);
-        return obstruction ? next.copy(previous).addScaledVector(direction, Math.max(0, obstruction.dist - .42)) : next;
+        const from = previous || next;
+        const offset = active.offset;
+        const radius = options.radius + .25;
+        const walls = collisionBoxes(Math.min(from.x, next.x) - radius, Math.min(from.z, next.z) - radius - offset,
+          Math.max(from.x, next.x) + radius, Math.max(from.z, next.z) + radius - offset).map(box => ({
+          min: { x: box[0], y: box[1], z: box[2] + offset },
+          max: { x: box[3], y: box[4], z: box[5] + offset }
+        }));
+        const safe = window.SaltFlightCollision.sweep(next, walls.concat(bodies), { ...options, previous });
+        return next.copy(safe);
       },
       acknowledge(message) {
         if (message.type === 'mapDenied') {
@@ -408,25 +479,30 @@
           status.style.display = 'block';
           return;
         }
-        if (message.type === 'mapReturned') { leave(message.pos); return; }
-        if (pending?.zone.id === message.map && pending.world && game.game.state === 'playing' && player.alive) enter(pending.zone, pending.world, message.pos);
+        if (message.type === 'mapReturned') { leave(message.pos, !!returning?.sentAt); return; }
+        if (pending?.zone.id === message.map && pending.world && ['playing', 'paused'].includes(game.game.state) && player.alive) {
+          enter(pending.zone, pending.world, message.pos);
+        }
         pending = null;
       },
       update(dt) {
         const playing = game.game.state === 'playing' && player.alive;
         const inHub = !!game.qingyun?.active;
         if (playing && active) updatePatrol(dt);
-        const canUse = playing && !window.__saltBoat?.riding && !game.sedan?.riding && (inHub || active);
+        const canUse = playing && !window.__saltBoat?.riding && !game.sedan?.riding &&
+          !game.portalArrival?.active && (inHub || active);
         for (const gate of gates.values()) {
           gate.visible = playing && !active && inHub;
           if (gate.visible) gate.children[1].material.uniforms.time.value = game.time.t;
         }
         exitGate.visible = !!active;
         if (active) exitGate.children[1].material.uniforms.time.value = game.time.t;
-        if (!canUse || game.time.t - lastRequest < 1.2) return;
+        if (!canUse) { hold(null); return; }
+        if (game.time.t - lastRequest < 1.2) return;
         const mp = window.__mp;
+        const standing = arrival.still(game);
         if (active) {
-          if (!near(player.pos, exitPoint) && !returning?.sentAt) {
+          if (!hold(near(player.pos, exitPoint) ? 'exit' : null, game.time.t, standing) && !returning?.sentAt) {
             returning = null;
             status.style.display = 'none';
             return;
@@ -470,12 +546,17 @@
               lastRequest = game.time.t;
               status.textContent = t('expedition.loadFailed');
             }
-          } else leave();
+          } else leave(undefined, true);
           return;
         }
         const zone = zones.find(item => near(player.pos, item.gate));
-        if (!zone) { status.style.display = 'none'; return; }
-        if (pending?.zone === zone && pending.sentAt) {
+        if (!hold(zone?.id, game.time.t, standing) && !pending?.sentAt) {
+          pending = null;
+          status.style.display = 'none';
+          return;
+        }
+        if (!zone) return;
+        if (pending?.sentAt) {
           if (performance.now() - pending.sentAt < 4500) return;
           pending = null;
         }

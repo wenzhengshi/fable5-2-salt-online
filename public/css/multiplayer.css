@@ -1267,3 +1267,50 @@ body.mp-respawning .lang-switch {
   .mp-fl, .mp-respawn-card, .mp-roster-card { animation-duration: 0.01ms !important; }
   .mp-roster-name input.is-invalid { animation: none; }
 }
+
+.portal-boss-hud {
+  position: fixed;
+  z-index: 10;
+  top: max(56px, calc(env(safe-area-inset-top) + 39px));
+  left: 50%;
+  width: clamp(145px, 24vw, 280px);
+  transform: translateX(-50%);
+  display: grid;
+  gap: 5px;
+  font: 600 12px/1.1 system-ui, sans-serif;
+  color: #ffe6bd;
+  pointer-events: none;
+}
+.portal-boss-hud[hidden],
+.portal-boss-row[hidden] { display: none; }
+.portal-boss-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 6px;
+  padding: 4px 7px;
+  background: #211611d9;
+  border: 1px solid #a96a46;
+  border-radius: 4px;
+}
+.portal-boss-track {
+  grid-column: 1 / -1;
+  height: 3px;
+  overflow: hidden;
+  background: #6e382d;
+}
+.portal-boss-track > i {
+  display: block;
+  height: 100%;
+  background: #ff7950;
+  transform-origin: left;
+}
+@media (pointer: coarse) and (orientation: landscape) {
+  .portal-boss-hud { top: max(41px, calc(env(safe-area-inset-top) + 31px)); font-size: 10px; gap: 3px; }
+  .portal-boss-row { padding: 3px 5px; }
+}
+
+.portal-boss-status {
+  grid-column: 1 / -1;
+  color: #eed6b4;
+  font-size: .9em;
+}

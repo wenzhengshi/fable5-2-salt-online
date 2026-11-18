@@ -897,3 +897,10 @@ body.sail-active .h-heading { opacity: 0 !important; visibility: hidden !importa
   font-size: 11px;
   pointer-events: auto;
 }
+
+.road-sign-face-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 0 10px;
+}

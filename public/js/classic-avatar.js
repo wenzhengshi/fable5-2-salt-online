@@ -153,14 +153,24 @@
     };
     rig.update(0.016, { moving: false, sprint: false });
 
+    for (const mesh of [torso, armL, armR]) mesh.userData.outfitChannel = 'jacket';
+    for (const mesh of [legL, legR]) mesh.userData.outfitChannel = 'pants';
+    for (const mesh of [vest, helmet]) mesh.userData.outfitChannel = 'trim';
+    for (const mesh of [bootL, bootR, backpack]) mesh.userData.outfitChannel = 'boots';
+    // Bind only clothes. Leave the head, visor and weapon materials as configured.
+    const clothes = [torso, armL, armR, legL, legR, vest, helmet, bootL, bootR, backpack];
+    const setOutfit = window.SaltSoldierOutfits?.bind({ traverse(fn) { clothes.forEach(fn); } });
+    setOutfit?.(config.outfit);
     return {
       model,
       rig,
+      setOutfit,
       kind: KIND,
       weaponParts: [rifle, rifleTrim],
       armorAnchors: { head, chest: torso, baseHelmet: helmet, baseVest: vest },
       preview,
       dispose() {
+        setOutfit?.('default');
         for (const mesh of parts) {
           if (mesh.geometry) mesh.geometry.dispose();
         }

@@ -5,6 +5,7 @@ const storage = require('../config/storage');
 const { zones } = require('../public/js/road-sign-rules');
 const { hit, eraFor, rewardFor } = require('../public/js/gold-rules');
 const arsenal = require('../public/js/arsenal-rules');
+const bossRewards = require('./bossRewards');
 const pickupLog = require('./goldPickups');
 
 const FILE = 'frontier-inventory.json';
@@ -408,6 +409,20 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     state = null;
     list(player, now);
   }
+  function settleBossReward(result) {
+    const now = Date.now();
+    rotate(now);
+    let receipt;
+    change(data => { receipt = bossRewards.settle(data, result); });
+    if (!receipt) return;
+    const payouts = new Map(receipt.payouts.map(row => [row.owner, row]));
+    for (const player of players.values()) {
+      const payout = payouts.get(player.signOwner);
+      if (!player.joined || !payout) continue;
+      send(player.ws, { type: 'bossReward', amount: payout.amount, reason: payout.reason });
+      if (payout.amount) list(player, now);
+    }
+  }
   let nextRotationCheck = 0;
   function tick(now) {
     expireGifts(now);
@@ -415,5 +430,6 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     nextRotationCheck = now + 10000;
     try { rotate(now); } catch (error) { console.error('[gold] dispatch storage:', error.message); }
   }
-  return { handle, shoot, ordinaryHit, deposited, tick };
+  return { handle, shoot, ordinaryHit, deposited, tick, reserved: pendingAmount,
+    settleBossReward, bossBudget: now => bossRewards.budgetFor(load(), now) };
 };

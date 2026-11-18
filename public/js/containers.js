@@ -32,6 +32,8 @@
       amount: t('amount'),
       itemAmount: t('itemAmount'),
       draft: tr('密码领用已过期，请重新创建。', 'This password offer expired. Create a new one.'),
+      cosmetic: tr('此外观不在当前位置。', 'This cosmetic is unavailable.'),
+      cosmeticDuplicate: tr('目的地已有此外观。', 'The destination already has this cosmetic.'),
       storage: tr('存档暂时无法写入，请稍后重试。', 'Could not save. Try again later.')
     };
 
@@ -261,6 +263,8 @@
     let bag = rules.normalize();
     let stored = {};
     let banked = 0;
+    let storedCosmetics = [];
+    let cosmeticCounts = {};
     let sequence = 0;
     let listAt = -Infinity;
     const lastList = new THREE.Vector3();
@@ -468,6 +472,44 @@
         }
         content.append(goldActions);
       }
+      const shop = window.SaltShop;
+      const carriedCosmetics = shop?.cosmetics() || [];
+      const cosmeticKeys = [...new Set([...storedCosmetics, ...carriedCosmetics])];
+      if (shop && cosmeticKeys.length) {
+        const section = document.createElement('section');
+        section.className = 'container-cosmetics';
+        const title = document.createElement('h3');
+        title.textContent = tr('外观存取', 'Store and retrieve cosmetics');
+        section.append(title);
+        for (const key of cosmeticKeys) {
+          const product = shop.get(key);
+          if (!product || product.kind === 'pass') continue;
+          const row = document.createElement('div');
+          row.className = 'container-cosmetic-row';
+          const label = document.createElement('span');
+          const stored = cosmeticCounts[key] ?? Number(storedCosmetics.includes(key));
+          const carried = shop.count(key);
+          const sign = product.kind === 'sign';
+          label.textContent = shop.label(product) + (sign
+            ? tr(' · 身上 ', ' · Carried ') + carried + tr(' / 箱内 ', ' / Stored ') + stored : '');
+          row.append(label);
+          const controls = document.createElement('div');
+          controls.className = 'container-cosmetic-controls';
+          for (const [action, allowed, title] of [
+            ['depositCosmetic', carried && (sign || !stored), sign ? tr('存 1 块', 'Store 1') : tr('存入', 'Store')],
+            ['withdrawCosmetic', stored && (sign || !carried), sign ? tr('取 1 块', 'Take 1') : tr('取出', 'Withdraw')]
+          ]) {
+            if (!allowed) continue;
+            const move = button(controls, title, () => {
+              if (request(action, { id: openedId, item: key })) move.disabled = true;
+            });
+            move.disabled = !inside || !!pending;
+          }
+          row.append(controls);
+          section.append(row);
+        }
+        content.append(section);
+      }
       const hint = document.createElement('p');
       hint.className = 'container-item-hint';
       hint.textContent = t('itemHint');
@@ -648,10 +690,12 @@
           reveal = false;
           if (dialog.open) menu();
           notify(t('placed'));
-        } else if (action === 'open' || action === 'deposit' || action === 'withdraw' || action === 'depositGold' || action === 'withdrawGold') {
+        } else if (action === 'open' || action === 'deposit' || action === 'withdraw' || action === 'depositGold' || action === 'withdrawGold' || action === 'depositCosmetic' || action === 'withdrawCosmetic') {
           openedId = message.id;
           stored = message.items || {};
           banked = message.gold || 0;
+          storedCosmetics = message.cosmetics || [];
+          cosmeticCounts = message.cosmeticCounts || {};
           syncCoinSign(models.get(openedId), banked);
           if (action === 'open' && dialog.open) dismiss(false, true);
           if (dialog.open && action !== 'open') inventory();
@@ -664,6 +708,8 @@
             notify(format('goldDeposited', { amount: formatGold(message.moved || 0) }));
           } else if (action === 'withdrawGold') {
             notify(format('goldWithdrawn', { amount: formatGold(message.moved || 0) }));
+          } else {
+            notify(action === 'depositCosmetic' ? tr('外观已存入。', 'Cosmetic stored.') : tr('外观已取出。', 'Cosmetic retrieved.'));
           }
         } else if (action === 'close') {
           openedId = null;

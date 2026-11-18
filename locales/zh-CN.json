@@ -26,6 +26,9 @@
     "gearNeutral": "N"
   },
   "frontier": {
+    "bagOutfits": "随身皮肤",
+    "bagDefaultOutfit": "默认外观",
+    "bagWearOutfit": "穿戴",
     "equipWeapon": "装备",
     "backpack": "背包",
     "closeBackpack": "关闭",
@@ -183,6 +186,16 @@
     "serverError": "服务器暂时不可用，请稍后重试"
   },
   "admin": {
+    "shopTitle": "商城价格管理",
+    "shopIntro": "所有价格以盐线币为单位，最多保留六位小数。保存后立即应用于新购买。",
+    "shopPass": "月球通行证",
+    "shopSigns": "路牌样式",
+    "shopOutfits": "服装",
+    "shopDefault": "默认价",
+    "shopSave": "保存",
+    "shopReset": "恢复默认",
+    "shopSaved": "价格已保存。",
+    "shopInvalid": "请选择有效的商品，并输入大于零、最多六位小数的价格。",
     "modTitle": "封禁与异常监测",
     "modIntro": "异常记录供人工复核。封禁会断开该浏览器身份的联机连接。时间为北京时间。",
     "modKick": "踢出联机",
@@ -362,6 +375,8 @@
     "hint": "M 开麦全服可听 · T 发大字 · Tab 查看名单",
     "repo": "GitHub 仓库",
     "repoHint": "查看源码、提交问题与最新更新",
+    "hostEntry": "自由改造 · 当腐竹",
+    "hostEntryHint": "在突灵 AI 改造游戏，自己开服邀请朋友一起玩。",
     "appMarket": "安卓应用市场",
     "appMarketMeta": "下载支持应用内连麦的安卓 App",
     "appMarketHint": "前往安卓应用市场下载安装",

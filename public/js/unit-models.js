@@ -71,6 +71,8 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
         phase += step * (moving ? (sprint ? 13 : 9) : 1.6);
 
         const gait = moving ? (sprint ? 0.46 : 0.34) : 0;
+        const crouch = state?.crouch ? 1 : 0;
+        const stomp = state?.stomp || 0;
         for (let i = 0; i < LEGS.length; i += 1) {
           const suffix = LEGS[i];
           const offset = i === 0 || i === 3 ? 0 : Math.PI;
@@ -78,9 +80,10 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
           const thigh = bones[`thigh${suffix}`];
           const shin = bones[`shin${suffix}`];
           const abdomen = bones[`abd${suffix}`];
-          if (thigh) thigh.rotation.x = base[thigh.name] ? base[thigh.name].x + wave * gait : wave * gait;
+          if (thigh) thigh.rotation.x = (base[thigh.name]?.x || 0) + wave * gait +
+            (i < 2 ? -.22 * crouch : -.65 * crouch) + (i === 0 ? -.64 * stomp : 0);
           if (shin) {
-            const fold = Math.max(0, -wave) * gait * 1.25;
+            const fold = Math.max(0, -wave) * gait * 1.25 + (i < 2 ? .42 : .78) * crouch + (i === 0 ? .48 * stomp : 0);
             shin.rotation.x = base[shin.name] ? base[shin.name].x + fold + 0.04 : fold + 0.04;
           }
           if (abdomen) {
@@ -92,7 +95,8 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
 
         if (body) {
           body.position.y = bodyY + (moving ? Math.abs(Math.sin(phase * 2)) * 0.025 : Math.sin(elapsed * 1.8) * 0.008);
-          if (base.body) body.rotation.set(base.body.x, base.body.y, base.body.z);
+          body.position.y += -.12 * crouch + .035 * stomp;
+          if (base.body) body.rotation.set(base.body.x - .12 * stomp, base.body.y, base.body.z);
         }
         const head = bones.head;
         if (head) head.rotation.y = Math.sin(elapsed * 0.7) * 0.04;

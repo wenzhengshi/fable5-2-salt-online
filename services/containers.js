@@ -7,6 +7,8 @@ const rules = require('../public/js/frontier-rules');
 const { canonical } = require('../public/js/container-password');
 const { isBlocked } = require('./contentFilter');
 
+const { transfer: transferCosmetic, inventoryCounts } = require('./shop');
+
 const FILE = 'frontier-inventory.json';
 const radius = 100;
 const colors = ['red', 'blue', 'green'];
@@ -30,7 +32,7 @@ const canCarry = (bag, item, amount) => {
   return used <= rules.capacity;
 };
 
-module.exports = function createContainers({ send, players, frontier, gold }) {
+module.exports = function createContainers({ send, players, frontier, gold, shop }) {
   const opened = new Map();
   let registry;
   function records() {
@@ -115,7 +117,9 @@ module.exports = function createContainers({ send, players, frontier, gold }) {
         opened.delete(row.id);
       }
       broadcast(rows, row);
-      return reply({ id: row.id, open: action === 'open', items: action === 'open' ? row.items : undefined, gold: action === 'open' ? row.gold || 0 : undefined });
+      return reply({ id: row.id, open: action === 'open', items: action === 'open' ? row.items : undefined, gold: action === 'open' ? row.gold || 0 : undefined,
+        cosmetics: action === 'open' ? Object.keys(row.cosmetics || {}) : undefined,
+        cosmeticCounts: action === 'open' ? inventoryCounts(row.cosmetics) : undefined });
     }
     if (action === 'issue') {
       if (!player.signOwner) return reply({ error: 'identity' });
@@ -133,7 +137,7 @@ module.exports = function createContainers({ send, players, frontier, gold }) {
       player.containerDraft = { hash: digest, map: mapOf(player), color: msg.color, point: msg.point, expires: now + 900000 };
       return reply({ password });
     }
-    if (!['create', 'move', 'sign', 'deposit', 'withdraw', 'locate', 'depositGold', 'withdrawGold'].includes(action)) return reply({ error: 'unavailable' });
+    if (!['create', 'move', 'sign', 'deposit', 'withdraw', 'locate', 'depositGold', 'withdrawGold', 'depositCosmetic', 'withdrawCosmetic'].includes(action)) return reply({ error: 'unavailable' });
     if (action === 'locate') {
       if (!own) return reply({ error: 'password' });
       return reply({ location: { map: own.map, pos: own.pos } });
@@ -141,6 +145,7 @@ module.exports = function createContainers({ send, players, frontier, gold }) {
     const placement = action === 'create' || action === 'move';
     const transfer = action === 'deposit' || action === 'withdraw';
     const cash = action === 'depositGold' || action === 'withdrawGold';
+    const cosmetic = action === 'depositCosmetic' || action === 'withdrawCosmetic';
     let updated, previous, key, savedRows, withdrawn = 0, moved = 0;
     try {
       frontier.containerTransaction(player, (current, bag, data) => {
@@ -155,9 +160,9 @@ module.exports = function createContainers({ send, players, frontier, gold }) {
           if (draft.map !== mapOf(player)) throw new Error('position');
           updated = { id: crypto.randomUUID(), creator: player.signOwner, color: draft.color, items: {}, sign: '' };
         } else {
-          if ((transfer || cash) && (!row || !controlsDoor || !nearby(player, row) || !bag || (transfer && !player.frontier)))
+          if ((transfer || cash || cosmetic) && (!row || !controlsDoor || !nearby(player, row) || !bag || (transfer && !player.frontier)))
             throw new Error('closed');
-          if (transfer || cash) key = Object.keys(current).find(id => current[id].id === msg.id);
+          if (transfer || cash || cosmetic) key = Object.keys(current).find(id => current[id].id === msg.id);
           const saved = current[key];
           if (!saved || (action === 'sign' && (saved.id !== msg.id || !nearby(player, saved))))
             throw new Error('password');
@@ -199,6 +204,11 @@ module.exports = function createContainers({ send, players, frontier, gold }) {
           }
           moved = amount;
         }
+        if (cosmetic) {
+          if (!player.signOwner) throw new Error('identity');
+          if (!inside(player, updated)) throw new Error('inside');
+          transferCosmetic(data, updated, player.signOwner, msg.item, action === 'depositCosmetic');
+        }
         if (cash) {
           if (!inside(player, updated)) throw new Error('inside');
           const carried = (data.gold ||= {}).carried ||= {};
@@ -230,19 +240,22 @@ module.exports = function createContainers({ send, players, frontier, gold }) {
         return transfer ? bag : null;
       }, now);
     } catch (error) {
-      const expected = ['exists', 'identity', 'password', 'range', 'position', 'inUse', 'text', 'closed', 'item', 'draft', 'inside', 'amount'];
+      const expected = ['exists', 'identity', 'password', 'range', 'position', 'inUse', 'text', 'closed', 'item', 'draft', 'inside', 'amount', 'cosmetic', 'cosmeticDuplicate'];
       return reply({ error: expected.includes(error.message) ? error.message : 'storage' });
     }
     registry = savedRows;
     if (cash) gold?.deposited(player, now);
-    if (transfer || cash) {
+    if (cosmetic) shop?.refresh(player);
+    if (transfer || cash || cosmetic) {
       const session = opened.get(updated.id);
       if (session) session.expires = now + 60000;
       broadcast(registry, updated);
     } else broadcast(registry, previous, updated);
     if (action === 'create') player.containerDraft = null;
-    reply({ id: updated.id, items: transfer || cash ? updated.items : undefined,
-      gold: transfer || cash ? updated.gold || 0 : undefined,
+    reply({ id: updated.id, items: transfer || cash || cosmetic ? updated.items : undefined,
+      gold: transfer || cash || cosmetic ? updated.gold || 0 : undefined,
+      cosmetics: transfer || cash || cosmetic ? Object.keys(updated.cosmetics || {}) : undefined,
+      cosmeticCounts: transfer || cash || cosmetic ? inventoryCounts(updated.cosmetics) : undefined,
       withdrawn: withdrawn || undefined, moved: moved || undefined });
   }
   function tick(now) {

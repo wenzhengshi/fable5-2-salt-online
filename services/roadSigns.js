@@ -6,6 +6,7 @@ const path = require('node:path');
 const { DATA_DIR } = require('../config/storage');
 const { isBlocked } = require('./contentFilter');
 const { zones: signZones, protectedSpot } = require('../public/js/road-sign-rules');
+const signStyles = require('../public/js/road-sign-styles');
 const mapOf = player => player.mapId || (player.inQingyun ? 'qingyun' : null);
 
 const cookieName = 'salt_sign_owner';
@@ -250,7 +251,7 @@ function createRegistry(options = {}) {
     return { reason };
   }
 
-  function mutate(player, msg, now) {
+  function mutate(player, msg, now, claim = () => ({ finish() {} })) {
     const requestMap = mapOf(player);
     return enqueue(async () => {
       await init();
@@ -271,7 +272,7 @@ function createRegistry(options = {}) {
       const text = typeof msg.text === 'string'
         ? msg.text.replace(/[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu, ' ').replace(/\s+/g, ' ').trim() : '';
       if (!text || Array.from(text).length > 32 || isBlocked(text)) return { reason: 'text' };
-      if (msg.style !== 'blue' && msg.style !== 'yellow') return { reason: 'style' };
+      if (!signStyles.has(msg.style)) return { reason: 'style' };
 
       const identities = playerIdentities(player);
       const today = dayWindow(now);
@@ -345,8 +346,17 @@ function createRegistry(options = {}) {
         client: identities.client, fingerprint: identities.fingerprint, network: identities.network,
         submittedAt: now,
         removeAt: (Math.floor((now + utcOffset) / day) + 1) * day - utcOffset };
-      await save(sign);
+      const debit = claim(sign);
+      if (!debit) return { reason: 'locked' };
+      try {
+        await save(sign);
+      } catch (error) {
+        debit.finish(false);
+        throw error;
+      }
       add(sign);
+      try { debit.finish(true); }
+      catch (error) { console.error('[signs] pending debit cleanup:', error.message); }
       return { sign, remaining: Math.max(0, limits.ownerDaily - ownerToday - 1) };
     });
   }

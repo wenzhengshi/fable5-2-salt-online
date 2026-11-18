@@ -481,3 +481,23 @@ body.soldier-select-open .lang-switch { visibility: hidden; }
   font-style: normal;
   letter-spacing: .12em;
 }
+
+.ss-outfit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 0;
+  color: #d8e2eb;
+  font-size: 13px;
+}
+.ss-outfit[hidden] { display: none; }
+.ss-outfit select {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid #788d9e;
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: #f2f6f8;
+  background: #202c39;
+}

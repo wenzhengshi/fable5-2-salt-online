@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title><%= t(view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %> · <%= t('nav.title') %></title>
-  <link rel="stylesheet" href="/css/admin-backup.css?v=5">
+  <title><%= t(view === 'shop' ? 'admin.shopTitle' : view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %> · <%= t('nav.title') %></title>
+  <link rel="stylesheet" href="/css/admin-backup.css?v=6">
 </head>
 <body>
   <main>
@@ -26,8 +26,8 @@
       </div>
     </header>
     <section aria-labelledby="title">
-      <h1 id="title"><%= t(view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
-      <% if (message) { %><p class="<%= view === 'signs' || view === 'moderation' || view === 'qr' ? 'caption' : 'error' %>" role="status"><%= message %></p><% } %>
+      <h1 id="title"><%= t(view === 'shop' ? 'admin.shopTitle' : view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
+      <% if (message) { %><p class="<%= view === 'signs' || view === 'moderation' || view === 'qr' || (view === 'shop' && message === t('admin.shopSaved')) ? 'caption' : 'error' %>" role="status"><%= message %></p><% } %>
       <% if (view === 'backup') { %>
         <p><%= t('admin.backupIntro') %></p>
         <ul>
@@ -40,7 +40,27 @@
           <button type="submit" class="primary"><%= t('admin.backupGenerate') %></button>
         </form>
         <p class="caption"><%= t('admin.backupNote') %></p>
-        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/qr"><%= t('admin.qrTitle') %></a><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/moderation"><%= t('admin.modTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
+        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/shop"><%= t('admin.shopTitle') %></a><a href="/admin/qr"><%= t('admin.qrTitle') %></a><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/moderation"><%= t('admin.modTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
+      <% } else if (view === 'shop') { %>
+        <p><%= t('admin.shopIntro') %></p>
+        <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
+        <% for (const [kind, key] of [['pass', 'shopPass'], ['sign', 'shopSigns'], ['outfit', 'shopOutfits']]) { %>
+          <h2 class="shop-price-heading"><%= t('admin.' + key) %></h2>
+          <% for (const product of products.filter(row => row.kind === kind)) { %>
+            <form class="shop-price-row" action="/admin/shop/<%= encodeURIComponent(product.key) %>" method="post">
+              <input name="csrf" type="hidden" value="<%= csrf %>">
+              <label for="price-<%= product.key %>"><strong><%= lang === 'en-US' ? product.en : product.zh %></strong>
+                <small><%= t('admin.shopDefault') %> <%= product.standard %><%= product.kind === 'sign' ? (lang === 'en-US' ? ' / sign' : ' / 块') : product.kind === 'pass' ? (lang === 'en-US' ? ' / ticket' : ' / 张') : '' %></small>
+              </label>
+              <input id="price-<%= product.key %>" name="price" value="<%= product.current %>" type="text"
+                inputmode="decimal" maxlength="24" required pattern="[0-9]+([.][0-9]{1,6})?">
+              <button type="submit" class="primary" name="action" value="save"><%= t('admin.shopSave') %></button>
+              <% if (product.customized) { %>
+                <button type="submit" class="plain" name="action" value="reset" formnovalidate><%= t('admin.shopReset') %></button>
+              <% } %>
+            </form>
+          <% } %>
+        <% } %>
       <% } else if (view === 'signs') { %>
         <p><%= t('admin.signsIntro') %></p>
         <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>

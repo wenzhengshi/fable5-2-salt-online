@@ -402,6 +402,12 @@
         return obstruction ? next.copy(previous).addScaledVector(direction, Math.max(0, obstruction.dist - .42)) : next;
       },
       acknowledge(message) {
+        if (message.type === 'mapDenied') {
+          pending = null;
+          status.textContent = window.SaltShop?.locked() || t('expedition.loadFailed');
+          status.style.display = 'block';
+          return;
+        }
         if (message.type === 'mapReturned') { leave(message.pos); return; }
         if (pending?.zone.id === message.map && pending.world && game.game.state === 'playing' && player.alive) enter(pending.zone, pending.world, message.pos);
         pending = null;
@@ -469,10 +475,23 @@
         }
         const zone = zones.find(item => near(player.pos, item.gate));
         if (!zone) { status.style.display = 'none'; return; }
+        if (pending?.zone === zone && pending.sentAt) {
+          if (performance.now() - pending.sentAt < 4500) return;
+          pending = null;
+        }
+        if (zone.id === 'lunar' && (!mp?.connected || !window.SaltShop?.has(window.SaltShop.pass))) {
+          pending = null;
+          status.textContent = window.SaltShop?.locked() || t('expedition.loadFailed');
+          status.style.display = 'block';
+          return;
+        }
         if (pending?.zone === zone && !pending.world) return;
         if (pending?.zone === zone) {
           lastRequest = game.time.t;
-          if (mp?.connected) { mp.syncState(); mp.send({ type: 'mapEnter', map: zone.id }); }
+          if (mp?.connected) {
+            mp.syncState();
+            if (mp.send({ type: 'mapEnter', map: zone.id })) pending.sentAt = performance.now();
+          }
           else { enter(zone, pending.world, zone.landing); pending = null; }
           return;
         }

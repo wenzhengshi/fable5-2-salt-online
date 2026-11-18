@@ -579,16 +579,18 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
     });
   });
 
-  function create(kind) {
+  function create(kind, options = {}) {
     const id = normalizeSoldier(kind);
     const template = templates.get(id) || templates.get('male');
     if (!template) return null;
     const model = cloneSkinned(template);
     model.userData.hunterAvatar = true;
     model.userData.soldierKind = templates.has(id) ? id : 'male';
+    const setOutfit = window.SaltSoldierOutfits?.bind(model);
+    setOutfit?.(options.outfit);
     const rig = new HunterRig(model, pac9Template);
     return {
-      model, rig, weapon: rig.weapon, kind: model.userData.soldierKind,
+      model, rig, setOutfit, dispose() { setOutfit?.('default'); }, weapon: rig.weapon, kind: model.userData.soldierKind,
       armorAnchors: {
         head: rig.bones.get('Head'), chest: rig.bones.get('Chest') || rig.bones.get('Torso'),
         headBounds: model.userData.frontierHead

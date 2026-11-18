@@ -330,3 +330,7 @@ body:has(.scope-zoom-tools:not([hidden])) .frontier.frontier-touch:not(.frontier
 }
 .mobile-field-dock .container-tools { order: 1; }
 .mobile-field-dock .road-sign-tools:not(.container-tools) { order: 2; }
+
+.frontier-bag-outfits h3 { margin: 14px 0 6px; font-size: 15px; }
+.frontier-bag-outfits[hidden] { display: none; }
+.frontier-bag-outfits button:disabled { opacity: .72; cursor: default; }

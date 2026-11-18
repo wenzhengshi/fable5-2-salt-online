@@ -68,6 +68,8 @@ const required = [
   'public/js/road-sign-rules.js',
   'public/js/road-sign-physics.js',
   'public/js/road-signs.js',
+  'public/js/road-sign-styles.js',
+  'public/js/soldier-outfits.js',
   'public/js/terrain-ray.js',
   'public/js/expedition-zones.js',
   'public/js/expedition-portals.js',

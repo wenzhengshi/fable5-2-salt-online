@@ -62,3 +62,13 @@ code { overflow-wrap: anywhere; }
   .admin-tools { flex-direction: column; align-items: flex-end; }
   .qr-preview img { width: 160px; height: 160px; }
 }
+
+.shop-price-heading { margin: 22px 0 8px; font-size: 17px; }
+.shop-price-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 8px 0; border-top: 1px solid #34484c; }
+.shop-price-row label { flex: 1 1 110px; }
+.shop-price-row label small { display: block; color: #a5b7ba; margin-top: 2px; }
+.shop-price-row input:not([type="hidden"]) {
+  width: 100px; min-height: 40px; padding: 6px 8px; color: inherit;
+  background: #0e171c; border: 1px solid #496268; font-variant-numeric: tabular-nums;
+}
+.shop-price-row button { min-height: 40px; padding: 6px 10px; }

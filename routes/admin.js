@@ -5,6 +5,9 @@ const express = require('express');
 const multer = require('multer');
 const credentials = require('../services/adminCredentials');
 const { createBackup } = require('../services/serverBackup');
+const { products } = require('../public/js/shop-catalog');
+const { format: formatPrice, parse: parsePrice } = require('../public/js/gold-rules');
+const { priceList, savePrice } = require('../services/shop');
 const groupQr = require('../services/groupQr');
 const router = express.Router();
 
@@ -206,6 +209,41 @@ router.post('/moderation/revoke/:id', requireSession, async (req, res, next) => 
   } catch (error) {
     next(error);
   }
+});
+
+function shopPage(req, res, status = 200, messageKey = '') {
+  const prices = priceList();
+  return res.status(status).render('admin', {
+    view: 'shop', csrf: req.backupSession.csrf, returnTo: '/admin/shop',
+    message: messageKey ? req.t(messageKey) : '',
+    products: Object.values(products).map(product => ({
+      ...product, current: formatPrice(prices[product.key]), standard: formatPrice(product.price),
+      customized: prices[product.key] !== product.price
+    }))
+  });
+}
+
+router.get('/shop', (req, res, next) => {
+  if (!req.backupSession) return res.redirect(303, '/admin');
+  if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
+  try {
+    return shopPage(req, res, 200, req.query.result === 'saved' ? 'admin.shopSaved' : '');
+  } catch (error) { next(error); }
+});
+
+router.post('/shop/:key', requireSession, (req, res, next) => {
+  if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
+  const { action, price } = req.body;
+  const value = typeof price === 'string' ? parsePrice(price.trim()) : null;
+  try {
+    if (action !== 'reset' && (action !== 'save' || value === null || value <= 0)) {
+      return shopPage(req, res, 400, 'admin.shopInvalid');
+    }
+    const updated = savePrice(req.params.key, action === 'reset' ? null : value);
+    if (!updated) return shopPage(req, res, 400, 'admin.shopInvalid');
+    require('../realtime/multiplayer').broadcastShopPrices(updated);
+    return res.redirect(303, '/admin/shop?result=saved');
+  } catch (error) { next(error); }
 });
 
 router.get('/qr', (req, res) => {

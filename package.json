@@ -9,6 +9,7 @@
     "test:legacy-port": "node scripts/legacy-port-self-test.js",
     "test:flight-collision": "node scripts/flight-collision-self-test.js",
     "test:infinite-ammo": "node scripts/ammo-self-test.js",
+    "test:portal-bosses": "node scripts/portal-boss-self-test.js",
     "test:server-authority": "node scripts/server-authority-self-test.js",
     "test:moderation": "node scripts/moderation-self-test.js",
     "test:road-signs": "node scripts/road-sign-self-test.js",

@@ -6,6 +6,7 @@
   const copy = window.__SALT_I18N__.messages.deployment;
   const expeditionNames = window.__SALT_I18N__.messages.expedition.maps;
   const names = { port: copy.port, qingyun: copy.qingyun, ...expeditionNames };
+  const tr = (zh, en) => document.documentElement.lang === 'en-US' ? en : zh;
   let selected = 'port';
   let loading = false;
   let status;
@@ -61,6 +62,15 @@
       population.className = 'spawn-population';
       populationLabels.set(id, population);
       card.append(input, preview, name, population);
+      if (id === 'lunar') {
+        const lock = document.createElement('span');
+        lock.className = 'spawn-lock';
+        lock.textContent = tr('需通行证', 'Pass required');
+        const update = () => { lock.hidden = !!window.SaltShop?.has(window.SaltShop.pass); };
+        window.addEventListener('saltline:shop', update);
+        update();
+        card.append(lock);
+      }
       grid.append(card);
     }
     status = document.createElement('p');
@@ -68,7 +78,11 @@
     status.setAttribute('role', 'status');
     host.append(group, status);
     setPopulation(mapCounts);
-    actions.push(...host.parentElement.querySelectorAll('.m-title-main .m-actions button'));
+    const menu = host.closest('.menu');
+    const titleActions = menu?.querySelector('.m-title-main .m-actions');
+    window.SaltShop?.addEntry(titleActions);
+    window.SaltShop?.addEntry(menu?.querySelector('[data-s="paused"] .m-actions'));
+    if (titleActions) actions.push(...titleActions.querySelectorAll('button'));
   }
 
   async function deploy(game, launch, requestLock, exitLock) {
@@ -79,6 +93,10 @@
       return;
     }
 
+    if (id === 'lunar' && (!window.__mp?.connected || !window.SaltShop?.has(window.SaltShop.pass))) {
+      window.SaltShop?.open('pass');
+      return;
+    }
     requestLock();
     loading = true;
     for (const control of [...inputs, ...actions]) control.disabled = true;
@@ -95,13 +113,15 @@
         fallback = pickRespawn(maps[id], null);
       }
       if (game.game.state !== 'title') return;
-      const point = await window.__mp?.requestSpawnMap(id) || fallback;
+      const serverPoint = await window.__mp?.requestSpawnMap(id);
+      if (id === 'lunar' && !serverPoint) throw new Error('Lunar deployment requires a server');
+      const point = serverPoint || fallback;
       if (game.game.state !== 'title') return;
       launch(() => enter(point));
       status.textContent = '';
     } catch (error) {
       exitLock();
-      status.textContent = copy.failed;
+      status.textContent = error.message === 'locked' ? window.SaltShop.locked() : copy.failed;
       console.warn('[deployment]', error);
     } finally {
       loading = false;

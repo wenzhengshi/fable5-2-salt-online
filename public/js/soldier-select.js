@@ -2,6 +2,8 @@
   'use strict';
 
   const i18n = window.__SALT_I18N__ || {};
+  const outfits = window.SaltSoldierOutfits;
+  const chinese = document.documentElement.lang.startsWith('zh');
   const COPY = (i18n.messages && i18n.messages.soldierSelect) || {};
   const STORAGE_KEY = 'saltline.multiplayer.soldier';
   const UNIT_KINDS = ['male', 'female', 'hound', 'drone', 'classic'];
@@ -34,6 +36,7 @@
 
   const state = {
     selected: loadSoldier(),
+    outfit: outfits.load(),
     open: false,
     confirmed: false,
     deployOnConfirm: true,
@@ -131,6 +134,10 @@
           </div>
           <div class="ss-stage-corner" aria-hidden="true">${t('fieldUnit')}</div>
         </div>
+        <label class="ss-outfit">
+          <span>${chinese ? '服装' : 'Outfit'}</span>
+          <select id="ss-outfit"></select>
+        </label>
         <p class="ss-stage-hint">${t('previewHint')}</p>
       </section>
     </div>
@@ -162,8 +169,31 @@
     if (error) el.stageLoading.querySelector('b').textContent = text;
   }
 
+  const outfitSelect = overlay.querySelector('#ss-outfit');
+  outfitSelect.add(new Option(chinese ? '默认服装' : 'Default outfit', 'default'));
+  for (const outfit of Object.values(outfits.options)) {
+    outfitSelect.add(new Option(chinese ? outfit.zh : outfit.en, outfit.id));
+  }
+  function refreshOutfits() {
+    for (const option of outfitSelect.options) {
+      if (option.value !== 'default') {
+        option.hidden = option.disabled = !window.SaltShop?.has('outfit:' + option.value);
+      }
+    }
+    if (state.outfit !== 'default' && !window.SaltShop?.has('outfit:' + state.outfit)) state.outfit = 'default';
+    outfitSelect.value = state.outfit;
+    state.current?.setOutfit?.(state.outfit);
+  }
+  window.addEventListener('saltline:shop', refreshOutfits);
+  refreshOutfits();
+  outfitSelect.addEventListener('change', () => {
+    state.outfit = outfits.normalize(outfitSelect.value);
+    state.current?.setOutfit?.(state.outfit);
+  });
+
   function updateSelection(kind, focus) {
     state.selected = normalizeSoldier(kind);
+    outfitSelect.closest('.ss-outfit').hidden = isMachine(state.selected);
     const copy = cardCopy(state.selected);
     for (const card of el.cards) {
       const active = card.dataset.kind === state.selected;
@@ -306,7 +336,7 @@
     const api = modelApiFor(unit);
     if (!api || typeof api.create !== 'function') return;
     clearPreviewModel();
-    const made = api.create(unit, { preview: true });
+    const made = api.create(unit, { preview: true, outfit: state.outfit });
     if (!made || !made.model) {
       setModelState(t('fallback'), true);
       return;
@@ -430,6 +460,8 @@
     el.confirm.querySelector('span').textContent = state.deployOnConfirm
       ? t('confirm')
       : t('confirmSettings');
+    state.outfit = outfits.load();
+    refreshOutfits();
     state.open = true;
     overlay.hidden = false;
     overlay.classList.add('on');
@@ -467,11 +499,12 @@
     if (!state.open || state.confirmed) return;
     state.confirmed = true;
     saveSoldier(state.selected);
+    if (!isMachine(state.selected)) outfits.save(state.outfit);
     el.confirm.classList.add('is-busy');
     el.confirm.querySelector('span').textContent = t('deploying');
     try {
       if (window.__mp && typeof window.__mp.setSoldier === 'function') {
-        window.__mp.setSoldier(state.selected);
+        window.__mp.setSoldier(state.selected, state.outfit);
       }
     } catch (err) { /* ignore */ }
     updateSettingsEntry();

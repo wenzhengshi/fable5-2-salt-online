@@ -490,6 +490,16 @@
         const credit = hudText('killReward', { amount: format(msg.amount) });
         mp.toast?.(msg.bonus ? credit + ' · ' + hudText('bonus') : credit);
       }
+      if (msg.type === 'bossReward') {
+        const en = document.documentElement.lang === 'en-US';
+        if (msg.amount > 0) {
+          mp.toast?.(en ? `Boss bounty +${format(msg.amount)} Saltline Coin` : `Boss 奖励 +${format(msg.amount)} 盐线币`);
+        } else if (msg.reason === 'limit' || msg.reason === 'budget') {
+          const limit = msg.reason === 'limit';
+          mp.toast?.(en ? (limit ? 'Your daily Boss reward limit is reached.' : 'Today’s Boss bounty is exhausted.')
+            : (limit ? '今天已领满 2 次 Boss 奖励。' : '今日 Boss 奖励已发完。'));
+        }
+      }
       if (msg.type === 'goldBonus') mp.toast?.(hudText('bonus'));
       if (msg.type === 'goldPicked') mp.toast?.(hudText('picked', { amount: format(msg.amount) }));
       if (msg.type === 'goldGiftResult' && msg.role === 'sender' && msg.request === giftRequest) {

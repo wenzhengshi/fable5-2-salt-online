@@ -127,6 +127,7 @@ async function main() {
       };
     });
 
+    await page.addScriptTag({ path: path.join(root, 'public/js/road-sign-styles.js') });
     await page.addScriptTag({ path: path.join(root, 'public/js/road-signs.js') });
     await page.evaluate(() => window.installRoadSigns(window.__game));
 

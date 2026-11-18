@@ -105,9 +105,16 @@
       rows[kind] = { row, label };
       contents.append(row);
     }
+    const clothing = document.createElement('div');
+    clothing.className = 'frontier-bag-outfits';
+    clothing.hidden = true;
+    const clothingTitle = document.createElement('h3');
+    clothingTitle.textContent = strings.bagOutfits;
+    const clothingRows = document.createElement('ul');
+    clothing.append(clothingTitle, clothingRows);
     const empty = document.createElement('p');
     empty.textContent = strings.backpackEmpty;
-    backpack.append(heading, capacity, contents, empty, bagStatus);
+    backpack.append(heading, capacity, contents, clothing, empty, bagStatus);
     backpack.addEventListener('cancel', event => {
       event.preventDefault();
       closeBackpack(true);
@@ -145,6 +152,8 @@
     const up = new THREE.Vector3(0, 1, 0);
     let cameraChanged = false;
     let latestActions = '';
+    let carriedOutfits = [];
+    let renderedOutfits = '';
     let wasUnarmed = false;
     let inventory = rules.normalize();
     try { inventory = rules.normalize(JSON.parse(localStorage.getItem(localKey))); } catch { /* optional storage */ }
@@ -153,6 +162,7 @@
     const clock = () => performance.now();
     const currentMap = () => game.expedition?.active?.id || (game.qingyun?.active ? 'qingyun' : 'port');
     const mp = () => window.__mp;
+    const canWearOutfit = session => !!session?.connected && !['hound', 'drone'].includes(session.soldier);
     const getModels = () => models ||= window.createFrontierModels(THREE);
     let wheelNext = null;
     let wheelCurrent = null;
@@ -651,6 +661,48 @@
       }
     }
 
+    function refreshCarriedOutfits() {
+      const shop = window.SaltShop;
+      const next = shop?.cosmetics().map(key => shop.get(key)).filter(item => item?.kind === 'outfit') || [];
+      if (next.length === carriedOutfits.length && next.every((item, index) => item.key === carriedOutfits[index].key)) return;
+      carriedOutfits = next;
+      latestActions = '';
+      updateHud(currentMap() === rules.map);
+    }
+
+    function renderCarriedOutfits(outfit, canChange) {
+      const key = JSON.stringify([outfit, canChange, carriedOutfits.map(item => item.key)]);
+      if (key === renderedOutfits) return;
+      renderedOutfits = key;
+      clothing.hidden = carriedOutfits.length === 0;
+      clothingRows.replaceChildren();
+      if (clothing.hidden) return;
+      const choices = [{ id: 'default', name: strings.bagDefaultOutfit },
+        ...carriedOutfits.map(item => ({ id: item.id, name: window.SaltShop.label(item) }))];
+      for (const choice of choices) {
+        const row = document.createElement('li');
+        const label = document.createElement('span');
+        label.textContent = choice.name;
+        row.append(label);
+        if (canChange) {
+          const wear = document.createElement('button');
+          wear.type = 'button';
+          wear.disabled = outfit === choice.id;
+          wear.textContent = wear.disabled ? strings.equipped : strings.bagWearOutfit;
+          wear.addEventListener('click', () => {
+            const session = mp();
+            if (!canWearOutfit(session)) return;
+            if (choice.id !== 'default' && !window.SaltShop?.has('outfit:' + choice.id)) return;
+            session.setSoldier(session.soldier, choice.id);
+            updateHud(currentMap() === rules.map);
+            clothingRows.querySelector('button:not([disabled])')?.focus();
+          });
+          row.append(wear);
+        }
+        clothingRows.append(row);
+      }
+    }
+
     function updateHud(inDustfall) {
       const touch = input.touch || coarsePointer.matches;
       const inLunar = currentMap() === 'lunar';
@@ -661,12 +713,17 @@
       const pickText = nearest && (nearest.issue ? strings[nearest.issue] :
         shortcut(strings.pick.replace('{item}', names[nearest.entry.kind])));
       const playing = game.game.state === 'playing' && player.alive && !window.__SALT_FOCUS__?.active;
+      const hasItems = carriedOutfits.length > 0 || Object.values(inventory).some(Boolean);
+      const session = mp();
+      const outfit = backpack.open ? session?.outfit || 'default' : 'default';
+      const canChangeOutfit = canWearOutfit(session);
+      const canPreviewOutfit = canChangeOutfit && carriedOutfits.length > 0;
       const cache = JSON.stringify([phase, message, pickText, inventory, inDustfall, inLunar, thirdPerson, viewChosen,
-        playing, touch, backpack.open, confirmingDiscard, game.weapon.arsenalId]);
+        playing, touch, backpack.open, confirmingDiscard, game.weapon.arsenalId, outfit, canChangeOutfit]);
       if (cache === latestActions) return;
       latestActions = cache;
       syncDock(touch, playing && !phase);
-      ui.hidden = !playing || (!viewChosen && !backpack.open && !inDustfall && !inLunar && !Object.values(inventory).some(Boolean) && !message);
+      ui.hidden = !playing || (!viewChosen && !backpack.open && !inDustfall && !inLunar && !hasItems && !message);
       ui.classList.toggle('frontier-touch', touch);
       ui.classList.toggle('frontier-dropping', !!phase);
       state.textContent = phase === 'plane' && touch ? strings.inPlaneTouch : message;
@@ -681,16 +738,17 @@
       buttons.jump.textContent = shortcut(strings.jump);
       buttons.pick.hidden = !pickText || !!phase;
       buttons.pick.textContent = pickText || '';
-      buttons.view.hidden = (!inDustfall && !inLunar && !viewChosen) || !!phase || !player.alive;
+      buttons.view.hidden = (!inDustfall && !inLunar && !viewChosen && !canPreviewOutfit) || !!phase || !player.alive;
       buttons.view.textContent = shortcut(thirdPerson ? strings.switchFirst : strings.switchThird);
       const slots = rules.usedSlots(inventory);
       const space = slots + '/' + rules.capacity;
-      buttons.backpack.hidden = !!phase || !player.alive || (!inDustfall && !Object.values(inventory).some(Boolean));
+      buttons.backpack.hidden = !!phase || !player.alive || (!inDustfall && !hasItems);
       buttons.backpack.textContent = strings.backpack + ' ' + space + (touch ? '' : ' [O]');
       if (backpack.open) {
         capacity.textContent = strings.capacity.replace('{space}', space);
         capacity.classList.toggle('frontier-bag-full', slots >= rules.capacity);
-        empty.hidden = Object.values(inventory).some(Boolean);
+        empty.hidden = hasItems;
+        renderCarriedOutfits(outfit, canChangeOutfit);
         bagStatus.textContent = confirmingDiscard ?
           strings.confirmDiscardItem.replace('{item}', names[confirmingDiscard]) : clock() < noteUntil ? note : '';
         bagStatus.hidden = !bagStatus.textContent;
@@ -918,11 +976,12 @@
           game.game.state !== 'playing' || window.__SALT_FOCUS__?.active) return;
       if (!['KeyO', 'Space', 'KeyF', 'KeyV'].includes(event.code) && !itemKeys[event.code]) return;
       if (event.code === 'KeyO' && !insertion &&
-          (currentMap() === rules.map || Object.values(inventory).some(Boolean)) &&
+          (currentMap() === rules.map || carriedOutfits.length > 0 || Object.values(inventory).some(Boolean)) &&
           !event.target?.closest?.('button, a, select, [tabindex]')) openBackpack();
       else if (event.code === 'Space' && insertion?.phase === 'plane') jump();
       else if (event.code === 'KeyF' && nearest) pick();
-      else if (event.code === 'KeyV' && !insertion && (viewChosen || currentMap() === rules.map || currentMap() === 'lunar')) toggleView();
+      else if (event.code === 'KeyV' && !insertion && (viewChosen || currentMap() === rules.map || currentMap() === 'lunar' ||
+          (carriedOutfits.length > 0 && canWearOutfit(mp())))) toggleView();
       else {
         const kind = itemKeys[event.code];
         if (!kind || !inventory[kind]) return;
@@ -932,6 +991,8 @@
       if (event.code === 'KeyO') event.stopImmediatePropagation();
     }, { capture: true });
     game.renderer?.domElement?.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('saltline:shop', refreshCarriedOutfits);
+    if (window.SaltShop) refreshCarriedOutfits();
     return game.frontier = {
       begin, leave, onMessage, beginView, endView, rememberView, serverDamage: rawDamage,
       registerDockTool(tool) { dockTools.push(tool); latestActions = ''; },

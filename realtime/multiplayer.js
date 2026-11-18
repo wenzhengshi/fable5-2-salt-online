@@ -6,7 +6,9 @@ const contentFilter = require('../services/contentFilter');
 const chatHistory = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
 const deathReplay = require('../services/deathReplay');
+const { createShop } = require('../services/shop');
 const playerAuthority = require('../services/playerAuthority');
+const { createPortalBosses } = require('../services/portalBosses');
 const { isInsideAirWall, PORT_PLAYER_START } = require('../public/js/flight-collision');
 const { randomUUID } = require('node:crypto');
 const moderation = require('../services/moderation').createModeration();
@@ -831,7 +833,7 @@ function syncFollowingPlayers(now) {
   }
 }
 
-function killPlayer(victim, killer, now) {
+function killPlayer(victim, killer, now, cause = null) {
   const replay = killer ? deathReplay.build(victim, killer, now, frontier.equipmentFlags) : null;
   endFollowing(victim, 'down');
   endFollowersOf(victim, 'leaderDown');
@@ -858,7 +860,7 @@ function killPlayer(victim, killer, now) {
   });
   send(victim.ws, {
     type: 'youDied',
-    by: publicFighter(killer),
+    by: publicFighter(killer) || cause,
     replay,
     respawnIn: RESPAWN_MS,
     respawnAt: victim.respawnAt
@@ -886,8 +888,38 @@ const frontier = require('../services/frontier')({
 });
 
 const gold = require('../services/gold')({ send, players, frontier });
-const containers = require('../services/containers')({ send, players, frontier, gold });
-const sedan = require('../services/sedan')(players, send, frontier.dropping);
+const portalBosses = createPortalBosses({
+  settleReward: gold.settleBossReward,
+  mapKey: mapKeyOf, players: () => players.values(), send,
+  explode(map, positions) {
+    broadcast({ type: 'bossExplosion', map, positions },
+      player => player.joined && mapKeyOf(player) === map);
+  },
+  fire(boss, shot) {
+    broadcast({ type: 'shot', id: boss.id, bossKind: boss.kind, map: boss.map, ...shot },
+      player => player.joined && mapKeyOf(player) === boss.map);
+  },
+  damage(target, boss, amount, now, origin = boss) {
+    const damage = frontier.armor(target, amount, 'vest', now);
+    target.hp = Math.max(0, target.hp - damage);
+    const cause = {
+      id: boss.id, name: boss.kind === 'cat' ? '奶油虎斑巨猫' : '巨型机器狗',
+      color: '#ff6f44', soldier: boss.kind === 'cat' ? null : 'hound'
+    };
+    send(target.ws, { type: 'damaged', amount: damage, hp: target.hp, bossDamage: true, from: {
+      ...cause, pos: { x: origin.x, y: origin.y, z: origin.z }
+    } });
+    if (target.hp <= 0) killPlayer(target, null, now, cause);
+  }
+});
+
+const shop = createShop({ players, send, gold,
+  onOutfitChanged(player) {
+    broadcast({ type: 'soldierState', id: player.id, soldier: player.soldier, outfit: player.outfit });
+  }
+});
+const containers = require('../services/containers')({ send, players, frontier, gold, shop });
+const sedan = require('../services/sedan')(players, send, frontier.dropping, shop.enter);
 
 function uniqueName(candidate, self) {
   const clean = sanitizeName(candidate);
@@ -1079,6 +1111,7 @@ function handleMessage(player, raw) {
       player.spawns = sanitizeSpawns(msg.spawns);
       if (!resumed) {
         player.soldier = normalizeSoldier(msg.soldier);
+        player.outfit = typeof msg.outfit === 'string' ? msg.outfit : 'default';
         playerAuthority.resetWeaponState(player);
       }
       player.joined = true;
@@ -1104,21 +1137,28 @@ function handleMessage(player, raw) {
         } : null,
         focus: focusPayload(player)
       });
+      shop.publish(player);
       frontier.inventory(player);
       if (!focused && !resumed) broadcast({ type: 'notice', kind: 'join', name: player.name, id: player.id });
       break;
     }
     case 'soldier': {
       const soldier = normalizeSoldier(msg.soldier);
-      if (player.soldier === soldier) {
-        send(player.ws, { type: 'soldierAck', soldier });
+      const outfit = shop.outfitFor(player, msg.outfit === undefined ? player.outfit : msg.outfit);
+      if (player.soldier === soldier && player.outfit === outfit) {
+        send(player.ws, { type: 'soldierAck', soldier, outfit });
         break;
       }
+      if (player.soldier !== soldier) player.pendingShot = null;
       player.soldier = soldier;
-      player.pendingShot = null;
-      broadcast({ type: 'soldierState', id: player.id, soldier });
+      player.outfit = outfit;
+      broadcast({ type: 'soldierState', id: player.id, soldier, outfit });
       break;
     }
+    case 'shopList':
+    case 'shopBuy':
+      shop.handle(player, msg, now);
+      break;
     case 'spawns': {
       player.spawns = sanitizeSpawns(msg.spawns);
       break;
@@ -1370,6 +1410,11 @@ function handleMessage(player, raw) {
         send(player.ws, { type: 'spawnMapResult', map: msg.map, ok: false });
         break;
       }
+      const retry = map?.id === 'lunar' && player.mapId === 'lunar';
+      if (!retry && !shop.enter(msg.map, [player])) {
+        send(player.ws, { type: 'spawnMapResult', map: msg.map, ok: false, reason: 'locked' });
+        break;
+      }
       player.inQingyun = isQingyun;
       player.mapId = map?.id || null;
       player.pos = { ...pickSpawn(player, now) };
@@ -1429,6 +1474,10 @@ function handleMessage(player, raw) {
       const map = Object.hasOwn(expeditions.maps, msg.map) ? expeditions.maps[msg.map] : null;
       if (!map || !player.joined || !player.alive || !player.active || player.boatSeat != null ||
           !player.inQingyun || player.mapId || !expeditions.near(player.pos, map.gate, .9)) break;
+      if (!shop.enter(map.id, [player])) {
+        send(player.ws, { type: 'mapDenied', map: map.id, reason: 'locked' });
+        break;
+      }
       player.inQingyun = false;
       player.mapId = map.id;
       player.pos = { ...map.landing };
@@ -1498,12 +1547,15 @@ function handleMessage(player, raw) {
       }
       player.signEditAt = now;
       player.signBusy = true;
-      signRegistry.mutate(player, msg, now).then(({ sign, removed, reason, remaining }) => {
+      signRegistry.mutate(player, msg, now, shop.claimSign).then(({ sign, removed, reason, remaining }) => {
         const id = sign?.id || actionId;
         send(player.ws, { type: 'signResult', action, id, reason, removed: !!removed, remaining });
         // The player who removed the sign must receive the change even if the
         // positional snapshot moved outside the normal view radius meanwhile.
-        if (sign) broadcastSign(sign, removed, player);
+        if (sign) {
+          if (!removed) shop.refresh(player);
+          broadcastSign(sign, removed, player);
+        }
       }).catch(error => {
         console.error('[signs] save failed:', error.message);
         send(player.ws, { type: 'signResult', action, id: actionId, reason: 'storage' });
@@ -1616,6 +1668,10 @@ function handleMessage(player, raw) {
       (player.lastWeaponShot ||= Object.create(null))[profile.id] = now;
       player.weaponId = profile.id;
       if (profile.id === 'knife') break;
+      if (portalBosses.shot(player, origin, dir, profile, now)) {
+        playerAuthority.takeReportedShot(player, now);
+        player.lastBossShotAt = now;
+      }
       broadcast(
         { type: 'shot', id: player.id, origin, dir },
         (other) => other !== player && other.active && sameMap(other, player)
@@ -1623,7 +1679,7 @@ function handleMessage(player, raw) {
       break;
     }
     case 'hit': {
-      if (!player.active || !player.alive) break;
+      if (!player.active || !player.alive || player.lastBossShotAt === player.lastShotAt) break;
       const shot = playerAuthority.takeReportedShot(player, now);
       const target = players.get(String(msg.targetId));
       if (!target || target === player || !sameMap(target, player)) break;
@@ -1802,6 +1858,7 @@ function addPlayer(ws, req, signOwner) {
     name: randomName(),
     color: colorFor(id),
     soldier: 'classic',
+    outfit: 'default',
     ws,
     pos: { x: 0, y: 0, z: 4 },
     yaw: 0,
@@ -2001,6 +2058,7 @@ function tick() {
   sedan.sync();
   expireFollowInvites(now);
   syncFollowingPlayers(now);
+  portalBosses.tick(now);
   deathReplay.recordPlayers(players.values(), now, frontier.equipmentFlags);
   deathReplay.prune(now);
   const roster = rosterPayload();
@@ -2020,6 +2078,7 @@ function tick() {
       name: player.name,
       color: player.color,
       soldier: player.soldier,
+      outfit: player.outfit,
       x: round(player.pos.x),
       y: round(player.pos.y),
       z: round(player.pos.z),
@@ -2038,19 +2097,26 @@ function tick() {
   }
   const voice = voicePayload();
   const boatState = publicBoat();
+  const bossesByMap = new Map();
+  const bossBounty = players.size ? gold.bossBudget(now) : null;
   for (const player of players.values()) {
     // This state is superseded by the next tick. Let slow clients catch up.
     if (player.ws.readyState !== 1 || player.ws.bufferedAmount > 64 * 1024) continue;
+    const key = mapKey(player);
+    if (!bossesByMap.has(key)) bossesByMap.set(key, portalBosses.snapshot(key));
     send(player.ws, {
       type: 'snapshot',
       t: now,
       online: players.size,
       mapCounts,
-      players: visibleByMap.get(mapKey(player)) || [],
+      players: visibleByMap.get(key) || [],
       roster,
       voice,
       boat: boatState,
-      sedan: sedan.snapshot(mapKey(player), player),
+      sedan: sedan.snapshot(key, player),
+      bossMap: key,
+      bossBounty,
+      bosses: bossesByMap.get(key),
       you: {
         id: player.id,
         name: player.name,
@@ -2235,6 +2301,7 @@ function attachMultiplayer(server) {
 
 module.exports = {
   attachMultiplayer,
+  broadcastShopPrices(prices) { broadcast({ type: 'shopPrices', prices }, player => player.joined); },
   getLeaderboard,
   getOnlinePlayers,
   getModerationReport,

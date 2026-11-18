@@ -2,7 +2,7 @@
 
 const rules = require('../public/js/sedan-rules');
 
-module.exports = function createSedan(players, send, dropping) {
+module.exports = function createSedan(players, send, dropping, enterMap = () => true) {
   const cars = [];
   const sessions = new WeakMap();
   let nextCarId = 1;
@@ -173,6 +173,11 @@ module.exports = function createSedan(players, send, dropping) {
     if (!route || msg.destination !== route.to) return;
     const resident = cars.find(other => other !== car && other.map === route.to);
     if (resident?.seats.some(Boolean)) return;
+    const occupants = car.seats.filter(id => id != null).map(id => players.get(String(id)));
+    if (!enterMap(route.to, occupants)) {
+      send(player.ws, { type: 'mapDenied', map: route.to, reason: 'locked' });
+      return;
+    }
     if (resident) retireEmptyCar(route.to);
     session.lastPortal = now;
     session.lastPose = 0;

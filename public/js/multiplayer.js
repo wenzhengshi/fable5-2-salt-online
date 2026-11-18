@@ -11,9 +11,20 @@
   const reconnectToken = Array.from(crypto.getRandomValues(new Uint8Array(16)),
     value => value.toString(16).padStart(2, '0')).join('');
   const STORAGE_NAME = 'saltline.multiplayer.name';
+  const outfits = window.SaltSoldierOutfits;
+  function usableOutfit(id) {
+    return window.SaltShop?.has('outfit:' + id) ? id : 'default';
+  }
+  let myOutfit = outfits?.load() || 'default';
+  function acceptOutfit(id) {
+    if (id === undefined || !outfits) return;
+    myOutfit = outfits.normalize(id);
+    outfits.save(myOutfit);
+  }
   const STORAGE_SOLDIER = 'saltline.multiplayer.soldier';
   const UNIT_KINDS = ['male', 'female', 'hound', 'drone', 'classic'];
   const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS'];
+  const HOST_ENTRY_URL = 'https://tulingai.com/index.html?conversationShareId=convshare-cb4af925336449159793e54a77ce8ca4';
   const REPO_URL = 'https://github.com/wenzhengshi/fable5-2-salt-online';
   const ANDROID_MARKET_URL = 'https://tulingai.com/app-market.html?id=49';
   const GOLD_ACTIVITY_LIMIT = 8;
@@ -29,25 +40,30 @@
     ));
   }
 
-  function createRepoLink(variant) {
+  function createRepoLink(variant, isHost = false) {
+    const href = isHost ? HOST_ENTRY_URL : REPO_URL;
     const link = document.createElement('a');
     link.className = 'salt-repo' + (variant ? ' salt-repo-' + variant : '');
-    link.href = REPO_URL;
+    link.href = href;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.title = t('repoHint');
-    link.setAttribute('aria-label', t('repo') + ' — ' + t('repoHint') + ': ' + REPO_URL);
+    const title = isHost ? t('hostEntry') : variant === 'title' ? 'GitHub' : t('repo');
+    const hint = t(isHost ? 'hostEntryHint' : 'repoHint');
+    link.title = hint;
+    link.setAttribute('aria-label', title + ' — ' + hint);
 
     const glyph = document.createElement('span');
     glyph.className = 'salt-repo-glyph';
-    glyph.innerHTML = REPO_ICON;
+    if (isHost) glyph.textContent = '↗';
+    else glyph.innerHTML = REPO_ICON;
+    glyph.setAttribute('aria-hidden', 'true');
 
     const copy = document.createElement('span');
     copy.className = 'salt-repo-copy';
     const label = document.createElement('b');
-    label.textContent = variant === 'title' ? 'GitHub' : t('repo');
+    label.textContent = title;
     const url = document.createElement('em');
-    url.textContent = REPO_URL;
+    url.textContent = href;
     url.dir = 'ltr';
     copy.append(label, url);
 
@@ -97,7 +113,7 @@
       const mount = document.createElement('div');
       mount.className = 'mp-title-repo';
       mount.setAttribute('data-mp-repo', 'title');
-      mount.append(createMarketLink('title'), createRepoLink('title'));
+      mount.append(createMarketLink('title'), createRepoLink('title', true), createRepoLink('title'));
       (titleMain.querySelector('.home-links') || titleMain).appendChild(mount);
     }
 
@@ -1741,7 +1757,7 @@
 
   /* ------------------------------------------------------ machine wrecks */
 
-  function machineBurst(pos, scale) {
+  function machineBurst(pos, scale, silent = false) {
     if (!pos || !G) return;
     try {
       if (G.fx && G.fx.explosion) G.fx.explosion(pos, scale || 1);
@@ -1750,7 +1766,7 @@
       if (G.fx && G.fx.smoke) G.fx.smoke(pos, { size: 1.1, life: 2.4, color: 0x353b3f, rise: 1.5 });
     } catch (err) { /* visuals are best-effort */ }
     try {
-      if (G.audio && typeof G.audio.play === 'function') {
+      if (!silent && G.audio && typeof G.audio.play === 'function') {
         G.audio.play('explosion', { pos, gain: 1, jitter: 0.05 });
       }
     } catch (err) { /* ignore */ }
@@ -2128,6 +2144,8 @@
   function clearAvatarFallback(avatar) {
     if (!avatar || !avatar.body) return;
     if (avatar.fallbackBuilt) {
+      avatar.setOutfit?.('default');
+      avatar.setOutfit = null;
       avatar.armor?.dispose();
       avatar.armor = null;
     }
@@ -2153,6 +2171,8 @@
       avatar.machineUpgradeTimer = 0;
     }
     if (avatar.hunter) {
+      avatar.setOutfit?.('default');
+      avatar.setOutfit = null;
       avatar.body.remove(avatar.hunter);
       avatar.hunter = null;
       avatar.rig = null;
@@ -2228,6 +2248,16 @@
       mesh.userData.mpHunterFallback = true;
       avatar.body.add(mesh);
     }
+    const clothing = new Map([
+      [torso, 'jacket'], [armL, 'jacket'], [armR, 'jacket'],
+      [legL, 'pants'], [legR, 'pants'], [vest, 'trim'], [helmet, 'trim'],
+      [bootL, 'boots'], [bootR, 'boots'], [backpack, 'boots']
+    ]);
+    for (const [mesh, channel] of clothing) mesh.userData.outfitChannel = channel;
+    avatar.setOutfit = outfits?.bind({ traverse(visit) {
+      for (const mesh of clothing.keys()) visit(mesh);
+    } });
+    avatar.setOutfit?.(avatar.data?.outfit);
     avatar.viewWeaponParts = [rifle, rifleTrim];
     avatar.legs = [legL, legR];
     avatar.arms = [armL, armR];
@@ -2386,12 +2416,14 @@
     }
     try {
       const hunter = api.create(kind, {
+        outfit: avatar.data?.outfit,
         color: avatar.data && avatar.data.color
       });
       if (!hunter || !hunter.model) throw new Error('hunter clone unavailable');
       hunter.model.name = 'soldier-avatar-model';
       avatar.body.add(hunter.model);
       avatar.hunter = hunter.model;
+      avatar.setOutfit = hunter.setOutfit;
       avatar.rig = hunter.rig;
       avatar.weapon = hunter.weapon || null;
       avatar.viewWeaponParts = hunter.weaponParts || null;
@@ -2529,6 +2561,7 @@
 
   function disposeAvatar(avatar) {
     avatar.disposed = true;
+    avatar.setOutfit?.('default');
     avatar.armor?.dispose();
     if (avatar.machineUpgradeTimer) {
       window.clearTimeout(avatar.machineUpgradeTimer);
@@ -2561,6 +2594,7 @@
         scene.add(avatar.group);
       }
       avatar.data = item;
+      avatar.setOutfit?.(item.outfit);
       avatar.group.visible = true;
       avatar.hiddenAt = 0;
       avatar.target.set(item.x, item.y, item.z);
@@ -2772,6 +2806,22 @@
         })) return localShot();
         const range = opts?.range || 300;
         const gold = opts?.weapon === 'knife' ? null : G.gold?.intersect(origin, dir, range);
+        const bossRange = Math.min(range, window.SaltArsenalRules?.[opts?.weapon || 'pac9']?.range || range);
+        const bossHit = opts?.weapon === 'knife' ? null : G.portalBosses?.intersect(origin, dir, bossRange, normalizeSoldier(mySoldier) === 'drone');
+        if (bossHit != null && (!gold || bossHit < gold.dist) &&
+            !G.physics.raycast(origin, dir, bossHit) && !G.enemies.raycast(origin, dir, bossHit)) {
+          const playerAhead = [...avatars.values()].some(avatar => {
+            if (!avatar.group.visible || !avatar.data) return false;
+            const box = avatarHitBox(avatar);
+            const hit = rayBox(origin, dir, box.x, box.y, box.z, box.hx, box.hy, box.hz);
+            return hit != null && hit > .35 && hit < bossHit;
+          });
+          if (!playerAhead) {
+            const point = origin.clone().addScaledVector(dir, bossHit);
+            G.fx?.sparks?.(point, dir, 6);
+            return { point, normal: dir.clone().negate(), dist: bossHit, surface: 'player', enemy: null, from: 'player' };
+          }
+        }
         let limit;
         if (gold) {
           const obstruction = G.physics.raycast(origin, dir, gold.dist);
@@ -3112,6 +3162,7 @@
     }
 
     if (kind === 'drone') {
+      const portCeiling = window.SaltPortalBossRules?.PORT_DRONE_CEILING || 22;
       const map = G.expedition?.active?.id || (G.qingyun?.active ? 'qingyun' : 'port');
       if (unitFlightMap !== map) {
         unitFlightMap = map;
@@ -3129,7 +3180,7 @@
       if (!unitFlightY || unitFlightY < minY) unitFlightY = minY;
       if (ascend) unitFlightY += 4.6 * dt;
       if (descend) unitFlightY -= 4.6 * dt;
-      unitFlightY = Math.max(minY, Math.min(G.expedition?.active ? 225 : G.qingyun?.active ? 110 : 22, unitFlightY));
+      unitFlightY = Math.max(minY, Math.min(G.expedition?.active ? 225 : G.qingyun?.active ? 110 : portCeiling, unitFlightY));
       const candidate = {
         x: player.pos.x,
         y: unitFlightY,
@@ -3162,7 +3213,7 @@
           if (wall.clampedX) player.vel.x = 0;
           if (wall.clampedZ) player.vel.z = 0;
         }
-        unitFlightY = Math.max(minY, Math.min(22, resolved.y));
+        unitFlightY = Math.max(minY, Math.min(portCeiling, resolved.y));
         player.pos.y = unitFlightY;
         if (resolved.hitWall) {
           if (Math.abs(resolved.x - candidate.x) > 0.0001) player.vel.x = 0;
@@ -3264,7 +3315,7 @@
       const unsubscribe = onMessage(message => {
         if (ws !== socket || message.type !== 'spawnMapResult' || message.map !== map) return;
         if (message.ok) finish(null, message.pos);
-        else finish(new Error('Deployment rejected'));
+        else finish(new Error(message.reason || 'Deployment rejected'));
       });
       const timer = setTimeout(() => {
         finish(new Error('Deployment timed out'));
@@ -3369,7 +3420,7 @@
       reconnectDelay = 1200;
       setConnection('online');
       everJoined = false;
-      send({ type: 'join', name: myName, soldier: mySoldier, spawns: spawnsFromLevel(), frontier: !!window.SaltFrontierRules });
+      send({ type: 'join', name: myName, soldier: mySoldier, outfit: myOutfit, spawns: spawnsFromLevel(), frontier: !!window.SaltFrontierRules });
       window.clearInterval(pingTimer);
       pingTimer = window.setInterval(() => {
         if (ws && ws.readyState === 1) send({ type: 'ping', t: performance.now() });
@@ -3396,6 +3447,7 @@
     socket.addEventListener('close', event => {
       if (ws !== socket) return;
       connected = false;
+      G?.portalBosses?.snapshot('', [], Date.now());
       myId = null;
       pendingRename = null;
       onlineCount = 0;
@@ -3420,6 +3472,7 @@
       }
       snapshotTrails.clear();
       clearInterval(pingTimer);
+      window.SaltShop?.disconnect();
       if (event.code === 4403 || event.code === 4404) {
         toast(t(event.code === 4403 ? 'banned' : 'kicked'));
         return;
@@ -3451,6 +3504,7 @@
         pendingFrontier.set(msg.type, msg);
       }
     }
+    window.SaltShop?.receive(msg);
     notifyMessage(msg);
     switch (msg.type) {
       case 'welcome': {
@@ -3489,6 +3543,10 @@
         else if (acceptedRename) toast(t('nameSaved'));
         break;
       }
+      case 'mapDenied':
+        G?.expedition?.acknowledge(msg);
+        toast(window.SaltShop?.locked() || 'Lunar Pass required');
+        break;
       case 'mapEntered':
       case 'mapReturned': {
         G?.expedition?.acknowledge(msg);
@@ -3510,6 +3568,7 @@
         break;
       }
       case 'soldierAck': {
+        acceptOutfit(msg.outfit);
         mySoldier = normalizeSoldier(msg.soldier || mySoldier);
         saveSoldier(mySoldier);
         applyUnitSelection();
@@ -3518,12 +3577,15 @@
       case 'soldierState': {
         const soldier = normalizeSoldier(msg.soldier);
         if (msg.id === myId) {
+          acceptOutfit(msg.outfit);
           mySoldier = soldier;
           applyUnitSelection();
         }
         const avatar = avatars.get(String(msg.id));
         if (avatar && avatar.data) {
           avatar.data.soldier = soldier;
+          avatar.data.outfit = msg.outfit;
+          avatar.setOutfit?.(msg.outfit);
           if (avatar.soldierKind && avatar.soldierKind !== soldier) {
             resetAvatarModel(avatar);
             requestHunterAvatar(avatar, soldier);
@@ -3604,6 +3666,7 @@
       case 'snapshot': {
         onlineCount = Number(msg.online) || 0;
         window.SaltMapSelect?.setPopulation(msg.mapCounts);
+        G?.portalBosses?.snapshot(msg.bossMap, msg.bosses, msg.t, msg.bossBounty);
         if (msg.you) {
           const previousAlive = selfStats.alive;
           selfStats = {
@@ -3631,6 +3694,15 @@
       }
       case 'hitConfirm': {
         if (!G || !G.hud) break;
+        if (msg.teamBlocked) {
+          if (performance.now() - lastBlockedToast > 1800) {
+            lastBlockedToast = performance.now();
+            toast(document.documentElement.lang === 'en-US'
+              ? 'Three players must land hits to break the Boss shield.'
+              : '需要 3 名玩家在 12 秒内命中，才能打穿 Boss 护盾。');
+          }
+          break;
+        }
         if (msg.blocked) {
           if (performance.now() - lastBlockedToast > 1800) {
             lastBlockedToast = performance.now();
@@ -3646,7 +3718,7 @@
       case 'damaged': {
         if (!G || !G.player) break;
         if (!G.player.alive) break;
-        const amount = Math.max(1, Math.min(60, Number(msg.amount) || 10));
+        const amount = Math.max(1, Math.min(msg.bossDamage ? 100 : 60, Number(msg.amount) || 10));
         let from = null;
         try {
           if (msg.from && msg.from.pos) {
@@ -3742,14 +3814,39 @@
         else if (msg.kind === 'rename') feedLine(t('rename', { name: msg.previous, next: msg.name }), 'sys');
         break;
       }
+      case 'bossExplosion': {
+        if (!G || !THREE || !Array.isArray(msg.positions)) break;
+        const map = G.expedition?.active?.id || (G.qingyun?.active ? 'qingyun' : 'port');
+        if (map !== msg.map || !['playing', 'dead'].includes(G.game.state)) break;
+        for (const pos of msg.positions) {
+          G.portalBosses?.exploded(pos.id);
+          machineBurst(new THREE.Vector3(pos.x, pos.y, pos.z), pos.scale, map === 'lunar');
+        }
+        break;
+      }
       case 'shot': {
         if (!G || !G.fx || !G.fx.tracer || !msg.origin || !msg.dir) break;
         try {
           const origin = new THREE.Vector3(msg.origin.x, msg.origin.y, msg.origin.z);
           const dir = new THREE.Vector3(msg.dir.x, msg.dir.y, msg.dir.z);
           if (dir.lengthSq() < 1e-5) break;
-          const end = origin.clone().addScaledVector(dir.normalize(), 80);
-          G.fx.tracer(origin, end);
+          dir.normalize();
+          if (msg.bossKind) {
+            const map = G.expedition?.active?.id || (G.qingyun?.active ? 'qingyun' : 'port');
+            if (map !== msg.map || !['playing', 'dead'].includes(G.game.state)) break;
+            const range = Math.max(0, Math.min(80, Number(msg.range) || 0));
+            const wall = G.physics?.raycast?.(origin, dir, range);
+            const end = wall?.point || origin.clone().addScaledVector(dir, range);
+            const machine = msg.bossKind === 'hound';
+            G.fx.tracer(origin, end, { color: machine ? 0xffc090 : 0xffb65b, speed: 260, width: .035 });
+            G.fx.muzzleFlash?.(origin, dir, { scale: machine ? .9 : .55 });
+            if (map !== 'lunar') {
+              const type = machine ? 'hound' : 'gull';
+              G.events?.emit?.('enemy:fire', { enemy: { id: msg.id, type }, type, pos: origin, dir });
+            }
+          } else {
+            G.fx.tracer(origin, origin.clone().addScaledVector(dir, 80));
+          }
         } catch (err) { /* ignore */ }
         break;
       }
@@ -3773,6 +3870,7 @@
     THREE = game.THREE;
     scene = game.scene;
     if (!scene || !THREE) return;
+    game.portalBosses = window.installPortalBosses?.(game);
 
     try {
       game.events.on('player:dead', localDeath);
@@ -3840,6 +3938,7 @@
       const dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0.016;
       lastFrame = now;
       try { updateAvatars(dt); } catch (err) { /* ignore */ }
+      try { G?.portalBosses?.update(dt, now, connected, normalizeSoldier(mySoldier) === 'drone'); } catch (err) { /* keep drawing other players */ }
       if (isMachine(mySoldier) && now - lastUnitBadgeAt > 180) {
         lastUnitBadgeAt = now;
         try { updateUnitBadge(); } catch (err) { /* ignore */ }
@@ -3892,6 +3991,7 @@
     get id() { return myId; },
     get name() { return myName; },
     get soldier() { return mySoldier; },
+    get outfit() { return usableOutfit(myOutfit); },
     get avatars() { return avatars.size; },
     get roster() { return rosterData.slice(); },
     get rosterOpen() { return !el.roster.hidden; },
@@ -3909,7 +4009,7 @@
       if (!G || !THREE || !scene) return null;
       const kind = normalizeSoldier(mySoldier);
       const player = G.player;
-      const avatar = createAvatar({ id: myId, name: myName, color: myColor, soldier: kind,
+      const avatar = createAvatar({ id: myId, name: myName, color: myColor, soldier: kind, outfit: usableOutfit(myOutfit),
         x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw });
       avatar.group.name = 'frontier-self-avatar';
       avatar.label.visible = false;
@@ -3923,6 +4023,8 @@
         model: avatar.group,
         update(dt, armor, armed, gesture, prop) {
           avatar.data.armor = armor;
+          avatar.data.outfit = usableOutfit(myOutfit);
+          avatar.setOutfit?.(avatar.data.outfit);
           syncAvatarArmor(avatar);
           dressForLunar(avatar, dt, Math.hypot(player.vel.x, player.vel.z) > .6, armed);
           avatar.group.position.copy(player.pos);
@@ -3998,12 +4100,16 @@
       revive(spawn, protectedUntil);
       return true;
     },
-    setSoldier(value) {
-      const respawnAfterSwitch = shouldRespawnAfterUnitSwitch();
+    setSoldier(value, outfit) {
       const nextSoldier = normalizeSoldier(value);
+      const respawnAfterSwitch = mySoldier !== nextSoldier && shouldRespawnAfterUnitSwitch();
+      if (outfit !== undefined && !isMachine(nextSoldier) && outfits) {
+        myOutfit = outfits.normalize(outfit);
+        outfits.save(myOutfit);
+      }
       mySoldier = nextSoldier;
       saveSoldier(mySoldier);
-      if (ws && ws.readyState === 1) send({ type: 'soldier', soldier: mySoldier });
+      if (ws && ws.readyState === 1) send({ type: 'soldier', soldier: mySoldier, outfit: myOutfit });
       applyUnitSelection();
       if (respawnAfterSwitch && nextSoldier !== 'drone') {
         revive(randomGroundSpawn(), Date.now() + 1200);

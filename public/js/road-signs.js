@@ -15,8 +15,6 @@
       label: tr('牌面文字', 'Sign text'),
       help: tr('瞄准五米内的地面，可在绿色标记处立牌。', 'Aim at the ground within five metres. The green marker shows where the sign will go.'),
       rules: tr('路牌会一直留在原地。每位玩家每天最多立 10 块；只有你能拔除，最早是次日零点（北京时间）。', 'The sign stays in place. Each player can place up to 10 signs per day. Only you can remove it, from midnight the next day in Beijing time.'),
-      blue: tr('蓝底白字', 'Blue with white letters'),
-      yellow: tr('黄底黑字', 'Yellow with black letters'),
       offline: tr('联网后才能立路牌。', 'Connect to multiplayer to place a sign.'),
       flagged: tr('你的路牌已被标记违规，牌面文字已替换。', 'Your road sign was flagged and its displayed text replaced.'),
       flaggedSign: tr('该牌子违规', 'Flagged sign'),
@@ -35,6 +33,7 @@
         map: tr('请在青云宗或远征地图内操作。', 'Road signs are available in Qingyun and the expedition maps.'),
         identity: tr('请启用本站 Cookie 后刷新。', 'Enable cookies for this site and reload.'),
         checkFailed: tr('位置检查超时，请重试。', 'The location check timed out. Try again.'),
+        locked: tr('请先购买并随身携带一块该款路牌。', 'Purchase and carry one sign of this style first.'),
         storage: tr('路牌保存暂时失败，请重试。', 'Could not save the sign. Try again.'),
         busy: tr('操作过快，请稍等。', 'Wait a moment and try again.'),
         cooldown: tr('立牌间隔太短，请稍后再试。', 'You are placing signs too quickly. Try again shortly.'),
@@ -79,7 +78,7 @@
 
     const dialog = document.createElement('dialog');
     dialog.className = 'road-sign-dialog';
-    dialog.innerHTML = '<form><h2></h2><p></p><label><span></span><input required maxlength="64" autocomplete="off"></label><select></select><footer><button type="button"></button><button type="submit"></button></footer></form>';
+    dialog.innerHTML = '<form><h2></h2><p></p><label><span></span><input required maxlength="64" autocomplete="off"></label><select></select><canvas class="road-sign-face-preview" width="512" height="170" aria-hidden="true"></canvas><footer><button type="button"></button><button type="submit"></button></footer></form>';
     const form = dialog.querySelector('form');
     const heading = dialog.querySelector('h2');
     const detail = dialog.querySelector('p');
@@ -88,8 +87,29 @@
     const style = dialog.querySelector('select');
     const [cancel, confirm] = dialog.querySelectorAll('button');
     field.querySelector('span').textContent = text.label;
-    style.setAttribute('aria-label', tr('牌面颜色', 'Sign colors'));
-    style.append(new Option(text.blue, 'blue'), new Option(text.yellow, 'yellow'));
+    const { styles, draw } = window.SaltRoadSignStyles;
+    const facePreview = dialog.querySelector('canvas');
+    const previewContext = facePreview.getContext('2d');
+    function updatePreview() {
+      if (previewContext) draw(previewContext, style.value, Array.from(value.value.trim()).slice(0, 32).join('') ||
+        tr('前方补给站', 'Supply post ahead'));
+    }
+    style.setAttribute('aria-label', tr('路牌样式', 'Sign style'));
+    function refreshStyles() {
+      const previous = style.value;
+      style.replaceChildren();
+      for (const face of Object.values(styles)) {
+        if (face.id === 'blue' || face.id === 'yellow' || window.SaltShop?.has('sign:' + face.id)) {
+          const remaining = window.SaltShop?.count('sign:' + face.id) || 0;
+          style.append(new Option(tr(face.zh, face.en) + (remaining ? ' ×' + remaining : ''), face.id));
+        }
+      }
+      if ([...style.options].some(option => option.value === previous)) style.value = previous;
+      if (dialog.open) updatePreview();
+    }
+    refreshStyles();
+    window.addEventListener('saltline:shop', refreshStyles);
+    style.addEventListener('change', updatePreview);
     cancel.textContent = text.cancel;
     document.body.append(dialog);
 
@@ -140,43 +160,7 @@
       canvas.width = 512;
       canvas.height = 170;
       const ctx = canvas.getContext('2d');
-      const yellow = sign.style === 'yellow';
-      const ink = yellow ? '#151a1f' : '#f4f9ff';
-      const gradient = ctx.createLinearGradient(0, 0, 0, 170);
-      gradient.addColorStop(0, yellow ? '#ffe16e' : '#2266b9');
-      gradient.addColorStop(1, yellow ? '#eeb526' : '#0d3a82');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 512, 170);
-      ctx.strokeStyle = ink;
-      ctx.lineWidth = 5;
-      ctx.strokeRect(10, 10, 492, 150);
-      ctx.fillStyle = '#acb7c2';
-      for (const x of [23, 489]) for (const y of [23, 147]) {
-        ctx.beginPath();
-        ctx.arc(x, y, 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      const time = timestamp(sign.submittedAt);
-      const label = sign.flagged ? text.flaggedSign : sign.text;
-      const glyphs = Array.from(label);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = ink;
-      ctx.font = 'bold 60px system-ui, sans-serif';
-      if (ctx.measureText(label).width <= 450) ctx.fillText(label, 256, time ? 69 : 86);
-      else {
-        const middle = Math.ceil(glyphs.length / 2);
-        ctx.font = 'bold 47px system-ui, sans-serif';
-        ctx.fillText(glyphs.slice(0, middle).join(''), 256, time ? 49 : 58, 450);
-        ctx.fillText(glyphs.slice(middle).join(''), 256, time ? 98 : 114, 450);
-      }
-
-      if (time) {
-        ctx.font = '500 20px ui-monospace, monospace';
-        ctx.fillText(time, 256, 139);
-      }
-
+      draw(ctx, sign.style, sign.flagged ? text.flaggedSign : sign.text, timestamp(sign.submittedAt));
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       const face = new THREE.MeshBasicMaterial({ map: texture });
@@ -394,6 +378,8 @@
       field.hidden = style.hidden = mode !== 'place';
       value.disabled = mode !== 'place';
       value.value = '';
+      facePreview.hidden = mode !== 'place';
+      if (mode === 'place') updatePreview();
       value.setCustomValidity('');
       confirm.textContent = mode === 'place' ? text.place : text.remove;
       input.setGameplay(false);
@@ -416,7 +402,7 @@
 
     make.addEventListener('click', () => open('place'));
     remove.addEventListener('click', () => open('remove'));
-    value.addEventListener('input', () => value.setCustomValidity(''));
+    value.addEventListener('input', () => { value.setCustomValidity(''); updatePreview(); });
     cancel.addEventListener('click', () => close(true));
     dialog.addEventListener('cancel', event => { event.preventDefault(); close(true); });
     form.addEventListener('submit', event => {

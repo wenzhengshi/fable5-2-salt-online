@@ -26,6 +26,9 @@
     "gearNeutral": "N"
   },
   "frontier": {
+    "bagOutfits": "Carried skins",
+    "bagDefaultOutfit": "Default appearance",
+    "bagWearOutfit": "Wear",
     "equipWeapon": "Equip",
     "backpack": "Backpack",
     "closeBackpack": "Close",
@@ -183,6 +186,16 @@
     "serverError": "Service temporarily unavailable. Please try again."
   },
   "admin": {
+    "shopTitle": "Shop prices",
+    "shopIntro": "Prices are in Saltline Coin and support up to six decimal places. Changes apply immediately to new purchases.",
+    "shopPass": "Lunar pass",
+    "shopSigns": "Road signs",
+    "shopOutfits": "Outfits",
+    "shopDefault": "Default price",
+    "shopSave": "Save",
+    "shopReset": "Reset",
+    "shopSaved": "Price saved.",
+    "shopInvalid": "Choose a valid product and enter a price above zero with up to six decimal places.",
     "modTitle": "Bans and cheat monitoring",
     "modIntro": "Signals are for manual review. A ban disconnects that browser identity from multiplayer. Times are in Beijing time.",
     "modKick": "Disconnect player",
@@ -622,6 +635,8 @@
     "hint": "M for server-wide mic · T for big text · Tab for roster",
     "repo": "GitHub repository",
     "repoHint": "View source, report issues and follow updates",
+    "hostEntry": "Customize & host your own server",
+    "hostEntryHint": "Customize the game with Tuling AI and host a server for your friends.",
     "appMarket": "Android app market",
     "appMarketMeta": "Download the Android app with in-app voice chat",
     "appMarketHint": "Open the Android app market download page",

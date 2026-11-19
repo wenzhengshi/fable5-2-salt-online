@@ -161,6 +161,14 @@
 }
 
 .salt-modal[data-single="1"] .salt-modal__actions { grid-template-columns: minmax(0, 1fr); }
+.salt-modal[data-extra="1"] .salt-modal__actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1.18fr); }
+.salt-modal[data-extra="1"] .salt-modal__btn--action {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  border-color: var(--sm-accent-line);
+  background: var(--sm-accent-soft);
+  color: var(--sm-accent);
+}
 
 .salt-modal__btn {
   -webkit-appearance: none;
@@ -249,6 +257,8 @@ body.salt-modal-open { overflow: hidden; }
   .salt-modal__message { margin: 10px 20px 0; font-size: 12px; line-height: 1.72; }
   .salt-modal__actions { padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px)); }
   .salt-modal__btn { min-height: 48px; font-size: 11px; }
+  .salt-modal[data-extra="1"] .salt-modal__actions { grid-template-columns: minmax(0, 1fr); }
+  .salt-modal[data-extra="1"] .salt-modal__btn--action { grid-row: auto; grid-column: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

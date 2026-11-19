@@ -21,6 +21,10 @@
     contains(pos) {
       return !!pos && pos.z < -300;
     },
+    inArrivalArea(pos) {
+      return Math.hypot(pos.x - zone.landing.x, pos.z - zone.landing.z) < 14 &&
+        Math.abs(pos.y - zone.landing.y) < 6;
+    },
     atReturnGate(pos, margin = 0) {
       return [zone.returnGate, zone.mainReturnGate, zone.hubReturnGate].some(gate =>
         Math.abs(pos.x - gate.x) < 1.16 + margin &&

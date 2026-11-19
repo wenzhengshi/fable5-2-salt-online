@@ -13,10 +13,11 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
   ];
   const LEGS = ['FL', 'FR', 'RL', 'RR'];
   const waiters = new Map();
+  const externalSources = new Map();
 
   function sourceFor(kind) {
     const debug = window.__G && window.__G.enemies && window.__G.enemies.debug;
-    if (!debug) return null;
+    if (!debug) return externalSources.get(kind) || null;
     const pool = kind === 'drone' ? debug.gulls : kind === 'hound' ? debug.hounds : null;
     return Array.isArray(pool) && pool.length ? pool[0] : null;
   }
@@ -226,6 +227,9 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
   }
 
   window.SaltUnitModels = {
+    useSource(kind, group) {
+      if (MACHINE_KINDS.has(kind)) externalSources.set(kind, { rig: { group } });
+    },
     kinds: ['hound', 'drone'],
     normalize(value) {
       return value === 'drone' ? 'drone' : 'hound';

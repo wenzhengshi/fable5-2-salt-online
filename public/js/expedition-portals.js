@@ -26,7 +26,6 @@
     const clearColor = new THREE.Color();
     const up = new THREE.Vector3(0, 1, 0);
     const zones = Object.values(maps);
-    const patrols = new Map();
     const next = new THREE.Vector3();
     const ceilingOrigin = new THREE.Vector3();
     const ray = new THREE.Ray();
@@ -56,6 +55,11 @@
     for (const zone of zones) gates.set(zone.id, portal(zone.titleKey, zone.gate, zone.color));
     const exitPoint = {};
     const exitGate = portal('expedition.returnToQingyun', { x: 0, y: 0, z: 0 }, 0x87eeff);
+    exitGate.name = 'expedition-return-tunnel';
+    const raceGate = portal('deployment.racePortal', { x: 0, y: 0, z: 0 }, 0x56e5ff);
+    raceGate.name = 'saltport-race-tunnel';
+    let raceArea = '', racePoint, raceAttempted = false;
+
 
     function load(zone) {
       if (!loads.has(zone.id)) {
@@ -99,7 +103,6 @@
       if (!active) return;
       const target = position || active.hub;
       returning = null;
-      clearPatrol();
       game.frontier?.leave();
       active = null;
       environment = null;
@@ -296,63 +299,8 @@
       return null;
     };
 
-    function clearPatrol() {
-      const patrol = active && patrols.get(active.id);
-      if (!patrol) return;
-      for (const unit of game.enemies.list.slice()) {
-        if (patrol.ids.includes(unit.id)) game.enemies.despawn(unit);
-      }
-      patrols.delete(active.id);
-    }
-
-    // Place the same combat units used by Salt Port beyond the immediate landing area.
-    function updatePatrol(dt) {
-      let patrol = patrols.get(active.id);
-      if (!patrol) {
-        patrol = { ids: [], time: 0 };
-        patrols.set(active.id, patrol);
-      }
-      if (active.id === 'bayhaven') {
-        for (const unit of game.enemies.list.slice()) {
-          if (patrol.ids.includes(unit.id) && liftRules.shelter(unit.pos, active.offset)) {
-            game.enemies.despawn(unit);
-            patrol.ids = patrol.ids.filter(id => id !== unit.id);
-          }
-        }
-        if (liftRules.shelter(player.pos, active.offset)) return;
-      }
-      if (patrol.ids.some(id => game.enemies.list.some(unit => unit.id === id && unit.alive))) {
-        patrol.time = 12;
-        return;
-      }
-      patrol.time -= dt;
-      if (patrol.time > 0) return;
-      const anchor = active.landing;
-      const candidates = [[-15, -13], [15, -13], [-21, -7], [21, -7], [-15, 14], [15, 14]];
-      const points = candidates.map(([dx, dz]) => new THREE.Vector3(anchor.x + dx, 0, anchor.z + dz))
-        .filter(point => walkable(point.x, point.z));
-      if (!points.length) {
-        for (let step = 0; step < 16; step++) {
-          const angle = step * Math.PI / 8;
-          const point = new THREE.Vector3(anchor.x + Math.cos(angle) * 12, 0, anchor.z + Math.sin(angle) * 12);
-          if (walkable(point.x, point.z)) { points.push(point); break; }
-        }
-      }
-      patrol.ids = patrol.ids.filter(id => game.enemies.list.some(unit => unit.id === id));
-      for (const kind of ['hound', 'gull']) {
-        const point = kind === 'hound' ? points[0] : points[1] || points[0];
-        if (!point && kind === 'hound') continue;
-        const origin = point || new THREE.Vector3(anchor.x - 10, 0, anchor.z - 12);
-        origin.y = environment.heightAt(origin.x, origin.z - active.offset) + (kind === 'gull' ? 5 : 0);
-        const unit = game.enemies.spawn(kind, origin, { patrolRadius: 6 });
-        if (unit) patrol.ids.push(unit.id);
-      }
-      patrol.time = 12;
-    }
-
     let portRoots = [];
     function enter(zone, world, position, insert = true) {
-      if (active !== zone) clearPatrol();
       portRoots = [game.render.sky, game.level.root, game.backdrop.root, game.ground.root,
         scene.getObjectByName('saltline-external-combat-zone'), scene.getObjectByName('saltline-boat-wake')];
       game.qingyun.suspend();
@@ -371,7 +319,8 @@
       exitPoint.z = zone.exit.z;
       const exitY = ground(zone.exit.x, zone.exit.z, zone.landing.y + 3);
       exitPoint.y = exitY;
-      exitGate.position.set(zone.exit.x, exitY + 1.45, zone.exit.z);
+      const exitClearance = zone.id === 'dustfall' ? .06 : 1.45;
+      exitGate.position.set(zone.exit.x, exitY + exitClearance, zone.exit.z);
       const point = { ...position, y: ground(position.x, position.z, zone.landing.y + 2) };
       land(point, Math.PI);
       hold(null);
@@ -386,7 +335,6 @@
         game.frontier?.leave();
         active = environment = pending = returning = null;
         updateLunarMode();
-        patrols.clear();
         exitGate.visible = false;
         status.style.display = 'none';
       }
@@ -488,9 +436,20 @@
       update(dt) {
         const playing = game.game.state === 'playing' && player.alive;
         const inHub = !!game.qingyun?.active;
-        if (playing && active) updatePatrol(dt);
-        const canUse = playing && !window.__saltBoat?.riding && !game.sedan?.riding &&
-          !game.portalArrival?.active && (inHub || active);
+        const canUse = playing && !window.__saltBoat?.riding && !game.sedan?.riding && !game.portalArrival?.active;
+        const area = active?.id || (inHub ? 'qingyun' : 'port');
+        if (playing && raceArea !== area) {
+          raceArea = area;
+          const point = active ? { x:exitPoint.x+3.5, z:exitPoint.z, y:exitPoint.y }
+            : inHub ? { x:-7.4, z:window.SaltQingyunZone.offsetZ-5.5, y:1.5 }
+            : { x:window.SaltQingyunZone.gate.x+3.5, z:window.SaltQingyunZone.gate.z, y:window.SaltQingyunZone.gate.y };
+          point.y = active ? ground(point.x,point.z,point.y+3) : physics.groundHeight(point.x,point.z,point.y+3);
+          racePoint = point;
+          raceGate.position.set(point.x,point.y+.06,point.z);
+          raceAttempted = false;
+        }
+        raceGate.visible = playing;
+        if (playing) raceGate.children[1].material.uniforms.time.value = game.time.t;
         for (const gate of gates.values()) {
           gate.visible = playing && !active && inHub;
           if (gate.visible) gate.children[1].material.uniforms.time.value = game.time.t;
@@ -501,6 +460,17 @@
         if (game.time.t - lastRequest < 1.2) return;
         const mp = window.__mp;
         const standing = arrival.still(game);
+        if (near(player.pos,racePoint)) {
+          if (!raceAttempted && hold('race',game.time.t,standing)) {
+            raceAttempted = true;
+            hold(null);
+            window.location.assign('/race/plaza');
+          }
+          return;
+        }
+        raceAttempted = false;
+        if (!inHub && !active) { hold(null); return; }
+
         if (active) {
           if (!hold(near(player.pos, exitPoint) ? 'exit' : null, game.time.t, standing) && !returning?.sentAt) {
             returning = null;

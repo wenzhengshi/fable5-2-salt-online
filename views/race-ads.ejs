@@ -1,0 +1,24 @@
+<template id="shop-race-ads">
+<section class="ads-page">
+  <div class="ads-grid">
+    <section class="ads-preview">
+      <h2><%= t('raceAds.previewTitle') %></h2>
+      <canvas id="ad-preview" width="960" height="360" aria-label="<%= t('raceAds.previewLabel') %>"></canvas>
+      <p id="ad-preview-label"></p>
+    </section>
+    <form id="ad-form">
+      <h2><%= t('raceAds.formTitle') %></h2>
+      <label for="ad-slot"><%= t('raceAds.slot') %></label>
+      <select id="ad-slot" required></select>
+      <label for="ad-text"><%= t('raceAds.text') %></label>
+      <input type="text" id="ad-text" maxlength="72" required autocomplete="off" placeholder="<%= t('raceAds.textPlaceholder') %>">
+      <fieldset><legend><%= t('raceAds.paint') %></legend><div id="ad-colors"></div></fieldset>
+      <label for="ad-days"><%= t('raceAds.days') %></label>
+      <input type="number" id="ad-days" min="1" max="365" step="1" value="1" required>
+      <div class="ads-price"><span id="ad-balance"></span><strong id="ad-total"></strong></div>
+      <button id="ad-pay" type="submit" disabled><%= t('raceAds.pay') %></button>
+      <p id="ad-status" role="status"></p>
+    </form>
+  </div>
+</section>
+</template>

@@ -345,3 +345,33 @@ html.mr-force-portrait .m-title .m-word {
 }
 
 html.mr-force-portrait .m-title .m-actions .btn.primary { flex: 1 1 100%; }
+
+
+/* Scroll along the visible panel axis when the app rotates the page itself. */
+html:is(.mr-force-landscape, .mr-force-portrait) :is(
+  .m-title, .panel-b, .salt-shop, .salt-modal__dialog, #soldier-select, .ss-copy, .ss-stage,
+  .m-card, .community-dialog, .focus-dialog-card, .mp-roster-card, .mp-gold-activity-scroll, .gold-gift-list
+) {
+  touch-action: none;
+}
+
+html:is(.mr-force-landscape, .mr-force-portrait) .salt-modal__dialog {
+  max-height: min(720px, calc(var(--vp-h) - 32px));
+}
+html:is(.mr-force-landscape, .mr-force-portrait) .community-dialog {
+  max-height: calc(var(--vp-h) - 40px);
+}
+html:is(.mr-force-landscape, .mr-force-portrait) .mp-roster-card {
+  max-height: min(calc(var(--vp-h) * .84), 680px);
+}
+
+html.mr-force-landscape .salt-modal {
+  place-items: center;
+  padding: 12px;
+}
+html.mr-force-landscape .salt-modal__dialog {
+  width: min(460px, 100%);
+  max-height: calc(var(--vp-h) - 24px);
+  border: 1px solid rgba(232, 228, 218, .18);
+  border-radius: 16px;
+}

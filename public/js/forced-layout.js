@@ -1,6 +1,11 @@
 (() => {
   'use strict';
 
+  const scrollPanes = '.m-title, .panel-b, .salt-shop, .salt-modal__dialog, #soldier-select, .ss-copy, .ss-stage, .m-card, .community-dialog, .focus-dialog-card, .mp-roster-card, .mp-gold-activity-scroll, .gold-gift-list';
+  let swipe = null;
+  let draggedPane = null;
+  let draggedAt = 0;
+
   const STORAGE_KEY = 'saltline.manualTurn.v1';
   const MODES = new Set(['auto', 'landscape', 'portrait']);
   const root = document.documentElement;
@@ -128,6 +133,77 @@
     return { x: px, y: py };
   }
 
+  function touchPoint(touch) {
+    return mappedPoint(touchX?.get ? touchX.get.call(touch) : touch.clientX,
+      touchY?.get ? touchY.get.call(touch) : touch.clientY);
+  }
+
+  function beginScroll(event) {
+    swipe = null;
+    draggedPane = null;
+    if (!forced || event.touches.length !== 1) return;
+    const target = event.target;
+    if (!target.closest || target.closest('input:not([type="radio"]):not([type="checkbox"]), textarea, select, [contenteditable="true"]')) return;
+    const panes = [];
+    for (let node = target.closest(scrollPanes); node; node = node.parentElement?.closest(scrollPanes)) {
+      if (node.scrollHeight > node.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(node).overflowY)) {
+        panes.push(node);
+      }
+    }
+    if (!panes.length) return;
+    const touch = event.changedTouches[0];
+    const point = touchPoint(touch);
+    swipe = { id: touch.identifier, panes, x: point.x, y: point.y, lastY: point.y, dragging: false };
+  }
+
+  function moveScroll(event) {
+    if (!swipe || !forced) return;
+    if (event.touches.length !== 1) {
+      swipe = null;
+      return;
+    }
+    const touch = Array.from(event.changedTouches).find(item => item.identifier === swipe.id);
+    if (!touch) return;
+    const point = touchPoint(touch);
+    if (!swipe.dragging) {
+      const dx = Math.abs(point.x - swipe.x), dy = Math.abs(point.y - swipe.y);
+      if (dx < 6 && dy < 6) return;
+      if (dy < dx) {
+        swipe = null;
+        return;
+      }
+      swipe.dragging = true;
+    }
+    if (event.cancelable) event.preventDefault();
+    let remaining = swipe.lastY - point.y;
+    swipe.lastY = point.y;
+    for (const pane of swipe.panes) {
+      const before = pane.scrollTop;
+      pane.scrollTop += remaining;
+      remaining -= pane.scrollTop - before;
+      if (Math.abs(remaining) < 1) break;
+    }
+  }
+
+  function endScroll(event) {
+    if (!swipe || !Array.from(event.changedTouches).some(item => item.identifier === swipe.id)) return;
+    if (swipe.dragging) {
+      draggedPane = swipe.panes.at(-1);
+      draggedAt = performance.now();
+    }
+    swipe = null;
+  }
+
+  document.addEventListener('touchstart', beginScroll, { capture: true, passive: true });
+  document.addEventListener('touchmove', moveScroll, { capture: true, passive: false });
+  document.addEventListener('touchend', endScroll, { capture: true, passive: true });
+  document.addEventListener('touchcancel', endScroll, { capture: true, passive: true });
+  document.addEventListener('click', event => {
+    if (!forced || !event.detail || performance.now() - draggedAt > 450 || !draggedPane?.contains(event.target)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+
   function patchTouch() {
     if (touchPatched || !touchX || !touchX.get || !touchY || !touchY.get) return;
     try {
@@ -235,6 +311,7 @@
     }
     if (notify && (changed || forced)) dispatchResize();
     if (changed) {
+      swipe = draggedPane = null;
       try {
         window.dispatchEvent(new CustomEvent('saltline:layoutchange', { detail: { forced } }));
       } catch (err) { /* ignore */ }

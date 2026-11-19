@@ -18,12 +18,12 @@
       const renderer = new Promise((resolve, reject) => {
         script.onload = resolve;
         script.onerror = reject;
-        script.src = assets + 'qingyun-renderer.js?v=5';
+        script.src = assets + 'qingyun-renderer.js?v=7';
         document.head.appendChild(script);
       });
       loading = Promise.all([
         renderer,
-        fetchAsset('qingyun-models.b64', 'text'),
+        fetchAsset('qingyun-models.glb', 'arrayBuffer'),
         fetchAsset('qingyun-models.json', 'json')
       ]).catch(error => {
         loading = null;
@@ -38,67 +38,14 @@
     const { THREE, scene, camera, viewCamera, physics, player, renderer } = game;
     const preloadDistance = 52;
     const hold = arrival.holdPrompt();
-    const gate = new THREE.Group();
+    const visual = window.SaltPortalVisual;
+    const bilingual = (zh,en) => document.documentElement.lang === 'en-US' ? en : zh;
+    const signTexture = (zh,en) => visual.signTexture(THREE,bilingual(zh,en));
+    const gate = visual.create(THREE,bilingual('时空隧道','TIME RIFT'),0x56e5ff,.5);
     gate.name = 'qingyun-time-tunnel';
     gate.position.set(zone.gate.x, physics.groundHeight(zone.gate.x, zone.gate.z, zone.gate.y) + .06, zone.gate.z);
-
-    const ringMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.22, 1.9, 2.8) });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, .095, 12, 80), ringMaterial);
-    ring.rotation.x = -Math.PI / 2;
-    ring.scale.y = .5;
-    gate.add(ring);
-    const vortex = new THREE.Mesh(new THREE.CircleGeometry(1.23, 80), new THREE.ShaderMaterial({
-      transparent: true,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      uniforms: { time: { value: 0 }, tint: { value: new THREE.Vector3(.1, .9, 1.25) } },
-      vertexShader: `
-        varying vec2 portalUV;
-        void main() {
-          portalUV = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        uniform float time;
-        uniform vec3 tint;
-        varying vec2 portalUV;
-        void main() {
-          vec2 p = portalUV * 2.0 - 1.0;
-          float r = length(p);
-          float angle = atan(p.y, p.x);
-          float wave = sin(angle * 5.0 + r * 25.0 + time * 4.0);
-          float spiral = pow(wave * .5 + .5, 4.0);
-          float edge = smoothstep(.65, .96, r);
-          vec3 color = mix(vec3(.025,.012,.12) + tint * .03, tint, spiral * .85 + edge * .15);
-          gl_FragColor = vec4(color, (1.0-smoothstep(.96,1.0,r))*.97);
-        }
-      `
-    }));
-    vortex.rotation.x = -Math.PI / 2;
-    vortex.scale.y = .5;
-    vortex.position.y = .012;
-    gate.add(vortex);
-
-    function signTexture(chinese, english) {
-      const sign = document.createElement('canvas');
-      sign.width = 512;
-      sign.height = 96;
-      const ctx = sign.getContext('2d');
-      ctx.textAlign = 'center';
-      ctx.font = 'bold 52px sans-serif';
-      ctx.fillStyle = '#b9f4ff';
-      ctx.shadowColor = '#18bcff';
-      ctx.shadowBlur = 14;
-      ctx.fillText(english === undefined || document.documentElement.lang !== 'en-US' ? chinese : english, 256, 68, 485);
-      return new THREE.CanvasTexture(sign);
-    }
-    const label = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: signTexture('时空隧道', 'TIME RIFT'), depthWrite: false
-    }));
-    label.position.y = .72;
-    label.scale.set(3.6, .675, 1);
-    gate.add(label);
+    const [ring,vortex,label] = gate.children;
+    const ringMaterial=ring.material;
     gate.visible = false;
     scene.add(gate);
     const gateTitle = label.material.map;
@@ -122,14 +69,12 @@
     let lastRequest = -Infinity;
     let retryAfter = 0;
     let inQingyun = false;
-    let encounterCooldown = 0;
-    let combatants = [];
 
-    function preload({ warmup = true } = {}) {
+    function preload({ warmup = true, foreground = false } = {}) {
       if (map) return Promise.resolve(map);
       if (preparing) return preparing;
       preparing = loadMap().then(async ([, models, meta]) => {
-        const nextMap = await window.createQingyunMap(renderer, models, meta);
+        const nextMap = await window.createQingyunMap(renderer, models, meta, { foreground });
         const nextCollision = await window.createQingyunCollision(THREE, nextMap.collisionGeometry, zone.offsetZ, nextMap.terrainHeight);
         if (warmup) {
           const landingCamera = camera.clone(false);
@@ -150,7 +95,7 @@
 
     function prepare() {
       if (map || preparing || game.time.t < retryAfter) return;
-      preload().catch(error => {
+      preload({ warmup: false }).catch(error => {
         retryAfter = game.time.t + 5;
         console.error('[qingyun] map load failed', error);
       });
@@ -207,20 +152,6 @@
       return zone.contains(to) && walkable(to.x, to.z, to.y + .6) ? [to.clone()] : null;
     };
 
-    function updateCombatants(dt) {
-      if (combatants.some(unit => unit.alive)) {
-        encounterCooldown = 12;
-        return;
-      }
-      encounterCooldown -= dt;
-      if (encounterCooldown > 0) return;
-      const points = [[-5.5, 7.1, -35.8], [4.8, 9.6, -30.5], [0, 1.5, -4.8]];
-      combatants = points.map(([x, y, z], index) => {
-        const pos = new THREE.Vector3(x, y, z + zone.offsetZ);
-        return game.enemies.spawn(index === 1 ? 'gull' : 'hound', pos, { patrolRadius: 6 });
-      }).filter(Boolean);
-      encounterCooldown = 12;
-    }
     const actorCamera = camera.clone(false);
     const mapCamera = camera.clone(false);
     const clearColor = new THREE.Color();
@@ -288,26 +219,14 @@
       if (event.state !== 'playing') hold(null);
       if (event.state === 'title' || event.state === 'intro') {
         inQingyun = false;
-        combatants = [];
-        encounterCooldown = 0;
       }
     });
 
     game.qingyun = {
       get active() { return inQingyun; },
+      get arrivalShelter() { return inQingyun && zone.inArrivalArea(player.pos); },
       createTunnel(title, color) {
-        const tunnel = gate.clone();
-        const [rim, disc, name] = tunnel.children;
-        const tint = new THREE.Color(color);
-        rim.material = ringMaterial.clone();
-        rim.material.color.copy(tint).multiplyScalar(2.25);
-        disc.material = vortex.material.clone();
-        disc.material.uniforms.tint.value.set(tint.r, tint.g, tint.b).multiplyScalar(1.65);
-        rim.scale.y = disc.scale.y = .68;
-        name.material = label.material.clone();
-        name.material.map = signTexture(title);
-        name.material.color.copy(tint).lerp(new THREE.Color(0xffffff), .55);
-        return tunnel;
+        return visual.create(THREE,title,color);
       },
       get collision() { return collision; },
       preload,
@@ -327,7 +246,6 @@
           return;
         }
         if (active) {
-          updateCombatants(dt);
           if (!hold(zone.atReturnGate(player.pos) ? 'return' : null, game.time.t, arrival.still(game)) ||
               game.time.t - lastRequest < .8) return;
           lastRequest = game.time.t;

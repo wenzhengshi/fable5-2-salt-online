@@ -1,7 +1,9 @@
 (() => {
   'use strict';
 
-  const { HEIGHT, TEAM_SIZE, SMALL_HEIGHT, STOMP_RADIUS, BOSS_NAMES, flightBoxes, rayDistance, HOUND_HEAD_MARK, seesWeakPoint, weakPointRadius, weakRayDistance, splitProgress, splitStretch, splitPosition } = window.SaltPortalBossRules;
+  const { HEIGHT, TEAM_SIZE, SMALL_HEIGHT, STOMP_RADIUS, BOSS_NAMES, flightBoxes, rayDistance, HOUND_HEAD_MARK,
+    CAT_HEAD_MARKS, CAT_MARK_LIFT, stompProgress, seesWeakPoint, weakPointRadius, weakRayDistance,
+    splitProgress, splitStretch, splitPosition } = window.SaltPortalBossRules;
   const english = document.documentElement.lang === 'en-US';
   const targetHeight = boss => boss.height || (boss.phase === 'active' ? HEIGHT : SMALL_HEIGHT[boss.kind]);
   const catModels = { cat: 'cream-tabby-boss', watercolor: 'watercolor-cat-boss' };
@@ -116,6 +118,18 @@
       return game.expedition?.active?.id || (game.qingyun?.active ? 'qingyun' : 'port');
     }
 
+    function attachWeakMarker(actor, node, x, y, z) {
+      const marker = new THREE.Mesh(markRim, rimMaterial);
+      const center = new THREE.Mesh(markCenter, markMaterial);
+      center.position.y = .0006;
+      marker.add(center);
+      marker.name = 'boss-overhead-marker';
+      marker.position.set(x, y, z);
+      marker.visible = false;
+      node.add(marker);
+      actor.weakMarker = marker;
+    }
+
     function loadActor(actor, kind, now) {
       if (actor.model || actor.loading || now < actor.retryAt) return;
       const modelName = catModels[kind];
@@ -131,6 +145,12 @@
           mesh.name = modelName;
           actor.model = mesh;
           actor.root.add(mesh);
+          const { z, heights } = CAT_HEAD_MARKS[kind];
+          const restY = heights[0];
+          if (!actor.data.parentId) {
+            attachWeakMarker(actor, mesh, 0, restY + CAT_MARK_LIFT, z);
+            actor.weakMarker.scale.set(1.6, 1, 1.6);
+          }
           actor.pose = (dt, moving, windup) => {
             actor.gait = (actor.gait + dt * 1.42) % 1;
             const weights = mesh.morphTargetInfluences;
@@ -141,6 +161,10 @@
               const index = Math.floor(f);
               weights[index] = 1 - (f - index);
               weights[(index + 1) % asset.gaitPoses] = f - index;
+            }
+            if (actor.weakMarker) {
+              actor.weakMarker.position.y = weights.reduce((y, weight, i) =>
+                y + weight * (heights[i + 1] - restY), restY + CAT_MARK_LIFT);
             }
           };
         }).catch(error => {
@@ -169,15 +193,7 @@
       actor.dispose = () => hound.dispose();
       const head = hound.bones?.head;
       if (head && !actor.data.parentId) {
-        const marker = new THREE.Mesh(markRim, rimMaterial);
-        const center = new THREE.Mesh(markCenter, markMaterial);
-        center.position.y = .0006;
-        marker.add(center);
-        marker.name = 'boss-overhead-marker';
-        marker.position.set(HOUND_HEAD_MARK.x, HOUND_HEAD_MARK.y, HOUND_HEAD_MARK.z);
-        marker.visible = false;
-        head.add(marker);
-        actor.weakMarker = marker;
+        attachWeakMarker(actor, head, HOUND_HEAD_MARK.x, HOUND_HEAD_MARK.y, HOUND_HEAD_MARK.z);
       }
       const gun = hound.bones?.gun;
       const restPitch = gun?.rotation.x || 0;
@@ -328,12 +344,11 @@
         const stretch = splitting.get(boss.id) || 0;
         actor.root.scale.set(actor.height * (1 + stretch), actor.height * (1 - stretch), actor.height * (1 + stretch));
         if (boss.birth) splitVisual(actor, splitProgress(boss.birth, serverTime), serverTime);
-        let windup = 0;
+        const windup = stompProgress(boss.attack, serverTime);
         if (boss.attack) {
           const { x, y, z, at, radius } = boss.attack;
           actor.ring.scale.setScalar(radius || STOMP_RADIUS[boss.kind]);
           const remaining = at + serverClock - Date.now();
-          windup = remaining < 140 ? Math.max(0, remaining / 140) : Math.min(1, (750 - remaining) / 350);
           actor.ring.position.set(x, y + .09, z);
           actor.ring.material.opacity = .58 + .32 * Math.cos(Math.max(0, remaining) * .022);
         }
@@ -347,11 +362,11 @@
             });
           }
         }
-        actor.pose?.(dt, boss.moving, Math.max(0, windup), boss.phase === 'idle' && !boss.moving, boss.aim);
+        actor.pose?.(dt, boss.moving, windup, boss.phase === 'idle' && !boss.moving, boss.aim);
         if (actor.weakMarker && drone && fighting && game.game.state === 'playing') {
           // Use the smoothed head transform so the decal stays on the plate.
           actor.weakMarker.getWorldPosition(markWorld);
-          actor.weakMarker.visible = seesWeakPoint(markWorld, game.player.eye || game.player.pos);
+          actor.weakMarker.visible = seesWeakPoint(markWorld, game.player.eye || game.player.pos, 0, boss.kind);
         }
         if (showRow && now >= lastHud) {
           actor.hp.textContent = boss.hp + ' / ' + boss.maxHp;
@@ -387,7 +402,7 @@
         if (!data || (data.birth && splitProgress(data.birth, now) < 1)) continue;
         const body = rayDistance(data, origin, dir, nearest);
         const direct = drone && weakMarker?.visible && data.phase === 'active'
-          ? weakRayDistance(weakMarker.getWorldPosition(markWorld), origin, dir, nearest, weakPointRadius(height))
+          ? weakRayDistance(weakMarker.getWorldPosition(markWorld), origin, dir, nearest, weakPointRadius(height), 0, data.kind)
           : null;
         const distance = direct ?? body;
         if (distance !== null) nearest = distance;
@@ -399,8 +414,8 @@
       if (receivedMap !== currentMap()) return false;
       for (const { data, weakMarker, height, root } of actors.values()) {
         if (!root.visible || !weakMarker?.visible || data?.phase !== 'active') continue;
-        const visibleRadius = height * .021;
-        const distance = weakRayDistance(weakMarker.getWorldPosition(markWorld), origin, direction, range, visibleRadius);
+        const visibleRadius = height * .021 * weakMarker.scale.x;
+        const distance = weakRayDistance(weakMarker.getWorldPosition(markWorld), origin, direction, range, visibleRadius, 0, data.kind);
         if (distance !== null && !game.physics.raycast(origin, direction, distance)) return true;
       }
       return false;

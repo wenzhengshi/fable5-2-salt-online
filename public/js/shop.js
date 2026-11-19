@@ -35,10 +35,12 @@
   }
 
   function openPurchaseNotice(title, message, quote = null) {
+    if (draft?.resolve) draft.resolve(false);
     draft = quote;
     purchaseTitle.textContent = title;
     purchaseMessage.textContent = message;
     purchaseConfirm.hidden = !quote;
+    purchaseConfirm.textContent = quote?.resolve ? tr('支付并投放', 'Pay and publish') : tr('确认扣款', 'Confirm purchase');
     purchaseDismiss.textContent = quote ? tr('取消', 'Cancel') : tr('确定', 'OK');
     if (!purchaseDialog.open) purchaseDialog.showModal();
     purchaseDismiss.focus();
@@ -51,6 +53,13 @@
   }
 
   function sendPurchase() {
+    if (draft?.resolve) {
+      const { resolve } = draft;
+      draft = null;
+      purchaseDialog.close();
+      resolve(true);
+      return;
+    }
     if (!draft || pending) return;
     const { product, amount } = draft;
     draft = null;
@@ -92,11 +101,31 @@
     }
   }
 
+  function mountAdEditor() {
+    const template = document.getElementById('shop-race-ads');
+    grid.append(template.content.cloneNode(true));
+    window.SaltRaceAdEditor(grid.querySelector('.ads-page'), {
+      confirm: (title, message) => new Promise(resolve => openPurchaseNotice(title, message, { resolve })),
+      notify: (title, message) => {
+        if (dialog.open && category === 'raceAd') openPurchaseNotice(title, message);
+      },
+      updateBalance: value => {
+        balance = value;
+        updateWallet();
+      }
+    });
+  }
+
   function drawProducts() {
     tabs.querySelectorAll('button').forEach(button =>
       button.setAttribute('aria-pressed', String(button.dataset.category === category)));
     grid.replaceChildren();
     grid.dataset.category = category;
+    if (category === 'raceAd') {
+      mountAdEditor();
+      updateWallet();
+      return;
+    }
     for (const product of Object.values(products)) {
       if (product.kind !== category) continue;
       const card = make('article', 'shop-card');
@@ -144,10 +173,13 @@
     const close = make('button', 'shop-close', tr('关闭', 'Close'));
     close.type = 'button';
     close.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => {
+      if (grid.dataset.category === 'raceAd') grid.replaceChildren();
+    });
     header.append(title, funds, close);
     tabs = make('nav', 'shop-tabs');
     tabs.setAttribute('aria-label', tr('商品分类', 'Product categories'));
-    for (const [id, name] of [['sign', tr('路牌样式', 'Road Signs')], ['outfit', tr('服装', 'Outfits')], ['pass', tr('月球通行证', 'Lunar Pass')]]) {
+    for (const [id, name] of [['sign', tr('路牌样式', 'Road Signs')], ['outfit', tr('服装', 'Outfits')], ['pass', tr('月球通行证', 'Lunar Pass')], ['raceAd', tr('赛道箱体广告', 'Track Container Ads')]]) {
       const tab = make('button', '', name);
       tab.type = 'button'; tab.dataset.category = id;
       tab.addEventListener('click', () => { category = id; status.textContent = ''; drawProducts(); });
@@ -158,6 +190,12 @@
     grid = make('div', 'shop-grid');
     dialog.append(header, tabs, status, grid);
     purchaseDialog = make('dialog', 'salt-shop shop-purchase-dialog');
+    purchaseDialog.addEventListener('close', () => {
+      if (purchaseDialog.open || !draft?.resolve) return;
+      const { resolve } = draft;
+      draft = null;
+      resolve(false);
+    });
     purchaseDialog.setAttribute('aria-labelledby', 'shop-purchase-title');
     purchaseDialog.setAttribute('aria-describedby', 'shop-purchase-message');
     purchaseTitle = make('h2', '');
@@ -228,8 +266,8 @@
       status.textContent = '';
       openPurchaseNotice(tr('购买结果待确认', 'Purchase status pending'),
         tr('连接中断，重新连接后可查看库存和余额。', 'Connection lost. Reconnect to check your inventory and balance.'));
-    } else if (purchaseDialog?.open && draft) purchaseDialog.close();
-    draft = null;
+    } else if (purchaseDialog?.open && draft && !draft.resolve) purchaseDialog.close();
+    if (!draft?.resolve) draft = null;
     pending = null;
     clearTimeout(timer);
     window.dispatchEvent(new Event('saltline:shop'));

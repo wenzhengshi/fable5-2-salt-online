@@ -27,7 +27,11 @@
   }
 
   function loadSoldier() {
-    try { return normalizeSoldier(localStorage.getItem(STORAGE_KEY)); } catch (err) { return 'classic'; }
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (UNIT_KINDS.includes(saved)) return saved;
+    } catch (err) { /* storage unavailable */ }
+    return 'male';
   }
 
   function saveSoldier(value) {

@@ -49,6 +49,7 @@ const required = [
   'locales/zh-CN.json',
   'locales/en-US.json',
   'public/js/game.bundle.js',
+  'public/js/player-input.bundle.js',
   'public/js/flight-collision.js',
   'public/js/boot-gate.js',
   'public/js/forced-layout.js',
@@ -60,6 +61,8 @@ const required = [
   'public/js/admin-qr.js',
   'public/js/modal.js',
   'public/css/modal.css',
+  'public/race/history.js',
+  'public/race/history.css',
   'public/js/multiplayer.js',
   'realtime/multiplayer.js',
   'services/roadSigns.js',
@@ -126,6 +129,9 @@ if (pkg && lock && lock.packages && lock.packages['']) {
 const indexSource = fs.existsSync(path.join(root, 'index.js')) ? read('index.js') : '';
 if (!/process\.env\.PORT/.test(indexSource) || !/process\.env\.HOST/.test(indexSource)) {
   fail('index.js 必须从 process.env.PORT / process.env.HOST 读取监听地址');
+}
+if (!/process\.env\.HOST\s*\|\|\s*['"]0\.0\.0\.0['"]/.test(indexSource)) {
+  fail('index.js 的 HOST 回退必须为 0.0.0.0，避免托管反向代理无法连接');
 }
 if (!/server\.listen\(PORT,\s*HOST/.test(indexSource)) {
   fail('index.js 必须使用 PORT / HOST 启动 HTTP 服务');

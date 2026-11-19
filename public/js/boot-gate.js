@@ -12,9 +12,11 @@
     'expedition-zones.js',
     'bayhaven-lift.js',
     'portal-arrival.js',
+    'portal-visual.js',
     'terrain-ray.js',
     'portal-boss-rules.js',
     'portal-bosses.js',
+    'shared-patrols.js',
     'expedition-portals.js',
     'lunar-suit.js',
     'soldier-outfits.js',
@@ -42,6 +44,7 @@
     'shop-catalog.js',
     'shop.js',
     'gold.js',
+    'player-input.bundle.js',
     'game.bundle.js',
     'flight-collision.js',
     'ammo.js',
@@ -284,6 +287,7 @@
     try {
       await loadSequence(CORE_SCRIPTS, 'classic');
       watchGameBoot();
+      window.SaltMapSelect?.fromRacePortal();
       await loadSequence(MODULE_SCRIPTS, 'module');
     } catch (err) {
       bootState.phase = 'script-failed';

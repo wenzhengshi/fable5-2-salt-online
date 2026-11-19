@@ -10,6 +10,26 @@ let selection = 0;
 const templates = new Map();
 let groundRifle;
 
+function addM249Sight(fitted) {
+  const sight = new THREE.Group();
+  const frame = new THREE.MeshStandardMaterial({ color: 0x262b2b, roughness: .75, metalness: .36 });
+  function bar(width, height, x, y) {
+    const part = new THREE.Mesh(new THREE.BoxGeometry(width, height, .032), frame);
+    part.position.set(x, y, 0);
+    sight.add(part);
+  }
+  bar(.062, .012, 0, -.026);
+  bar(.062, .007, 0, .022);
+  bar(.007, .05, -.028, 0);
+  bar(.007, .05, .028, 0);
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(.0018, 16),
+    new THREE.MeshBasicMaterial({ color: 0xff4638, toneMapped: false }));
+  sight.add(dot);
+  sight.position.set(0, .098, -.196);
+  fitted.add(sight);
+  fitted.userData.sight = [sight.position.x, sight.position.y];
+}
+
 function load() {
   if (!loading) {
     loading = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(asset).then(({ scene }) => {
@@ -34,6 +54,7 @@ function load() {
         if (profile.id === 'knife') {
           fitted.userData.grip = [0, center.y * scale + shape.position.y, .055];
         }
+        if (profile.id === 'm249') addM249Sight(fitted);
         templates.set(profile.id, fitted);
       }
     }).catch(error => {

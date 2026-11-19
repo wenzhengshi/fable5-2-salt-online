@@ -87,27 +87,46 @@
   const HOUND_RIG_HEIGHT = 1.66072;
   const HOUND_MARK_Y = (HOUND_HEAD_REST_Y + HOUND_HEAD_MARK.y - HOUND_RIG_MIN_Y) / HOUND_RIG_HEIGHT;
   const HOUND_MARK_Z = (HOUND_HEAD_REST_Z + HOUND_HEAD_MARK.z) / HOUND_RIG_HEIGHT;
+  // Surface heights at the crown in the rest, gait and stomp morph targets.
+  const CAT_HEAD_MARKS = {
+    cat: { z: .34, heights: [.869, .869, .884, .861, .842, .869, .894, .875, .852, .868] },
+    watercolor: { z: .40, heights: [.810, .822, .816, .810, .816, .822, .816, .810, .816, .848] }
+  };
+  const CAT_MARK_LIFT = .012;
+  const CAT_WEAK_POINT_REACH = { height: 55, horizontal: 20 };
+  const HOUND_WEAK_POINT_REACH = { height: 24, horizontal: 12 };
+
+  function stompProgress(attack, now) {
+    if (!attack) return 0;
+    const remaining = attack.at - now;
+    return remaining < 140 ? Math.max(0, remaining / 140) :
+      Math.max(0, Math.min(1, (750 - remaining) / 350));
+  }
 
   function weakPointRadius(height) {
     return Math.max(.85, height * .054);
   }
 
   function weakPoint(boss) {
-    if (boss.kind !== 'hound' || boss.parentId || boss.phase !== 'active') return null;
+    if (boss.parentId || boss.phase !== 'active') return null;
+    const cat = CAT_HEAD_MARKS[boss.kind];
+    if (!cat && boss.kind !== 'hound') return null;
     const height = boss.height || HEIGHT;
     const stretch = boss.weakStretch || 0;
-    const forward = height * HOUND_MARK_Z * (1 + stretch);
-    return { x: boss.x + Math.sin(boss.yaw) * forward, y: boss.y + height * HOUND_MARK_Y * (1 - stretch),
+    const markY = cat ? (boss.weakY ?? cat.heights[0]) + CAT_MARK_LIFT : HOUND_MARK_Y;
+    const forward = height * (cat?.z ?? HOUND_MARK_Z) * (1 + stretch);
+    return { kind: boss.kind, x: boss.x + Math.sin(boss.yaw) * forward, y: boss.y + height * markY * (1 - stretch),
       z: boss.z + Math.cos(boss.yaw) * forward, radius: weakPointRadius(height) };
   }
 
-  function seesWeakPoint(point, eye, poseMargin = 0) {
-    return !!point && eye.y - point.y >= .08 - poseMargin && eye.y - point.y <= 18 + poseMargin &&
-      Math.hypot(eye.x - point.x, eye.z - point.z) <= 6 + poseMargin;
+  function seesWeakPoint(point, eye, poseMargin = 0, kind = point?.kind) {
+    const reach = Object.hasOwn(CAT_HEAD_MARKS, kind) ? CAT_WEAK_POINT_REACH : HOUND_WEAK_POINT_REACH;
+    return !!point && eye.y - point.y >= .08 - poseMargin && eye.y - point.y <= reach.height + poseMargin &&
+      Math.hypot(eye.x - point.x, eye.z - point.z) <= reach.horizontal + poseMargin;
   }
 
-  function weakRayDistance(point, origin, dir, range, radius = point?.radius, poseMargin = 0) {
-    if (!seesWeakPoint(point, origin, poseMargin) || dir.y >= 0) return null;
+  function weakRayDistance(point, origin, dir, range, radius = point?.radius, poseMargin = 0, kind = point?.kind) {
+    if (!seesWeakPoint(point, origin, poseMargin, kind) || dir.y >= 0) return null;
     const x = point.x - origin.x, y = point.y - origin.y, z = point.z - origin.z;
     const hit = x * dir.x + y * dir.y + z * dir.z;
     if (hit <= 0 || hit >= range) return null;
@@ -135,7 +154,8 @@
   }
 
   const rules = { HEIGHT, TEAM_SIZE, TEAM_WINDOW_MS, GROWTH_MS, MAX_STAGE, SPLIT_TIMES, SMALL_HEIGHT, STOMP_RADIUS, BOSS_NAMES, rayDistance, SPLIT_ANIMATION_MS, PORT_DRONE_CEILING,
-    HOUND_CLEARANCE, flightBoxes, HOUND_HEAD_MARK, weakPoint, seesWeakPoint, weakPointRadius, weakRayDistance,
+    HOUND_CLEARANCE, flightBoxes, HOUND_HEAD_MARK, CAT_HEAD_MARKS, CAT_MARK_LIFT, stompProgress,
+    weakPoint, seesWeakPoint, weakPointRadius, weakRayDistance,
     splitProgress, splitStretch, splitPosition };
   if (typeof module === 'object' && module.exports) module.exports = rules;
   else root.SaltPortalBossRules = rules;

@@ -5,7 +5,9 @@ const storage = require('../config/storage');
 const { maps } = require('../public/js/expedition-zones');
 const lift = require('../public/js/bayhaven-lift');
 const qingyun = require('../public/js/qingyun-zone');
-const { HEIGHT, SMALL_HEIGHT, TEAM_SIZE, TEAM_WINDOW_MS, GROWTH_MS, MAX_STAGE, SPLIT_TIMES, STOMP_RADIUS, HOUND_CLEARANCE, rayDistance, SPLIT_ANIMATION_MS, splitPosition, splitProgress, splitStretch, weakPoint, weakRayDistance } = require('../public/js/portal-boss-rules');
+const { HEIGHT, SMALL_HEIGHT, TEAM_SIZE, TEAM_WINDOW_MS, GROWTH_MS, MAX_STAGE, SPLIT_TIMES, STOMP_RADIUS, HOUND_CLEARANCE,
+  rayDistance, SPLIT_ANIMATION_MS, splitPosition, splitProgress, splitStretch, CAT_HEAD_MARKS, stompProgress, weakPoint,
+  weakRayDistance } = require('../public/js/portal-boss-rules');
 const terrain = require('./portal-boss-world.json');
 const bayhavenBoxes = [...terrain.bayhaven.boxes, ...lift.slabs()];
 const worldBoxes = map => map === 'bayhaven' ? bayhavenBoxes : terrain[map]?.boxes || [];
@@ -126,6 +128,7 @@ function openBossPosition(body, height) {
       const x = body.x + d * Math.sin(angle), z = body.z + d * Math.cos(angle);
       const point = { x, y: ground(body.map, x, z, body.y), z, yaw: body.yaw };
       if (distance(body.home, point) > LEASH || distance(body.gate || body.home, point) <= 2 ||
+          (body.map === 'qingyun' && qingyun.inArrivalArea(point)) ||
           Math.abs(point.y - body.y) > 3) continue;
       for (const yaw of [body.yaw, body.yaw + Math.PI / 2, body.yaw - Math.PI / 2, body.yaw + Math.PI]) {
         point.yaw = yaw;
@@ -146,7 +149,7 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
     ['cat', 'dustfall', maps.dustfall.exit, -5, 0, 16],
     ['watercolor', 'dustfall', maps.dustfall.exit, 0, 43, 16],
     ['hound', 'port', qingyun.gate, -4.6, 1.5, 0],
-    ['hound', 'qingyun', qingyun.hubReturnGate, 4.6, -1.6, qingyun.hubReturnGate.y],
+    ['hound', 'qingyun', qingyun.hubReturnGate, 18, 44.3, 3.4],
     ...Object.values(maps).map(map => ['hound', map.id, map.exit, 5, 0, map.landing.y])
   ];
   function createBody(id, kind, map, home, maxHp, parentId = null) {
@@ -192,7 +195,10 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
       children: [], splitCount: 0, elapsed: 0, savedElapsed: 0, contributors: new Map(), rewardDamage: {}, gate
     });
     const previous = saved?.[id];
-    if (previous?.phase === 'active') restore(enemy, previous);
+    if (previous?.phase === 'active') {
+      restore(enemy, previous);
+      if (map === 'qingyun' && qingyun.inArrivalArea(enemy)) Object.assign(enemy, home);
+    }
     enemy.pendingReward = previous?.pendingReward ?? null;
     if (enemy.phase === 'active') {
       enemy.encounterId = previous.encounterId || randomUUID();
@@ -211,6 +217,7 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
             distance(home, state) > LEASH || !Number.isInteger(state.hp) || state.hp <= 0) continue;
         const child = childBody(enemy, serial);
         restore(child, state);
+        if (map === 'qingyun' && qingyun.inArrivalArea(child)) continue;
         if (state.birth && [state.birth.x, state.birth.y, state.birth.z, state.birth.at].every(Number.isFinite)) {
           child.birth = state.birth;
           enemy.splitUntil = Math.max(enemy.splitUntil || 0, child.birth.at + SPLIT_ANIMATION_MS);
@@ -263,6 +270,11 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
       player.ws?.readyState === 1 && !player.frontierDrop;
   }
 
+  function canAttack(player, now, map) {
+    return eligible(player, now) && !(now < player.protectedUntil || now < player.bossGraceUntil) &&
+      !(map === 'qingyun' && qingyun.inArrivalArea(player.pos));
+  }
+
   function participantKey(player) {
     return player.signOwner || player.clientId || player.fingerprint || player.id;
   }
@@ -282,8 +294,10 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
 
   function headPose(boss, now) {
     const birth = boss.children.find(child => child.birth)?.birth;
-    const { x, y, z, yaw } = boss;
-    return { kind: 'hound', phase: 'active', x, y, z, yaw, height: height(boss), weakStretch: splitStretch(birth, now) };
+    const { kind, x, y, z, yaw } = boss;
+    const heights = CAT_HEAD_MARKS[kind]?.heights;
+    const weakY = heights ? heights[0] + (heights.at(-1) - heights[0]) * stompProgress(boss.attack, now) : undefined;
+    return { kind, phase: 'active', x, y, z, yaw, height: height(boss), weakY, weakStretch: splitStretch(birth, now) };
   }
 
   function weakHit(boss, origin, dir, range, now) {
@@ -311,7 +325,8 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
         for (const t of [.25, .5, .75]) {
           const blend = key => newer[key] + (older[key] - newer[key]) * t;
           const between = test({ ...newer, x: blend('x'), y: blend('y'), z: blend('z'),
-            height: blend('height'), weakStretch: blend('weakStretch'), yaw: newer.yaw + turn * t });
+            height: blend('height'), weakY: newer.weakY === undefined ? undefined : blend('weakY'),
+            weakStretch: blend('weakStretch'), yaw: newer.yaw + turn * t });
           if (between !== null) return between;
         }
       }
@@ -331,7 +346,7 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
       const ordinary = rayDistance(body, origin, dir, nearest);
       // The broad body proxy can extend above the real head plate.
       const direct = player.soldier === 'drone' && candidate === parent &&
-        candidate.kind === 'hound' && candidate.phase === 'active'
+        candidate.phase === 'active'
         ? weakHit(candidate, origin, dir, nearest, now) : null;
       const hit = direct ?? ordinary;
       if (hit === null) continue;
@@ -356,6 +371,7 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
     }
 
     if (inArena(player, root)) root.contributors.set(participantKey(player), now);
+    player.bossGraceUntil = 0;
     const count = teamCount(root, nearby, now);
     const multiplier = count >= TEAM_SIZE ? 2 : count === 2 ? 1.35 : 1;
     const floor = !boss.parentId && count < TEAM_SIZE ? Math.ceil(boss.maxHp * .2) : 0;
@@ -418,6 +434,7 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
 
   function walkable(boss, from, to, idle) {
     if (distance(boss.home, to) > (idle ? 3.6 : LEASH) ||
+        (boss.map === 'qingyun' && qingyun.inArrivalArea(to)) ||
         (idle && distance(boss.gate, to) < 2) || Math.abs(to.y - from.y) > 1.3) return false;
     if (usesBodyClearance(boss.kind)) return houndPathClear(boss.map, from, to, height(boss), boss.kind);
     const lift = idle ? SMALL_HEIGHT[boss.kind] * .45 : 1.15;
@@ -535,6 +552,7 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
         const y = ground(boss.map, x, z, anchor.y);
         const point = { x, y, z, yaw: boss.yaw };
         if (distance(boss.home, point) <= LEASH && distance(boss.gate, point) > 2 &&
+            !(boss.map === 'qingyun' && qingyun.inArrivalArea(point)) &&
             Math.abs(y - anchor.y) <= 3 && !boss.children.some(child => distance(child, point) < 4) &&
             (usesBodyClearance(boss.kind) ? houndPathClear(boss.map, anchor, point, 10, boss.kind) :
               !blocked(boss.map, { ...anchor, y: anchor.y + 1.15 }, { x, y: y + 1.15, z }, 1.2))) {
@@ -546,7 +564,7 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
   }
 
   function advance(boss, nearby, dt, now) {
-    if (!nearby.some(player => inArena(player, boss))) return;
+    if (!nearby.some(player => canAttack(player, now, boss.map) && inArena(player, boss))) return;
     const previousStage = stage(boss);
     boss.elapsed = Math.min(SPLIT_TIMES.at(-1), boss.elapsed + Math.round(dt * 1000));
     if (usesBodyClearance(boss.kind) && stage(boss) > previousStage &&
@@ -596,7 +614,7 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
     let victim;
     let range = FIRE_RANGE;
     for (const player of nearby) {
-      if (!player.alive || now < player.protectedUntil) continue;
+      if (!canAttack(player, now, boss.map)) continue;
       const { x, y, z } = player.pos;
       const machine = player.soldier === 'hound' || player.soldier === 'drone';
       const center = y + (machine ? .45 : 1);
@@ -636,7 +654,7 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
       boss.attack = null;
       boss.recoverAt = now + RECOVER_MS;
       for (const player of nearby) {
-        if (!player.alive || now < player.protectedUntil || distance(strike, player.pos) > strike.radius ||
+        if (!canAttack(player, now, map) || distance(strike, player.pos) > strike.radius ||
             Math.abs(player.pos.y - strike.y) > 1.35 ||
             blocked(map, { ...strike, y: strike.y + .55 }, { ...player.pos, y: player.pos.y + .65 })) continue;
         damage(player, boss, strike.damage, now);
@@ -648,11 +666,15 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
     let targetVisible = false;
     let best = Infinity;
     for (const player of nearby) {
+      if (!canAttack(player, now, map)) continue;
       const d = distance(player.pos, boss);
-      if (d > SIGHT || distance(player.pos, boss.home) > LEASH - 3) continue;
+      const pursuingAttacker = player.id === boss.lastAttacker && now < boss.prioritizeUntil;
+      if (d > (pursuingAttacker ? SIGHT : boss.parentId ? 30 : 42) ||
+          distance(player.pos, boss.home) > LEASH - 3 ||
+          Math.abs(player.pos.y - boss.y) > height(boss) + 12) continue;
       const visible = !blocked(map, { x: boss.x, y: boss.y + height(boss) * .6, z: boss.z },
         { ...player.pos, y: player.pos.y + 1 });
-      const priority = (player.id === boss.lastAttacker && now < boss.prioritizeUntil ? -30 : d) + (visible ? 0 : 18);
+      const priority = (pursuingAttacker ? -30 : d) + (visible ? 0 : 18);
       if (priority >= best) continue;
       target = player;
       targetVisible = visible;
@@ -726,11 +748,9 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
         child.birth = null;
         fight(child, nearby, dt, now);
       }
-      if (boss.kind === 'hound') {
-        const recent = weakPoses.get(boss.id) || [];
-        weakPoses.set(boss.id, [{ at: now, pose: headPose(boss, now) },
-          ...recent.filter(sample => now - sample.at <= WEAK_POSE_WINDOW_MS)]);
-      }
+      const recent = weakPoses.get(boss.id) || [];
+      weakPoses.set(boss.id, [{ at: now, pose: headPose(boss, now) },
+        ...recent.filter(sample => now - sample.at <= WEAK_POSE_WINDOW_MS)]);
     }
   }
 

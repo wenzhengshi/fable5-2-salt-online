@@ -1,0 +1,187 @@
+.race-history--global {
+  --race-history-accent: #f1cd8b;
+  position: fixed;
+  z-index: 32000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: #07101be0;
+  backdrop-filter: blur(8px);
+  font-family: "Barlow Condensed", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.race-history--global[hidden] { display: none; }
+
+.race-history--global .race-history__dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(980px, 100%);
+  max-height: min(86dvh, 760px);
+  overflow: hidden;
+  border: 1px solid #607087;
+  border-top: 3px solid #765a11;
+  border-radius: 16px;
+  background: linear-gradient(160deg, #15253f 0%, #111c2f 62%, #0d1727 100%);
+  box-shadow: 0 28px 90px #000a;
+  color: #e8edf5;
+}
+
+.race-history--global .race-history__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 12px;
+  border-bottom: 1px solid #60708755;
+}
+
+.race-history--global .race-history__header small {
+  color: #9b7032;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.race-history--global .race-history__header h2 {
+  margin: 4px 0 0;
+  font-size: clamp(19px, 2.6vw, 27px);
+  line-height: 1.2;
+}
+
+.race-history--global .race-history__close {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 1px solid #607087;
+  border-radius: 50%;
+  background: #1b2b45;
+  color: #dbe5f1;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.race-history--global .race-history__close:hover { background: #263b5d; }
+
+.race-history--global .race-history__summary {
+  margin: 0;
+  padding: 12px 22px;
+  color: #cac1c4;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.race-history--global .race-history__content {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  gap: 16px;
+  min-height: 0;
+  padding: 0 22px 12px;
+  overflow: auto;
+}
+
+.race-history--global .race-history__section {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.race-history--global .race-history__section h3 {
+  margin: 0;
+  color: var(--race-history-accent);
+  font-size: 14px;
+}
+
+.race-history--global .race-history__scroll {
+  min-height: 0;
+  max-height: 46dvh;
+  overflow: auto;
+  border: 1px solid #60708755;
+  border-radius: 8px;
+  background: #0d192bcc;
+}
+
+.race-history--global table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.race-history--global th,
+.race-history--global td {
+  padding: 8px 9px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid #60708733;
+}
+
+.race-history--global th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #1a2c47;
+  color: var(--race-history-accent);
+  font-weight: 700;
+}
+
+.race-history--global td { color: #cac1c4; }
+.race-history--global tr.is-you td { background: #765a1124; color: #f5e4c2; }
+.race-history--global .race-history__rank { color: #f1b45e; font-weight: 800; }
+.race-history--global .race-history__empty { color: #9aa5b4; text-align: center !important; }
+
+.race-history--global .race-history__error {
+  margin: 0 22px 10px;
+  padding: 8px 10px;
+  border: 1px solid #a44b4b;
+  border-radius: 6px;
+  background: #4d1f1f80;
+  color: #ffd0cf;
+  font-size: 12px;
+}
+
+.race-history--global .race-history__error[hidden] { display: none; }
+
+.race-history--global .race-history__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 22px 18px;
+  border-top: 1px solid #60708755;
+}
+
+.race-history--global .race-history__footer button {
+  min-height: 38px;
+  padding: 8px 16px;
+  border: 1px solid #607087;
+  border-radius: 5px;
+  background: #1b2b45;
+  color: #dbe5f1;
+  font: 700 13px/1.4 inherit;
+  cursor: pointer;
+}
+
+.race-history--global .race-history__footer button:hover { background: #263b5d; }
+.race-history--global .race-history__footer button:disabled { opacity: .6; cursor: progress; }
+
+.race-history--global .race-history__footer .race-history__done {
+  border-color: #9b7032;
+  background: #765a11;
+  color: #fff4da;
+}
+
+@media (max-width: 760px) {
+  .race-history--global { padding: 10px; }
+  .race-history--global .race-history__dialog { max-height: 92dvh; border-radius: 12px; }
+  .race-history--global .race-history__header { padding: 15px 14px 10px; }
+  .race-history--global .race-history__summary { padding: 10px 14px; }
+  .race-history--global .race-history__content { grid-template-columns: 1fr; padding: 0 14px 10px; }
+  .race-history--global .race-history__scroll { max-height: 30dvh; }
+  .race-history--global .race-history__error { margin: 0 14px 10px; }
+  .race-history--global .race-history__footer { padding: 10px 14px 14px; }
+  .race-history--global th,
+  .race-history--global td { padding: 7px 8px; }
+}

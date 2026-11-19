@@ -3,6 +3,7 @@
 const { WebSocketServer } = require('ws');
 const storage = require('../config/storage');
 const contentFilter = require('../services/contentFilter');
+const raceNames = require('../services/raceNames');
 const chatHistory = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
 const deathReplay = require('../services/deathReplay');
@@ -38,6 +39,8 @@ const mapKeyOf = (player) => player.inQingyun ? 'qingyun' : player.mapId || 'por
 const TICK_MS = 100;
 const RESPAWN_MS = 5000;
 const PROTECT_MS = 2000;
+const BOSS_SPAWN_GRACE_MS = 9000;
+const RECENT_DAMAGE_MS = 8000;
 const MAX_HP = 100;
 const arsenal = require('../public/js/arsenal-rules');
 const MAX_NAME = 16;
@@ -362,13 +365,20 @@ function sanitizeSpawns(raw) {
 }
 
 function pickSpawn(player, now) {
+  const bosses = portalBosses.snapshot(mapKeyOf(player)).filter(boss => boss.phase === 'active');
+  const outsideBossReach = point => bosses.every(boss =>
+    Math.hypot(point.x - boss.x, point.z - boss.z) > Math.max(12, boss.height * .68));
   if (player.mapId) {
     const positions = [];
     for (const other of players.values()) {
       if (other !== player && other.alive && sameMap(other, player) &&
           (other.active || other.protectedUntil > now)) positions.push(other.pos);
     }
-    const spawn = expeditions.pickRespawn(expeditions.maps[player.mapId], player.lastExpeditionSpawn, positions);
+    const map = expeditions.maps[player.mapId];
+    const safer = map.respawns.filter(outsideBossReach);
+    const candidateMap = safer.length ? { ...map, respawns: safer } : map;
+    const previous = candidateMap.respawns.length > 1 ? player.lastExpeditionSpawn : null;
+    const spawn = expeditions.pickRespawn(candidateMap, previous, positions);
     player.lastExpeditionSpawn = spawn;
     return spawn;
   }
@@ -381,6 +391,8 @@ function pickSpawn(player, now) {
     const inside = spawns.filter(isInsideAirWall);
     candidates = inside.length ? inside : [PORT_PLAYER_START];
   }
+  const safer = candidates.filter(outsideBossReach);
+  if (safer.length) candidates = safer;
   const enemies = [...players.values()].filter((item) => item !== player && item.active && item.alive &&
     sameMap(item, player));
   let best = null;
@@ -842,12 +854,20 @@ function announceDeath(victim, killer, now) {
 }
 
 function beginPortalArrival(player, now) {
+  player.bossGraceUntil = now + BOSS_SPAWN_GRACE_MS;
+  player.recentPlayerDamage = null;
   if (!player.portalFall) return;
   player.active = false;
   player.protectedUntil = Math.max(player.protectedUntil || 0, now + 4000);
 }
 
 function killPlayer(victim, killer, now, cause = null) {
+  const recent = victim.recentPlayerDamage;
+  if (!killer && recent && now - recent.at <= RECENT_DAMAGE_MS && recent.map === mapKeyOf(victim)) {
+    const attacker = players.get(recent.id);
+    if (attacker && sameMap(attacker, victim)) killer = attacker;
+  }
+  victim.recentPlayerDamage = null;
   const replay = killer ? deathReplay.build(victim, killer, now, frontier.equipmentFlags) : null;
   const deathPosition = killer ? { ...victim.pos } : null;
   endFollowing(victim, 'down');
@@ -883,6 +903,9 @@ function applyPlayerDamage(target, attacker, amount, armor, now) {
   const damage = frontier.armor(target, amount, armor, now);
   target.hp = Math.max(0, target.hp - damage);
   const killed = target.hp <= 0;
+  if (damage > 0 && attacker !== target) {
+    target.recentPlayerDamage = { id: attacker.id, at: now, map: mapKeyOf(target) };
+  }
   if (attacker !== target) deathReplay.recordHit(attacker, target, damage, target.hp, killed, now);
   send(target.ws, { type: 'damaged', amount: damage, hp: target.hp, from: {
     ...publicFighter(attacker), pos: attacker.pos
@@ -925,6 +948,29 @@ const portalBosses = createPortalBosses({
   }
 });
 
+const sharedPatrols = require('../services/sharedPatrols').createSharedPatrols({
+  players: () => players.values(), mapKey: mapKeyOf,
+  eligible: (player, now) => player.joined && player.active && player.alive &&
+    player.focusUntil <= now && !frontier.dropping(player, now),
+  fire(unit, origin, dir, range) {
+    broadcast({type:'shot',id:unit.id,bossKind:unit.kind,map:unit.map,origin,dir,range},
+      player => player.joined && mapKeyOf(player) === unit.map);
+  },
+  damage(target, unit, amount, now, origin) {
+    const damage = frontier.armor(target,amount,'vest',now);
+    target.hp = Math.max(0,target.hp-damage);
+    const cause={id:unit.id,name:unit.kind==='hound'?'机器狗':'无人机',color:'#ff6f44',soldier:unit.kind==='hound'?'hound':'drone'};
+    send(target.ws,{type:'damaged',amount:damage,hp:target.hp,bossDamage:true,from:{...cause,pos:origin}});
+    if(target.hp<=0)killPlayer(target,null,now,cause);
+  },
+  destroy(player, unit, floor, now) {
+    broadcast({type:'patrolDestroyed',map:unit.map,id:unit.id,pos:{x:unit.x,y:unit.y,z:unit.z}},
+      other => other.joined && mapKeyOf(other) === unit.map);
+    try { gold.awardMachineKill(player,unit.map,{x:unit.x,y:floor,z:unit.z},now); }
+    catch (error) { console.error('[patrol] reward failed',error.message); }
+  }
+});
+
 const shop = createShop({ players, send, gold,
   onOutfitChanged(player) {
     broadcast({ type: 'soldierState', id: player.id, soldier: player.soldier, outfit: player.outfit });
@@ -943,6 +989,9 @@ function uniqueName(candidate, self) {
   let index = 2;
   while (taken.has((name + '#' + index).toLowerCase()) && index < 50) index += 1;
   return (name.slice(0, MAX_NAME - 3) + '#' + index).slice(0, MAX_NAME);
+}
+function rememberRaceName(player) {
+  if (player && player.signOwner) raceNames.remember(player.signOwner, player.name);
 }
 
 function focusPayload(player, extra) {
@@ -1120,6 +1169,7 @@ function handleMessage(player, raw) {
       const requested = sanitizeName(msg.name);
       const filtered = !resumed && !!requested && contentFilter.isBlocked(requested);
       if (!resumed) player.name = uniqueName(filtered ? '' : requested, player);
+      rememberRaceName(player);
       player.spawns = sanitizeSpawns(msg.spawns);
       if (!resumed) {
         player.soldier = normalizeSoldier(msg.soldier);
@@ -1262,6 +1312,7 @@ function handleMessage(player, raw) {
       const next = uniqueName(requested, player);
       const previous = player.name;
       player.name = next;
+      rememberRaceName(player);
       send(player.ws, {
         type: 'joined',
         id: player.id,
@@ -1587,7 +1638,7 @@ function handleMessage(player, raw) {
       gold.handle(player, msg, now);
       break;
     case 'ordinaryGoldHit':
-      if (player.active && player.alive) gold.ordinaryHit(player, playerAuthority.takeReportedShot(player, now), msg, now);
+      if (mapKeyOf(player) === 'port' && player.active && player.alive) gold.ordinaryHit(player, playerAuthority.takeReportedShot(player, now), msg, now);
       break;
     case 'goldHit':
       if (player.active && player.alive) gold.shoot(player, playerAuthority.takeReportedShot(player, now), msg.id, now);
@@ -1686,7 +1737,10 @@ function handleMessage(player, raw) {
       (player.lastWeaponShot ||= Object.create(null))[profile.id] = now;
       player.weaponId = profile.id;
       if (profile.id === 'knife') break;
-      if (portalBosses.shot(player, origin, dir, profile, now)) {
+      const patrol = sharedPatrols.intersect(player,origin,dir,profile.range,now);
+      const bossProfile = patrol ? {...profile,range:patrol.dist} : profile;
+      if (portalBosses.shot(player, origin, dir, bossProfile, now) ||
+          (patrol && sharedPatrols.shoot(player,patrol,profile,now))) {
         playerAuthority.takeReportedShot(player, now);
         player.lastBossShotAt = now;
       }
@@ -1726,15 +1780,7 @@ function handleMessage(player, raw) {
     }
     case 'died': {
       if (!player.alive || frontier.dropping(player, now)) break;
-      removeFromBoat(player, true);
-      sedan.remove(player);
-      player.alive = false;
-      player.hp = 0;
-      player.streak = 0;
-      player.deaths += 1;
-      player.respawnAt = now + RESPAWN_MS;
-      touchBoard(player.name, 0, 1, 0);
-      announceDeath(player, null, now);
+      killPlayer(player, null, now);
       send(player.ws, { type: 'deathAck', respawnIn: RESPAWN_MS, respawnAt: player.respawnAt });
       break;
     }
@@ -1760,6 +1806,8 @@ function handleMessage(player, raw) {
       player.motionBudget = null;
       playerAuthority.resetWeaponState(player);
       player.protectedUntil = now + PROTECT_MS;
+      player.bossGraceUntil = now + BOSS_SPAWN_GRACE_MS;
+      player.recentPlayerDamage = null;
       send(player.ws, {
         type: 'respawned',
         pos: spawn,
@@ -1794,6 +1842,8 @@ function handleMessage(player, raw) {
       player.moving = false;
       player.sprint = false;
       player.protectedUntil = now + PROTECT_MS;
+      player.bossGraceUntil = now + BOSS_SPAWN_GRACE_MS;
+      player.recentPlayerDamage = null;
       send(player.ws, focusPayload(player, { scope: endedKind, kind: endedKind, ended: true, spawn }));
       if (hadFocus) {
         announceFocusEvent(player, 'focusEnd', { kind: endedKind, durationMs: endedDurationMs, recordId: endedRecordId });
@@ -1926,6 +1976,8 @@ function addPlayer(ws, req, signOwner) {
     lastFollowActionAt: 0,
     isAlive: true
   };
+  const savedRaceName = raceNames.nameOfOwner(signOwner);
+  if (savedRaceName) player.name = uniqueName(savedRaceName, player);
   players.set(id, player);
   if (reconnectToken) reconnectPlayers.set(reconnectToken, player);
   if (focusUntil > Date.now()) {
@@ -2072,6 +2124,7 @@ function tick() {
   expireFollowInvites(now);
   syncFollowingPlayers(now);
   portalBosses.tick(now);
+  sharedPatrols.tick(now);
   deathReplay.recordPlayers(players.values(), now, frontier.equipmentFlags);
   deathReplay.prune(now);
   const roster = rosterPayload();
@@ -2111,6 +2164,7 @@ function tick() {
   const voice = voicePayload();
   const boatState = publicBoat();
   const bossesByMap = new Map();
+  const patrolsByMap = new Map();
   const bossBounty = players.size ? gold.bossBudget(now) : null;
   for (const player of players.values()) {
     // This state is superseded by the next tick. Let slow clients catch up.
@@ -2121,6 +2175,7 @@ function tick() {
       bossesByMap.set(key, portalBosses.snapshot(key).map(boss =>
         boss.kind === 'watercolor' ? { ...boss, kind: 'cat', variant: 'watercolor' } : boss));
     }
+    if (!patrolsByMap.has(key)) patrolsByMap.set(key,sharedPatrols.snapshot(key));
     send(player.ws, {
       type: 'snapshot',
       t: now,
@@ -2134,6 +2189,7 @@ function tick() {
       bossMap: key,
       bossBounty,
       bosses: bossesByMap.get(key),
+      patrols: patrolsByMap.get(key),
       you: {
         id: player.id,
         name: player.name,
@@ -2226,7 +2282,7 @@ function attachMultiplayer(server) {
     const raw = String(req.url || '/');
     const queryAt = raw.indexOf('?');
     const pathname = queryAt >= 0 ? raw.slice(0, queryAt) : raw;
-    if (pathname !== '/ws') return;
+    if (pathname !== '/ws' || new URLSearchParams(raw.slice(queryAt + 1)).get('race') === '1') return;
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);
     });
@@ -2235,21 +2291,24 @@ function attachMultiplayer(server) {
 
   wss.on('connection', async (ws, req) => {
     if (!ws.listenerCount('error')) ws.on('error', () => {});
+    let player;
     try {
       await moderation.ready;
-    } catch {
-      ws.close(1011, 'Moderation storage unavailable');
+      if (ws.readyState !== 1) return;
+      const owner = roadSigns.ownerFromRequest(req);
+      const ban = moderation.activeBan(owner);
+      if (ban || pendingAutomaticBans.has(owner)) {
+        closeBannedSocket(ws);
+        return;
+      }
+      ws.isAlive = true;
+      player = addPlayer(ws, req, owner);
+    } catch (error) {
+      console.error('[mp] connection setup failed', error);
+      if (ws.readyState === 1) ws.close(1011, 'Multiplayer temporarily unavailable');
+      else ws.terminate();
       return;
     }
-    if (ws.readyState !== 1) return;
-    const owner = roadSigns.ownerFromRequest(req);
-    const ban = moderation.activeBan(owner);
-    if (ban || pendingAutomaticBans.has(owner)) {
-      closeBannedSocket(ws);
-      return;
-    }
-    ws.isAlive = true;
-    const player = addPlayer(ws, req, owner);
 
     const isCurrent = () => player.ws === ws && players.get(player.id) === player;
     ws.on('pong', () => {
@@ -2319,6 +2378,7 @@ function attachMultiplayer(server) {
 module.exports = {
   attachMultiplayer,
   broadcastShopPrices(prices) { broadcast({ type: 'shopPrices', prices }, player => player.joined); },
+  refreshRaceWallets() {gold.refreshWallets();},
   getLeaderboard,
   getOnlinePlayers,
   getModerationReport,

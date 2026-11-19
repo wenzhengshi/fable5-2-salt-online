@@ -1,0 +1,18 @@
+.ads-page{--accent:#eeba70;--line:#50606a80;max-width:1120px;margin:auto;padding:0 0 10px}
+.ads-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:20px;align-items:start}
+.ads-preview,#ad-form{padding:20px;background:#111b25df;border:1px solid var(--line);border-top:2px solid var(--accent)}
+.ads-page h2{font-size:18px;margin:0 0 15px}
+#ad-preview{width:100%;display:block;background:#26333b}
+#ad-preview-label,#ad-status{min-height:1.45em;color:#ebc693;font-size:13px;margin-bottom:0}
+#ad-form{display:grid;gap:8px}
+#ad-form label,.ads-page legend{font-size:13px;color:#efdbba}
+#ad-form input,#ad-form select{min-width:0;width:100%;padding:9px 10px;background:#182632;border:1px solid var(--line);font:inherit;color:#fff2db}
+#ad-colors{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+#ad-colors label{display:flex;align-items:center;gap:4px;font-size:12px}
+#ad-colors input{width:auto;accent-color:var(--accent)}
+.ads-price{display:flex;flex-wrap:wrap;justify-content:space-between;gap:5px;font-size:13px}
+#ad-total{color:#ffd18b}
+.salt-shop #ad-pay{padding:10px;border:0;background:#f2b969;color:#16202a;font:inherit;font-weight:750;cursor:pointer}
+#ad-pay:disabled{opacity:.5;cursor:default}
+@media(max-width:720px){.ads-grid{grid-template-columns:1fr}.ads-preview,#ad-form{padding:14px}}
+.ads-page fieldset{padding:0;border:0;margin:3px 0}

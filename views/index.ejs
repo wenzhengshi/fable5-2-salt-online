@@ -29,16 +29,32 @@
     <link rel="stylesheet" href="/css/modal.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/frontier.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/deployment.css?v=<%= assetVersion %>" />
+    <link rel="stylesheet" href="/race/ads.css?v=<%= assetVersion %>" />
+    <link rel="stylesheet" href="/race/history.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/shop.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/manual-rotate.css?v=<%= assetVersion %>" />
     <link rel="preload" href="/js/game.bundle.js?v=<%= assetVersion %>" as="script" />
+    <% if (preloadQingyun) { %>
+    <link rel="preload" href="/maps/qingyun-renderer.js?v=7" as="script" />
+    <link rel="preload" href="/maps/qingyun-models.glb" as="fetch" crossorigin="anonymous" />
+    <link rel="preload" href="/maps/qingyun-models.json" as="fetch" crossorigin="anonymous" />
+    <% } %>
   </head>
-  <body>
+  <body<% if (raceTransfer) { %> data-race-transfer="<%= raceTransfer %>"<% } %>>
     <div id="app">
       <canvas id="view"></canvas>
       <div id="ui"></div>
       <div id="boot">
+        <% if (raceTransfer) { %>
+        <div class="race-transfer-rift" aria-hidden="true"></div>
+        <div id="race-transfer-status" role="status"><%= t('deployment.loading').replace('{map}', t(raceTransfer === 'port' || raceTransfer === 'qingyun' ? 'deployment.' + raceTransfer : 'expedition.maps.' + raceTransfer)) %></div>
+        <div id="race-transfer-actions" hidden>
+          <button id="race-transfer-retry" type="button"><%= t('ui.gfxRetryAction') %></button>
+          <a href="/race/plaza"><%= t('deployment.raceTransferBack') %></a>
+        </div>
+        <% } else { %>
         <div class="boot-mark"><%= t('game.title') %></div>
+        <% } %>
         <div class="boot-sub" id="boot-msg"><%= t('game.booting') %></div>
         <div class="boot-hint"><%= t('ui.bootHint') %></div>
         <div class="boot-bar"><i id="boot-fill"></i></div>
@@ -57,6 +73,8 @@
       <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
     </div>
 
+    <%- include('race-ads') %>
+
     <noscript>
       <div class="noscript-card"><%= t('ui.noScript') %></div>
     </noscript>
@@ -67,6 +85,9 @@
     <script src="/js/webgl-guard.js?v=<%= assetVersion %>"></script>
     <script src="/js/i18n.js?v=<%= assetVersion %>"></script>
     <script src="/js/modal.js?v=<%= assetVersion %>"></script>
+    <script src="/race/history.js?v=<%= assetVersion %>"></script>
+    <script src="/race/ad-rules.js?v=<%= assetVersion %>"></script>
+    <script src="/race/ads.js?v=<%= assetVersion %>"></script>
     <script type="importmap">
       { "imports": { "three": "/vendor/three-game.js?v=<%= assetVersion %>" } }
     </script>

@@ -23,7 +23,7 @@
       ...(id === 'lunar' ? { gravity: 1.62, jumpSpeed: 3.4 } : {}), minX, maxX, minZ: minZ + offset, maxZ: maxZ + offset,
       gate: { x: entrance[0], z: qingyun.offsetZ + entrance[1], y: entrance[2] },
       landing, respawns,
-      exit: { x: start[0], z: start[1] + offset + 4 },
+      exit: { x: start[0], z: start[1] + offset + 4, ...(id === 'dustfall' ? { y: landing.y } : {}) },
       hub: { x: hub[0], z: qingyun.offsetZ + hub[1], y: hub[2] }
     }];
   }));

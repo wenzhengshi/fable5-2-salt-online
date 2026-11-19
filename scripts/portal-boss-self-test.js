@@ -10,6 +10,7 @@ process.env.DATA_DIR = dataDir;
 const storage = require('../config/storage');
 const { createPortalBosses, houndPathClear } = require('../services/portalBosses');
 const { maps } = require('../public/js/expedition-zones');
+const qingyun = require('../public/js/qingyun-zone');
 const { rayDistance, weakPoint, seesWeakPoint, weakRayDistance, splitStretch, splitPosition, SPLIT_ANIMATION_MS } = require('../public/js/portal-boss-rules');
 const { pac9 } = require('../public/js/arsenal-rules');
 
@@ -245,7 +246,8 @@ try {
   const from = { ...shooter.pos, y: shooter.pos.y + .9 };
   const down = { x: 0, y: -1, z: 0 };
   assert.ok(seesWeakPoint(point, shooter.pos));
-  assert.ok(!seesWeakPoint(point, { ...shooter.pos, x: point.x + 7 }));
+  assert.ok(seesWeakPoint(point, { ...shooter.pos, x: point.x + 10 }));
+  assert.ok(!seesWeakPoint(point, { ...shooter.pos, x: point.x + 13 }));
   assert.equal(weakRayDistance(point, from, { x: 1, y: 0, z: 0 }, 100), null);
   assert.equal(world.shot(shooter, from, down, pac9, 80100), true);
   assert.equal(hits.at(-1).teamBlocked, true, 'Infantry cannot bypass the shield from above');
@@ -299,6 +301,24 @@ try {
   assert.equal(portWorld.shot(outsider, dockEye, dockShot, pac9, 85500), true);
   assert.equal(hits.at(-1).killed, true, 'A shallow downward shot at the yellow plate works in port');
 
+  storage.writeJson('portal-bosses.json', {
+    'hound-qingyun': { phase: 'active', hp: 1200, ...qingyun.landing, yaw: 0 }
+  });
+  const arrivalPlayer = { ...player('qingyun-arrival'), map: 'qingyun', pos: qingyun.landing };
+  const protectedWorld = createPortalBosses({
+    mapKey: person => person.map, players: () => [arrivalPlayer], send() {},
+    damage() { assert.fail('A boss must not damage the Qingyun arrival area'); }
+  });
+  for (let time = 12000; time <= 14000; time += 100) {
+    protectedWorld.tick(time);
+    const qingyunBoss = protectedWorld.snapshot('qingyun')[0];
+    assert.equal(qingyunBoss.hp, 1200);
+    assert.equal(qingyunBoss.elapsed, 0);
+    assert.ok(!qingyun.inArrivalArea(qingyunBoss));
+    assert.equal(qingyunBoss.aim, null);
+    assert.equal(qingyunBoss.attack, null);
+  }
+
   storage.writeJson('portal-bosses.json', {});
   world = make();
   const watercolor = service => service.snapshot('dustfall').find(boss => boss.kind === 'watercolor' && !boss.parentId);
@@ -318,6 +338,41 @@ try {
   world.tick(86100);
   assert.equal(watercolor(world).height, 26);
   assert.ok(make().snapshot('dustfall').some(boss => boss.parentId === giantCat.id && boss.kind === 'watercolor'));
+
+  for (const cat of [home, smallCat]) {
+    const arena = { x: 0, y: 16, z: maps.dustfall.offset + 46, yaw: 0 };
+    storage.writeJson('portal-bosses.json', {
+      [cat.id]: { ...arena, phase: 'active', hp: 480, elapsed: 60000, splitCount: 1,
+        children: { 1: { ...arena, x: 20, hp: 600 } } }
+    });
+    const catWorld = make();
+    const parent = catWorld.snapshot('dustfall').find(boss => boss.id === cat.id);
+    const child = catWorld.snapshot('dustfall').find(boss => boss.parentId === cat.id);
+    const mark = weakPoint(parent);
+    assert.ok(mark && child);
+    assert.equal(weakPoint(child), null);
+    const eye = { ...mark, y: mark.y + 3 };
+    shooter.pos = { ...eye, y: eye.y - .9 };
+    shooter.soldier = 'classic';
+    assert.equal(catWorld.shot(shooter, eye, down, pac9, 88000), true);
+    assert.equal(hits.at(-1).teamBlocked, true);
+    shooter.soldier = 'drone';
+    const overhead = { ...mark, y: mark.y + 36 };
+    assert.ok(seesWeakPoint(mark, overhead));
+    assert.equal(seesWeakPoint(mark, { ...mark, y: mark.y - 1 }), false);
+    assert.equal(seesWeakPoint(mark, { ...overhead, x: mark.x + 21 }), false);
+    const bodyEye = { ...overhead, z: parent.z };
+    shooter.pos = { ...bodyEye, y: bodyEye.y - .9 };
+    assert.equal(catWorld.shot(shooter, bodyEye, down, pac9, 88050), true);
+    assert.equal(hits.at(-1).teamBlocked, true);
+    shooter.pos = { ...overhead, y: overhead.y - .9 };
+    assert.equal(catWorld.shot(shooter, overhead, down, pac9, 88100), true);
+    assert.equal(hits.at(-1).killed, true);
+    assert.deepEqual(bursts.at(-1).positions.map(pos => pos.id), [parent.id, child.id]);
+    const reloaded = make().snapshot('dustfall');
+    assert.equal(reloaded.find(boss => boss.id === parent.id).phase, 'idle');
+    assert.ok(!reloaded.some(boss => boss.parentId === parent.id));
+  }
 
   for (const [map, dx, dz] of [['port', 0, -25], ['bayhaven', 0, 25], ['bayhaven', -25, 0]]) {
     storage.writeJson('portal-bosses.json', {});

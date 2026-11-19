@@ -156,7 +156,11 @@
   }
 
   function loadSoldier() {
-    try { return normalizeSoldier(localStorage.getItem(STORAGE_SOLDIER)); } catch (err) { return 'classic'; }
+    try {
+      const saved = localStorage.getItem(STORAGE_SOLDIER);
+      if (UNIT_KINDS.includes(saved)) return saved;
+    } catch (err) { /* storage unavailable */ }
+    return 'male';
   }
 
   function saveSoldier(value) {
@@ -2910,19 +2914,21 @@
           dir: { x: dir.x, y: dir.y, z: dir.z }
         })) return localShot();
         const gold = weapon === 'knife' ? null : G.gold?.intersect(origin, dir, range);
+        const patrolHit = weapon === 'knife' ? null : G.sharedPatrols?.intersect(origin,dir,bossRange);
         const bossHit = weapon === 'knife' ? null : G.portalBosses?.intersect(origin, dir, bossRange, drone);
-        if (bossHit != null && (!gold || bossHit < gold.dist) &&
-            !G.physics.raycast(origin, dir, bossHit) && !G.enemies.raycast(origin, dir, bossHit)) {
+        const machineHit = patrolHit == null ? bossHit : Math.min(patrolHit,bossHit ?? Infinity);
+        if (machineHit != null && (!gold || machineHit < gold.dist) &&
+            !G.physics.raycast(origin, dir, machineHit) && !G.enemies.raycast(origin, dir, machineHit)) {
           const playerAhead = [...avatars.values()].some(avatar => {
             if (!avatar.group.visible || !avatar.data) return false;
             const box = avatarHitBox(avatar);
             const hit = rayBox(origin, dir, box.x, box.y, box.z, box.hx, box.hy, box.hz);
-            return hit != null && hit > .35 && hit < bossHit;
+            return hit != null && hit > .35 && hit < machineHit;
           });
           if (!playerAhead) {
-            const point = origin.clone().addScaledVector(dir, bossHit);
+            const point = origin.clone().addScaledVector(dir, machineHit);
             G.fx?.sparks?.(point, dir, 6);
-            return { point, normal: dir.clone().negate(), dist: bossHit, surface: 'player', enemy: null, from: 'player' };
+            return { point, normal: dir.clone().negate(), dist: machineHit, surface: 'player', enemy: null, from: 'player' };
           }
         }
         let limit;
@@ -3617,7 +3623,7 @@
         myId = msg.id;
         myName = cleanName(myName) || msg.name;
         myColor = msg.color || myColor;
-        mySoldier = normalizeSoldier(msg.soldier || mySoldier);
+        // Keep the local selection until the server acknowledges it in joined.
         applyUnitSelection();
         break;
       }
@@ -3769,11 +3775,15 @@
         }
         break;
       }
+      case 'patrolDestroyed':
+        G?.sharedPatrols?.destroyed(msg);
+        break;
       case 'snapshot': {
         G?.expedition?.setServerTime(msg.t);
         onlineCount = Number(msg.online) || 0;
         window.SaltMapSelect?.setPopulation(msg.mapCounts);
         G?.portalBosses?.snapshot(msg.bossMap, msg.bosses, msg.t, msg.bossBounty);
+        G?.sharedPatrols?.snapshot(msg.bossMap,msg.patrols);
         if (msg.you) {
           const previousAlive = selfStats.alive;
           selfStats = {
@@ -3825,7 +3835,8 @@
       case 'damaged': {
         if (!G || !G.player) break;
         if (!G.player.alive) break;
-        const amount = Math.max(1, Math.min(msg.bossDamage ? 100 : 60, Number(msg.amount) || 10));
+        const amount = Number(msg.amount);
+        if (!Number.isFinite(amount) || amount <= 0) break;
         let from = null;
         try {
           if (msg.from && msg.from.pos) {
@@ -3970,6 +3981,7 @@
 
   function attachGame(game) {
     G = game;
+    G.sharedPatrols ||= window.installSharedPatrols?.(G);
     if (game.frontier) {
       for (const message of pendingFrontier.values()) game.frontier.onMessage(message);
       pendingFrontier.clear();
@@ -4046,7 +4058,7 @@
     const frame = (now) => {
       const dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0.016;
       lastFrame = now;
-      try { updateAvatars(dt); } catch (err) { /* ignore */ }
+      try { updateAvatars(dt); G?.sharedPatrols?.update(dt,connected); } catch (err) { /* ignore */ }
       try { G?.portalBosses?.update(dt, now, connected, normalizeSoldier(mySoldier) === 'drone'); } catch (err) { /* keep drawing other players */ }
       if (isMachine(mySoldier) && now - lastUnitBadgeAt > 180) {
         lastUnitBadgeAt = now;
@@ -4097,6 +4109,7 @@
   window.__mp = {
     get online() { return onlineCount; },
     get connected() { return connected; },
+    get joined() { return connected && everJoined; },
     get id() { return myId; },
     get name() { return myName; },
     get soldier() { return mySoldier; },

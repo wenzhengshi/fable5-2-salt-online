@@ -85,6 +85,7 @@
       '  <p class="salt-modal__message" id="salt-modal-message"></p>',
       '  <footer class="salt-modal__actions">',
       '    <button class="salt-modal__btn salt-modal__btn--ghost" type="button" data-modal-cancel></button>',
+      '    <button class="salt-modal__btn salt-modal__btn--action" type="button" data-modal-action></button>',
       '    <button class="salt-modal__btn salt-modal__btn--primary" type="button" data-modal-confirm></button>',
       '  </footer>',
       '</section>'
@@ -99,6 +100,7 @@
       title: root.querySelector('.salt-modal__title'),
       message: root.querySelector('.salt-modal__message'),
       cancel: root.querySelector('[data-modal-cancel]'),
+      action: root.querySelector('[data-modal-action]'),
       confirm: root.querySelector('[data-modal-confirm]')
     };
 
@@ -106,6 +108,9 @@
     refs.close.setAttribute('aria-label', t('modal.close'));
 
     refs.cancel.addEventListener('click', () => settle(false));
+    refs.action.addEventListener('click', () => {
+      if (active && typeof active.onAction === 'function') active.onAction();
+    });
     refs.confirm.addEventListener('click', () => settle(true));
     refs.backdrop.addEventListener('click', () => {
       if (active && active.dismissible) settle(false);
@@ -177,12 +182,14 @@
       ? String(options.cancelText || '')
       : t('modal.cancel');
     const confirmText = options.confirmText == null ? t('modal.confirm') : String(options.confirmText);
+    const extraText = options.extraText ? String(options.extraText) : '';
     const title = options.title == null ? t('modal.notice') : String(options.title);
     const kicker = options.kicker == null ? t('modal.kicker') : String(options.kicker);
     const message = options.message == null ? '' : String(options.message);
 
     root.dataset.tone = tone;
     root.dataset.single = cancelText ? '0' : '1';
+    root.dataset.extra = extraText ? '1' : '0';
     refs.badge.innerHTML = ICONS[tone];
     refs.kicker.textContent = kicker;
     refs.kicker.hidden = !kicker;
@@ -202,6 +209,8 @@
     else refs.dialog.removeAttribute('aria-describedby');
     refs.cancel.textContent = cancelText;
     refs.cancel.hidden = !cancelText;
+    refs.action.textContent = extraText;
+    refs.action.hidden = !extraText;
     refs.confirm.textContent = confirmText;
 
     if (document.activeElement && document.activeElement !== document.body) {
@@ -218,7 +227,7 @@
     focusInitial(options.focus);
 
     return new Promise((resolve) => {
-      active = { resolve, dismissible };
+      active = { resolve, dismissible, onAction: typeof options.onAction === 'function' ? options.onAction : null };
     });
   }
 
@@ -229,6 +238,7 @@
   function alert(input) {
     const options = typeof input === 'string' ? { message: input } : Object.assign({}, input || {});
     options.cancelText = '';
+    options.extraText = '';
     options.focus = 'confirm';
     return show(options).then(() => undefined);
   }
@@ -239,6 +249,7 @@
 
   document.addEventListener('keydown', (event) => {
     if (!active) return;
+    if (document.body.classList.contains('race-history-open')) return;
     event.stopPropagation();
     if (event.key === 'Escape' || event.key === 'Tab') onKeyDown(event);
   }, true);

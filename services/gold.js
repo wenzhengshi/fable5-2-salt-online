@@ -402,6 +402,10 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     record.done = true;
     if (record.damage + .01 < MACHINE_HP[msg.kind] || !Number.isFinite(msg.floor) ||
         msg.floor < -80 || msg.floor > point.y + 1.2 || point.y - msg.floor > 24) return;
+    awardMachineKill(player,map,{x:point.x,y:msg.floor,z:point.z},now);
+  }
+  function awardMachineKill(player,map,point,now) {
+    if (!available(player,now) || !player.signOwner) return;
     rotate(now);
     const day = dayOf(now);
     let credited = false;
@@ -423,7 +427,7 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
       delete misses[owner];
       data.ordinaryBonus = { day, spent: budget.spent + budget.amount };
       const id = randomUUID();
-      data.drops[id] = { id, map, pos: { x: point.x, y: msg.floor, z: point.z },
+      data.drops[id] = { id, map, pos: point,
         amount: budget.amount, until: now + 20 * 60000 };
       awarded = true;
     });
@@ -457,6 +461,7 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     nextRotationCheck = now + 10000;
     try { rotate(now); } catch (error) { console.error('[gold] dispatch storage:', error.message); }
   }
-  return { handle, shoot, ordinaryHit, deposited, dropOnDeath, tick, reserved: pendingAmount,
+  return { handle, shoot, ordinaryHit, awardMachineKill, deposited, dropOnDeath, tick, reserved: pendingAmount,
+    refreshWallets() {state=storage.readJson(FILE).gold||{};broadcastAll(Date.now());},
     settleBossReward, bossBudget: now => bossRewards.budgetFor(load(), now) };
 };

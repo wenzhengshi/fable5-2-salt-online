@@ -2,8 +2,12 @@ require('dotenv').config();
 const path = require('path');
 const http = require('http');
 const express = require('express');
+const ejs = require('ejs');
 const compression = require('compression');
 const apiRouter = require('./routes/api');
+const raceRouter = require('./routes/race');
+const race = require('./services/race');
+const raceLive = require('./realtime/race');
 const adminRouter = require('./routes/admin');
 const chatHistory = require('./services/chatHistory');
 const focusMode = require('./services/focusMode');
@@ -14,10 +18,13 @@ const { version: RELEASE_VERSION } = require('./package.json');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '127.0.0.1';
-const ASSET_VERSION = '20261118-port-hound-aim-v' + RELEASE_VERSION;
+// 托管平台的反向代理通常不在应用所在容器的回环命名空间内。
+// 默认监听所有网卡；预览网关会显式注入 HOST=127.0.0.1，仍按平台值启动。
+const HOST = process.env.HOST || '0.0.0.0';
+const ASSET_VERSION = '20261119-race-rifts-v' + RELEASE_VERSION;
 
 app.set('view engine', 'ejs');
+app.engine('html', ejs.renderFile);
 app.set('views', path.join(__dirname, 'views'));
 app.set('trust proxy', 1);
 
@@ -87,6 +94,34 @@ app.use((req, res, next) => {
 });
 
 app.use('/admin', adminRouter);
+app.use('/api/race', raceRouter);
+app.get('/race-ads',(req,res)=>res.redirect('/'));
+app.get('/race/models/:kind', (req,res,next) => {
+  if (!['hound','drone'].includes(req.params.kind)) return next();
+  res.set('Content-Type','application/json');
+  res.set('Content-Encoding','gzip');
+  res.sendFile(path.join(__dirname,'public','models','race-'+req.params.kind+'.json.gz'), { maxAge:'5m' });
+});
+function renderRace(req,res,plazaVisit) {
+  res.render('race.html',{
+    lang:req.lang,
+    messages:locales[req.lang]||locales['zh-CN'],
+    assetVersion:ASSET_VERSION,
+    plazaVisit
+  });
+}
+app.get('/race/plaza',(req,res)=>{
+  roadSigns.issueCookie(req,res);
+  res.setHeader('Cache-Control','no-store');
+  renderRace(req,res,true);
+});
+app.get(['/race','/race/index.html'], (req,res) => {
+  const owner=roadSigns.ownerFromRequest({headers:{...req.headers,origin:'http://'+req.headers.host}});
+  res.setHeader('Cache-Control','no-store');
+  const ticket=typeof req.query.ticket==='string'?req.query.ticket:'';
+  if(!owner||!race.canLoad(owner,ticket))return res.redirect('/?raceEntry=1');
+  renderRace(req,res,false);
+});
 app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -103,7 +138,11 @@ app.use('/api', (req, res, next) => {
 
 app.use('/api', apiRouter);
 
-app.get('/', (req, res) => {
+const raceDestinations = new Set(['port','qingyun','bayhaven','mothlight','dustfall','lunar']);
+app.get(['/','/race/transfer/:map'], (req, res, next) => {
+  const destination = req.params.map || req.query.raceExit;
+  const raceTransfer = raceDestinations.has(destination) ? destination : '';
+  if (req.params.map && !raceTransfer) return next();
   roadSigns.issueCookie(req, res);
   const queryLang = req.query && req.query.lang;
   const lang = queryLang === 'en-US' || queryLang === 'zh-CN' ? queryLang : req.lang;
@@ -119,6 +158,8 @@ app.get('/', (req, res) => {
     lang,
     messages: locales[lang] || locales['zh-CN'],
     groupQr: groupQr.info(),
+    raceTransfer,
+    preloadQingyun: raceTransfer === 'qingyun',
     assetVersion: ASSET_VERSION
   });
 });
@@ -145,10 +186,19 @@ app.use((err, req, res, next) => {
 
 const server = http.createServer(app);
 attachMultiplayer(server);
+raceLive.attach(server);
+
+server.on('error', (err) => {
+  console.error('[server] listen failed at ' + HOST + ':' + PORT + ': ' + (err && err.stack ? err.stack : err));
+  process.exit(1);
+});
 
 server.listen(PORT, HOST, () => {
-  console.log('Server running at http://' + HOST + ':' + PORT);
-  console.log('Multiplayer WebSocket ready at ws://' + HOST + ':' + PORT + '/ws');
+  const address = server.address();
+  const boundHost = address && typeof address === 'object' ? address.address : HOST;
+  const boundPort = address && typeof address === 'object' ? address.port : PORT;
+  console.log('Server running at http://' + boundHost + ':' + boundPort);
+  console.log('Multiplayer WebSocket ready at ws://' + boundHost + ':' + boundPort + '/ws');
   const chatStorage = chatHistory.status();
   console.log('[chat] history file ' + chatStorage.file +
     ' · dataDir=' + chatStorage.dataDir +
@@ -168,6 +218,7 @@ let shuttingDown = false;
 function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
+  raceLive.close();
   console.log('[server] received ' + signal + ', shutting down');
   try {
     shutdownMultiplayer();

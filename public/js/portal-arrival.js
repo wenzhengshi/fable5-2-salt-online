@@ -12,7 +12,7 @@
     status.className = 'portal-hold';
     status.hidden = true;
     status.setAttribute('role', 'status');
-    document.getElementById('ui').appendChild(status);
+    (document.getElementById('ui') || document.getElementById('app')).appendChild(status);
     let current, since;
     return function hold(key, now, still = true) {
       if (!key || !still) {

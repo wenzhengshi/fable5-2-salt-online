@@ -146,7 +146,8 @@
   }
 
   function gameCanvas() {
-    return document.getElementById('view');
+    const view = document.getElementById('view');
+    return view?.tagName === 'CANVAS' ? view : view?.querySelector('canvas');
   }
 
   function isPhoto(clip) {

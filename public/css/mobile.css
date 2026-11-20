@@ -1,5 +1,53 @@
 /* mobile.css — final phone typography pass. Loaded after feature styles. */
 
+.is-touch .h-health {
+  left: var(--gl);
+  bottom: calc(10px + var(--sab));
+}
+.is-touch .h-hp-row { gap: 6px; margin-top: 4px; }
+.is-touch .h-hp-bar { gap: 2px; }
+.is-touch .h-hp-bar i { width: 8px; height: 4px; }
+
+.is-touch .touch .t-btn {
+  border-width: 1px;
+  background-color: rgba(11, 13, 15, .24);
+}
+.is-touch .touch .t-btn.active { background-color: rgba(255, 179, 71, .32); }
+.is-touch .t-fire { width: 62px; height: 62px; right: calc(12px + var(--sar)); bottom: calc(46px + var(--sab)); }
+.is-touch .t-jump,
+.is-touch .t-descend,
+.is-touch .t-ads,
+.is-touch .t-reload { width: 46px; height: 46px; }
+.is-touch .t-jump { right: calc(20px + var(--sar)); bottom: calc(119px + var(--sab)); }
+.is-touch .t-descend { right: calc(75px + var(--sar)); bottom: calc(119px + var(--sab)); }
+.is-touch .t-ads { right: calc(83px + var(--sar)); bottom: calc(13px + var(--sab)); }
+.is-touch .t-reload { right: calc(85px + var(--sar)); bottom: calc(65px + var(--sab)); }
+.is-touch .t-interact { width: 52px; height: 52px; right: calc(140px + var(--sar)); bottom: calc(66px + var(--sab)); }
+.is-touch .t-pause { width: 44px; height: 44px; }
+
+body.is-touch:not(:has(.menu[data-screen="title"])) .vc-rail {
+  top: auto;
+  bottom: calc(54px + var(--sab));
+  left: var(--gl);
+  right: auto;
+  gap: 4px;
+  flex-direction: row;
+  transform: none;
+}
+body.is-touch:not(:has(.menu[data-screen="title"])) .vc-rail button {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+}
+body.is-touch:not(:has(.menu[data-screen="title"])) .vc-rail :is(.vc-mic-copy, .vc-chat-copy, .vc-meter) { display: none; }
+body.is-touch:not(:has(.menu[data-screen="title"])) #sr-tools { left: var(--gl); }
+body.is-touch:not(:has(.menu[data-screen="title"])) #sr-tools button { min-width: 44px; min-height: 44px; }
+body.is-touch:not(:has(.menu[data-screen="title"])) #sr-tools button em { display: none; }
+.is-touch .seg { flex-wrap: wrap; }
+.is-touch .seg button { flex-basis: 33.33%; min-height: 44px; white-space: normal; padding-inline: 2px; }
+
 @media (max-width: 760px), (pointer: coarse) {
   :root {
     --mobile-text: 0.88;
@@ -105,7 +153,12 @@
   .vc-input-wrap input { font-size: 14px !important; }
   .vc-history .vc-history-text { font-size: 10px !important; }
   .vc-banner-text, .vc-banner[data-size="medium"] .vc-banner-text, .vc-banner[data-size="long"] .vc-banner-text {
-    font-size: clamp(20px, 7vw, 34px) !important;
+    font-size: calc(clamp(20px, 7vw, 34px) * var(--salt-banner-font-scale, 1)) !important;
+  }
+  .vc-banner-card {
+    padding: clamp(4px, calc(7px * var(--salt-banner-font-scale, 1)), 10px)
+      clamp(10px, calc(18px * var(--salt-banner-font-scale, 1)), 26px)
+      clamp(6px, calc(9px * var(--salt-banner-font-scale, 1)), 13px) !important;
   }
 
   .focus-brand b, .focus-brand em, .focus-foot p { font-size: 8px !important; }
@@ -122,18 +175,6 @@
   .sr-toolbar-copy b { font-size: 9.5px !important; }
   .sr-toolbar-copy span, .sr-meta span, .sr-local-note { font-size: 8px !important; }
   #sr-player-empty b { font-size: 10.5px !important; }
-
-  .ss-title { font-size: clamp(36px, 11.5vw, 54px) !important; }
-  .ss-kicker, .ss-brand b, .ss-stage-head { font-size: 8px !important; }
-  .ss-brand em, .ss-stage-meta i, .ss-stage-corner { font-size: 7px !important; }
-  .ss-intro { font-size: 10.5px !important; }
-  .ss-card-line b { font-size: 16px !important; }
-  .ss-card-copy em { font-size: 8px !important; }
-  .ss-card-copy small { font-size: 9px !important; }
-  .ss-tags u, .ss-note { font-size: 7.5px !important; }
-  .ss-stage-meta b { font-size: 18px !important; }
-  .ss-stage-hint { font-size: 8px !important; }
-  .ss-confirm span { font-size: 10.5px !important; }
 
   .sail-title b { font-size: 14px !important; }
   .sail-title span, .sail-map > div { font-size: 7.5px !important; }
@@ -181,8 +222,6 @@
   .community-desc { font-size: 9.5px !important; }
 
   .sr-head h2 { font-size: 24px !important; }
-  .ss-title { font-size: clamp(31px, 10vw, 46px) !important; }
-  .ss-intro { font-size: 9.5px !important; }
 
   .sail-title b { font-size: 13px !important; }
   .sail-bearing b { font-size: 17px !important; }

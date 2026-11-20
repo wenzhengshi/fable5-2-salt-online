@@ -786,7 +786,8 @@ body.mp-respawning .menu[data-screen="paused"] .m-screen[data-s="paused"] { disp
 .mp-roster-card {
   width: min(520px, 94vw);
   max-height: min(84vh, 680px);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 18px 20px 16px;
   background: rgba(10, 14, 17, 0.96);
   border: 1px solid var(--line);
@@ -885,6 +886,63 @@ body.mp-respawning .menu[data-screen="paused"] .m-screen[data-s="paused"] { disp
   color: #8edfff;
   border-color: rgba(95, 208, 255, 0.45);
 }
+
+.mp-rr-status {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+  background: #9fb4a8;
+  opacity: 0.95;
+  cursor: help;
+  outline: none;
+  vertical-align: middle;
+  transform: translateY(-1px);
+}
+
+.mp-rr-status[data-status="home"] {
+  border-radius: 2px;
+  background: #9fb4a8;
+}
+
+.mp-rr-status[data-status="map"] {
+  background: #7db7d8;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  transform: translateY(-1px) scale(1.05);
+}
+
+.mp-rr-status[data-status="focus"] {
+  background: #ffd76a;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.mp-rr-status:hover,
+.mp-rr-status:focus-visible {
+  outline: 1px solid rgba(232, 228, 218, 0.8);
+  outline-offset: 3px;
+}
+
+.mp-status-tip {
+  position: fixed;
+  z-index: 120;
+  max-width: min(280px, 86vw);
+  padding: 7px 9px;
+  color: #f3efe4;
+  background: rgba(10, 14, 12, 0.94);
+  border: 1px solid rgba(232, 228, 218, 0.28);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+  font: 500 10px/1.45 var(--f-mono);
+  letter-spacing: 0.03em;
+  pointer-events: none;
+}
+
+.mp-status-tip[hidden] { display: none !important; }
+
+.mp-status-tip.mp-status-peek {
+  opacity: 1;
+  transition: opacity 0.18s ease;
+}
+.mp-status-tip.mp-status-peek.is-out { opacity: 0; }
 
 .mp-rr-name em.mp-rr-focus {
   color: #ffe066;
@@ -1048,6 +1106,51 @@ body.mp-respawning .menu[data-screen="paused"] .m-screen[data-s="paused"] { disp
   color: rgba(232, 228, 218, 0.55);
 }
 
+.mp-board-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mp-board-head b {
+  font: 600 9px/1 var(--f-mono);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(232, 228, 218, 0.55);
+}
+
+.mp-board-head span {
+  font: 500 9px/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  color: rgba(232, 228, 218, 0.38);
+}
+
+.mp-board-cols {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 46px 84px;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 8px;
+  padding: 0 4px 5px;
+  border-bottom: 1px solid rgba(232, 228, 218, 0.1);
+  color: rgba(232, 228, 218, 0.46);
+  font: 500 9px/1 var(--f-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.mp-board-cols span:nth-child(n + 3) { text-align: right; }
+
+.mp-board-scroll {
+  max-height: 232px;
+  margin-top: 8px;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(232, 228, 218, 0.3) transparent;
+  scrollbar-width: thin;
+}
+
 .mp-roster-board ol {
   margin: 8px 0 0;
   padding: 0;
@@ -1059,7 +1162,7 @@ body.mp-respawning .menu[data-screen="paused"] .m-screen[data-s="paused"] { disp
 
 .mp-roster-board li {
   display: grid;
-  grid-template-columns: 24px 1fr auto;
+  grid-template-columns: 24px minmax(0, 1fr) 46px 84px;
   gap: 8px;
   align-items: baseline;
   padding: 4px 4px;
@@ -1068,8 +1171,48 @@ body.mp-respawning .menu[data-screen="paused"] .m-screen[data-s="paused"] { disp
 }
 
 .mp-roster-board li i { font: 400 10px/1 var(--f-mono); color: rgba(232, 228, 218, 0.4); }
-.mp-roster-board li b { font: 600 12px/1 var(--f-mono); color: var(--signal); }
+.mp-roster-board li b,
+.mp-roster-board li .mp-board-kills { font: 600 12px/1 var(--f-mono); color: var(--signal); text-align: right; }
+.mp-roster-board li > span:nth-of-type(1) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .mp-roster-board li.mp-board-empty { display: block; color: rgba(232, 228, 218, 0.4); }
+
+.mp-board-coins {
+  color: #ffcf6a;
+  font: 500 10px/1 var(--f-mono);
+  text-align: right;
+  white-space: nowrap;
+}
+.mp-board-coins[data-online="0"] { color: rgba(255, 207, 106, 0.62); }
+
+.mp-board-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mp-board-range input {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--signal);
+}
+.mp-board-range output {
+  flex: 0 0 auto;
+  min-width: 28px;
+  color: rgba(232, 228, 218, 0.62);
+  font: 500 10px/1 var(--f-mono);
+  text-align: right;
+}
+.mp-board-hint {
+  margin: 7px 0 0;
+  color: rgba(232, 228, 218, 0.38);
+  font: 500 9px/1.45 var(--f-mono);
+  letter-spacing: 0.02em;
+}
 
 .mp-roster-pickups {
   margin-top: 16px;
@@ -1114,6 +1257,22 @@ body.mp-respawning .menu[data-screen="paused"] .m-screen[data-s="paused"] { disp
   overscroll-behavior: contain;
   scrollbar-color: rgba(255, 179, 71, 0.45) transparent;
   scrollbar-width: thin;
+}
+
+/* Dragging a scrollbar focuses the scroll container; Chrome then paints its
+   default white/yellow :focus-visible outline around the whole TAB roster or
+   gold activity list. These are live HUD scroll areas, so suppress it. */
+.mp-roster-card,
+.mp-roster-card:focus,
+.mp-roster-card:focus-visible,
+.mp-board-scroll,
+.mp-gold-activity-scroll,
+.mp-board-scroll:focus,
+.mp-board-scroll:focus-visible,
+.mp-gold-activity-scroll:focus,
+.mp-gold-activity-scroll:focus-visible {
+  outline: 0;
+  outline-offset: 0;
 }
 
 .mp-gold-activity-sentinel {
@@ -1261,6 +1420,12 @@ body.mp-respawning .lang-switch {
   .mp-deathcam-foot { padding: 5px 8px; }
   .mp-deathcam-foot span { font-size: 8px; }
   .mp-deathcam-tag, .mp-deathcam-cam, .mp-deathcam-mode { font-size: 7px; }
+  .mp-rr-status { width: 12px; height: 12px; }
+  .mp-roster-board li { grid-template-columns: 20px minmax(0, 1fr) 32px 54px; gap: 6px; }
+  .mp-board-scroll { max-height: 180px; }
+  .mp-board-range input { min-height: 38px; }
+  .mp-board-hint { font-size: 8px; }
+  .mp-status-tip { font-size: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

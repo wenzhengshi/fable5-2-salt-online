@@ -11,9 +11,10 @@ const { createShop } = require('../services/shop');
 const playerAuthority = require('../services/playerAuthority');
 const { createPortalBosses } = require('../services/portalBosses');
 const { BOSS_NAMES } = require('../public/js/portal-boss-rules');
-const { isInsideAirWall, PORT_PLAYER_START } = require('../public/js/flight-collision');
+const { isInsideAirWall, PORT_PLAYER_START, PORT_SPAWN_YAW } = require('../public/js/flight-collision');
 const { randomUUID } = require('node:crypto');
 const moderation = require('../services/moderation').createModeration();
+const houndTuning = require('../services/houndTuning');
 moderation.ready.catch(error => console.error('[moderation] load failed:', error.message));
 const pendingAutomaticBans = new Set();
 function monitor(player, kind, now) {
@@ -37,7 +38,8 @@ const sameMap = (a, b) => a.mapId === b.mapId && a.inQingyun === b.inQingyun;
 const mapKeyOf = (player) => player.inQingyun ? 'qingyun' : player.mapId || 'port';
 
 const TICK_MS = 100;
-const RESPAWN_MS = 5000;
+const RESPAWN_MS = 2800;
+const RESPAWN_PROTECT_MS = 4000;
 const PROTECT_MS = 2000;
 const BOSS_SPAWN_GRACE_MS = 9000;
 const RECENT_DAMAGE_MS = 8000;
@@ -435,6 +437,7 @@ function loadBoard() {
       kills: Math.max(0, Math.floor(Number(row.kills) || 0)),
       deaths: Math.max(0, Math.floor(Number(row.deaths) || 0)),
       bestStreak: Math.max(0, Math.floor(Number(row.bestStreak) || 0)),
+      lastCoins: Math.max(0, Math.floor(Number(row.lastCoins) || 0)),
       updatedAt: Math.max(0, Math.floor(Number(row.updatedAt) || 0))
     });
   }
@@ -457,37 +460,71 @@ function flushBoard() {
   }
 }
 
-function touchBoard(name, kills, deaths, streak) {
+function touchBoard(name, kills, deaths, streak, lastCoins) {
   const clean = sanitizeName(name);
   if (!clean || contentFilter.isBlocked(clean)) return;
   const key = clean.toLowerCase();
-  const row = board.get(key) || { name: clean, kills: 0, deaths: 0, bestStreak: 0, updatedAt: 0 };
+  const row = board.get(key) || { name: clean, kills: 0, deaths: 0, bestStreak: 0, lastCoins: 0, updatedAt: 0 };
   row.name = clean;
   row.kills += kills;
   row.deaths += deaths;
   row.bestStreak = Math.max(row.bestStreak, streak || 0);
+  if (lastCoins !== undefined) {
+    const amount = Math.max(0, Math.floor(Number(lastCoins) || 0));
+    if (Number.isSafeInteger(amount)) row.lastCoins = amount;
+  }
   row.updatedAt = Date.now();
   board.set(key, row);
   if (!flushTimer) flushTimer = setTimeout(flushBoard, 1200);
 }
 
+function playerCoins(player) {
+  try {
+    return gold.balanceFor(player);
+  } catch (error) {
+    return 0;
+  }
+}
+
 function getLeaderboard(limit) {
+  const onlineByName = new Map();
+  for (const player of players.values()) {
+    if (player && player.name) onlineByName.set(player.name.toLowerCase(), player);
+  }
   return [...board.values()]
     .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || b.bestStreak - a.bestStreak)
     .slice(0, Math.max(1, Math.min(100, Number(limit) || 20)))
-    .map((row) => ({
-      name: row.name,
-      kills: row.kills,
-      deaths: row.deaths,
-      bestStreak: row.bestStreak,
-      updatedAt: row.updatedAt
-    }));
+    .map((row) => {
+      const onlinePlayer = onlineByName.get(row.name.toLowerCase());
+      return {
+        name: row.name,
+        kills: row.kills,
+        deaths: row.deaths,
+        bestStreak: row.bestStreak,
+        updatedAt: row.updatedAt,
+        online: !!onlinePlayer,
+        coins: onlinePlayer ? playerCoins(onlinePlayer) : Math.max(0, Math.floor(Number(row.lastCoins) || 0))
+      };
+    });
+}
+
+// 出生朝向：盐港统一面朝地图东方（罗盘 90°）；远征地 / Qingyun 保留原有朝向逻辑。
+function spawnYawFor(player) {
+  if (player && (player.mapId || player.inQingyun)) return Math.random() * Math.PI * 2;
+  return PORT_SPAWN_YAW;
+}
+
+function publicLocation(player, focus) {
+  if (focus.active) return { screen: 'focus', status: 'focus', map: mapKeyOf(player) };
+  if (player.screen === 'home') return { screen: 'home', status: 'home', map: null };
+  return { screen: 'map', status: 'map', map: mapKeyOf(player) };
 }
 
 function getOnlinePlayers() {
   const now = Date.now();
   return [...players.values()].map((player) => {
     const focus = publicFocusState(player, now);
+    const location = publicLocation(player, focus);
     return {
       id: player.id,
       name: player.name,
@@ -498,6 +535,10 @@ function getOnlinePlayers() {
       streak: player.streak,
       alive: player.alive,
       active: player.active,
+      screen: location.screen,
+      status: location.status,
+      map: location.map,
+      coins: playerCoins(player),
       focused: focus.active,
       focusUntil: focus.until,
       focusKind: focus.kind,
@@ -514,6 +555,7 @@ function rosterPayload() {
   return [...players.values()]
     .map((player) => {
       const focus = publicFocusState(player, now);
+      const location = publicLocation(player, focus);
       return {
         id: player.id,
         name: player.name,
@@ -524,6 +566,10 @@ function rosterPayload() {
         streak: player.streak,
         alive: player.alive,
         active: player.active,
+        screen: location.screen,
+        status: location.status,
+        map: location.map,
+        coins: playerCoins(player),
         focused: focus.active,
         focusUntil: focus.until,
         focusKind: focus.kind,
@@ -964,7 +1010,10 @@ const sharedPatrols = require('../services/sharedPatrols').createSharedPatrols({
     if(target.hp<=0)killPlayer(target,null,now,cause);
   },
   destroy(player, unit, floor, now) {
-    broadcast({type:'patrolDestroyed',map:unit.map,id:unit.id,pos:{x:unit.x,y:unit.y,z:unit.z}},
+    // 共享巡逻猎犬的死亡表现由服务端统一掷骰，保证同一次击杀所有客户端看到同一分支：
+    // true = 复刻盐港本地猎犬（后空翻 → 倒地 → 残骸）；false = 直接消失。
+    const flip = unit.kind === 'hound' && Math.random() < 0.5;
+    broadcast({type:'patrolDestroyed',map:unit.map,id:unit.id,pos:{x:unit.x,y:unit.y,z:unit.z},flip},
       other => other.joined && mapKeyOf(other) === unit.map);
     try { gold.awardMachineKill(player,unit.map,{x:unit.x,y:floor,z:unit.z},now); }
     catch (error) { console.error('[patrol] reward failed',error.message); }
@@ -1191,6 +1240,7 @@ function handleMessage(player, raw) {
         name: player.name,
         color: player.color,
         soldier: player.soldier,
+        coins: playerCoins(player),
         filtered,
         resume: resumed ? {
           map: player.mapId || (player.inQingyun ? 'qingyun' : 'port'),
@@ -1201,7 +1251,11 @@ function handleMessage(player, raw) {
         focus: focusPayload(player)
       });
       shop.publish(player);
+      /* 入场时补发一次后空翻概率：避免「页面早加载、改完之后才入场」的玩家拿着旧值 */
+      send(player.ws, { type: 'houndFlip', chance: houndTuning.read().chance });
       frontier.inventory(player);
+      /* 入场时立即补发一次金币，避免刷新后客户端在首次轮询前把 HUD 显示成 0。 */
+      try { gold.handle(player, { type: 'goldList' }, now); } catch (error) { /* joined 已带 coins，轮询仍会兜底 */ }
       if (!focused && !resumed) broadcast({ type: 'notice', kind: 'join', name: player.name, id: player.id });
       break;
     }
@@ -1514,7 +1568,7 @@ function handleMessage(player, raw) {
           !qingyun.atReturnGate(player.pos, .1)) break;
       player.inQingyun = false;
       player.pos = { ...qingyun.returnLanding };
-      player.yaw = Math.PI;
+      player.yaw = PORT_SPAWN_YAW;
       player.pitch = 0;
       player.moving = false;
       player.sprint = false;
@@ -1531,6 +1585,7 @@ function handleMessage(player, raw) {
       if (!player.inQingyun) break;
       player.inQingyun = false;
       player.pos = { ...player.spawns[0] };
+      player.yaw = PORT_SPAWN_YAW;
       player.shotCredits = 0;
       player.pendingShot = null;
       player.motionBudget = null;
@@ -1569,7 +1624,7 @@ function handleMessage(player, raw) {
       player.mapId = null;
       player.inQingyun = msg.type === 'mapReturn';
       player.pos = { ...(player.inQingyun ? map.hub : player.spawns[0]) };
-      player.yaw = player.inQingyun ? 0 : Math.PI;
+      player.yaw = player.inQingyun ? 0 : PORT_SPAWN_YAW;
       player.pitch = 0;
       player.moving = player.sprint = false;
       player.shotCredits = 0;
@@ -1687,6 +1742,7 @@ function handleMessage(player, raw) {
       if (Number.isFinite(Number(msg.yaw))) player.yaw = Number(msg.yaw);
       if (Number.isFinite(Number(msg.pitch))) player.pitch = clamp(Number(msg.pitch), -1.6, 1.6);
       if (typeof msg.active === 'boolean') player.active = msg.active;
+      if (msg.screen === 'home' || msg.screen === 'map') player.screen = msg.screen;
       if (typeof msg.weapon === 'string' && Object.hasOwn(arsenal, msg.weapon)) {
         if (player.frontier && frontierRules.canEquip(frontier.items(player), msg.weapon, player.mapId)) {
           player.weaponId = ['hound', 'drone'].includes(player.soldier) ? 'pac9' : msg.weapon;
@@ -1790,11 +1846,12 @@ function handleMessage(player, raw) {
           type: 'respawned',
           pos: player.pos,
           yaw: player.yaw,
-          protectedUntil: player.protectedUntil
+          protectedUntil: player.protectedUntil,
+          protectionMs: Math.max(0, player.protectedUntil - now)
         });
         break;
       }
-      if (now < player.respawnAt - 450) {
+      if (now < player.respawnAt) {
         send(player.ws, { type: 'respawnWait', ms: player.respawnAt - now });
         break;
       }
@@ -1805,14 +1862,16 @@ function handleMessage(player, raw) {
       player.pos = { x: spawn.x, y: spawn.y, z: spawn.z };
       player.motionBudget = null;
       playerAuthority.resetWeaponState(player);
-      player.protectedUntil = now + PROTECT_MS;
+      player.protectedUntil = now + RESPAWN_PROTECT_MS;
       player.bossGraceUntil = now + BOSS_SPAWN_GRACE_MS;
       player.recentPlayerDamage = null;
+      player.yaw = spawnYawFor(player);
       send(player.ws, {
         type: 'respawned',
         pos: spawn,
-        yaw: Math.random() * Math.PI * 2,
-        protectedUntil: player.protectedUntil
+        yaw: player.yaw,
+        protectedUntil: player.protectedUntil,
+        protectionMs: RESPAWN_PROTECT_MS
       });
       broadcast({ type: 'notice', kind: 'return', name: player.name, id: player.id });
       break;
@@ -1838,7 +1897,7 @@ function handleMessage(player, raw) {
       player.respawnAt = 0;
       player.pos = { x: spawn.x, y: spawn.y, z: spawn.z };
       player.motionBudget = null;
-      player.yaw = Math.random() * Math.PI * 2;
+      player.yaw = spawnYawFor(player);
       player.moving = false;
       player.sprint = false;
       player.protectedUntil = now + PROTECT_MS;
@@ -1924,7 +1983,7 @@ function addPlayer(ws, req, signOwner) {
     outfit: 'default',
     ws,
     pos: { x: 0, y: 0, z: 4 },
-    yaw: 0,
+    yaw: PORT_SPAWN_YAW,
     pitch: 0,
     prone: false,
     hp: MAX_HP,
@@ -1965,6 +2024,7 @@ function addPlayer(ws, req, signOwner) {
     boatSeat: null,
     inQingyun: false,
     mapId: null,
+    screen: 'home',
     lastBoatInviteAt: 0,
     friends: new Set(),
     followingId: null,
@@ -1996,6 +2056,7 @@ function sendWelcome(player) {
     name: player.name,
     color: player.color,
     soldier: player.soldier,
+    coins: playerCoins(player),
     respawnMs: RESPAWN_MS,
     online: players.size,
     voiceRelay: {
@@ -2011,6 +2072,9 @@ function sendWelcome(player) {
 
 function removePlayer(player, reason) {
   if (!players.has(player.id)) return;
+  /* 断线快照：把最后随身金币写进排行榜行，离线玩家也能显示「最后一次在线金币」 */
+  let lastCoins = 0;
+  try { lastCoins = gold.balanceFor(player); } catch (error) { lastCoins = 0; }
   endFollowing(player, 'offline', { silent: true });
   endFollowersOf(player, 'leaderLeft');
   for (const friendId of [...player.friends]) {
@@ -2057,8 +2121,8 @@ function removePlayer(player, reason) {
       }
     });
   }
-  if (player.kills || player.deaths) {
-    touchBoard(player.name, 0, 0, player.bestStreak);
+  if (player.kills || player.deaths || lastCoins) {
+    touchBoard(player.name, 0, 0, player.bestStreak, lastCoins);
   }
   broadcast({ type: 'notice', kind: 'leave', name: player.name, id: player.id, reason: reason || '' });
   if (!players.size) resetBoat(true);
@@ -2378,6 +2442,8 @@ function attachMultiplayer(server) {
 module.exports = {
   attachMultiplayer,
   broadcastShopPrices(prices) { broadcast({ type: 'shopPrices', prices }, player => player.joined); },
+  /* 机械猎犬后空翻概率热更新：只在后台改值那一刻推一条，已入场玩家收到即生效 */
+  broadcastHoundFlip(chance) { broadcast({ type: 'houndFlip', chance }, player => player.joined); },
   refreshRaceWallets() {gold.refreshWallets();},
   getLeaderboard,
   getOnlinePlayers,

@@ -12,18 +12,6 @@
   const keys = { grenade: 'G', drink: '4', medkit: '5', quiet: '6' };
   const itemKeys = { KeyG: 'grenade', Digit4: 'drink', Digit5: 'medkit', Digit6: 'quiet' };
 
-  // Hand targets in avatar space (+X right, -Z forward).
-  const actionFrames = {
-    reload: [[0,.28,1.15,-.48,0,0], [.15,.12,1.12,-.36,1,0],
-      [.32,.12,.89,-.25,1,.25], [.49,-.34,.83,-.16,1,.20],
-      [.69,.12,1.12,-.37,1,0], [.83,.12,1.31,-.32,.8,0], [1,.28,1.15,-.48,0,0]],
-    grenade: [[0,.34,1.09,-.22,.7,-.2], [.39,.34,1.59,.23,1,-.8],
-      [.5,.31,1.49,-.62,1,1.12], [.69,.22,1.05,-.63,1,1.4], [1,.26,1.12,-.36,0,0]],
-    drink: [[0,.34,1.06,-.18,.5,0], [.24,.11,1.51,-.23,1,.85],
-      [.45,.10,1.59,-.23,1,1.40], [.70,.10,1.59,-.23,1,1.40],
-      [.84,.31,1.28,-.19,1,.35], [1,.34,1.09,-.18,0,0]]
-  };
-
   window.installFrontier = function (game) {
     const { player, THREE, physics, scene, camera, input } = game;
     const coarsePointer = window.matchMedia('(pointer: coarse)');
@@ -147,9 +135,6 @@
     const actionProps = new Map();
     let selfView = null;
     const firstPosition = new THREE.Vector3(), firstRotation = new THREE.Quaternion();
-    const aimForward = new THREE.Vector3(), aimTarget = new THREE.Vector3();
-    const cameraTravel = new THREE.Vector3(), shoulder = new THREE.Vector3();
-    const up = new THREE.Vector3(0, 1, 0);
     let cameraChanged = false;
     let latestActions = '';
     let carriedOutfits = [];
@@ -164,16 +149,7 @@
     const mp = () => window.__mp;
     const canWearOutfit = session => !!session?.connected && !['hound', 'drone'].includes(session.soldier);
     const getModels = () => models ||= window.createFrontierModels(THREE);
-    let wheelNext = null;
-    let wheelCurrent = null;
-    let wheelBusy = false;
-    let wheelDelta = 0;
-    let wheelAt = 0;
-
-    function availableWeapons() {
-      return rules.availableWeapons(inventory, currentMap());
-    }
-
+    const availableWeapons = () => rules.availableWeapons(inventory, currentMap());
     function wheelBlocked() {
       const unit = window.__mp?.soldier;
       return game.game.state !== 'playing' || !player.alive || !player.enabled || !!insertion ||
@@ -183,62 +159,15 @@
         (input.ads && (game.weapon?.arsenalId || 'pac9') !== 'knife');
     }
 
-    async function pumpWheelSwitch() {
-      try {
-        while (wheelNext) {
-          const target = wheelNext;
-          wheelNext = null;
-          if (wheelBlocked()) break;
-          const entry = availableWeapons().find(([, id]) => id === target);
-          if (!entry) continue;
-          wheelCurrent = target;
-          const equipped = await equipWeapon(entry[0]);
-          wheelCurrent = null;
-          if (!equipped) break;
-        }
-      } catch (error) {
+    const weaponWheel = window.SaltPlayerCombat.weaponWheel({
+      availableWeapons, wheelBlocked, equipWeapon,
+      activeWeapon: () => game.weapon?.arsenalId || 'pac9',
+      nextWeapon: (active, direction) => rules.cycleWeapon(inventory, currentMap(), active, direction),
+      onError(error) {
         console.warn('[frontier] weapon wheel switch failed', error);
-        wheelNext = null;
         show(window.__SALT_I18N__.messages.arsenal.failed);
-      } finally {
-        wheelBusy = false;
-        wheelCurrent = null;
       }
-    }
-
-    function cycleWeapon(direction) {
-      if (!direction || wheelBlocked()) return false;
-      const list = availableWeapons();
-      if (list.length < 2) return false;
-      const active = wheelNext || wheelCurrent || game.weapon?.arsenalId || 'pac9';
-      const next = rules.cycleWeapon(inventory, currentMap(), active, direction);
-      if (!next) return false;
-      wheelNext = next[1];
-      if (!wheelBusy) {
-        wheelBusy = true;
-        void pumpWheelSwitch();
-      }
-      return true;
-    }
-
-    function onWheel(event) {
-      if (!event.deltaY || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
-      if (wheelBlocked() || availableWeapons().length < 2) {
-        wheelDelta = 0;
-        return;
-      }
-      event.preventDefault();
-      const now = clock();
-      if (now - wheelAt > 240 || (wheelDelta < 0 && event.deltaY > 0) ||
-          (wheelDelta > 0 && event.deltaY < 0)) wheelDelta = 0;
-      wheelAt = now;
-      wheelDelta += event.deltaY;
-      const threshold = event.deltaMode === 0 ? 48 : 1;
-      if (Math.abs(wheelDelta) < threshold) return;
-      const direction = wheelDelta > 0 ? 1 : -1;
-      wheelDelta = 0;
-      cycleWeapon(direction);
-    }
+    });
 
     function show(text) {
       note = text;
@@ -585,14 +514,7 @@
       if (reloadAction && now - reloadAction.start >= reloadAction.duration) reloadAction = null;
       const active = action || reloadAction;
       if (!active) return null;
-      const phase = (now - active.start) / active.duration;
-      const frames = actionFrames[active.kind];
-      const end = frames.findIndex(frame => frame[0] > phase);
-      const from = frames[end - 1], to = frames[end];
-      const t = THREE.MathUtils.smoothstep(phase, from[0], to[0]);
-      const mix = index => THREE.MathUtils.lerp(from[index], to[index], t);
-      return { kind: active.kind, phase, position: heldPosition.set(mix(1), mix(2), mix(3)),
-        blend: mix(4), tilt: mix(5) };
+      return window.SaltPlayerCombat.actionPose(THREE, active.kind, (now - active.start) / active.duration, heldPosition);
     }
     function heldProp(kind) {
       if (!actionProps.has(kind)) {
@@ -792,21 +714,8 @@
       updateHud(currentMap() === rules.map);
     }
 
-    // Long aim traces are only for camera convergence. The short wall trace still runs each frame.
-    const lastAimOrigin = new THREE.Vector3();
-    const lastAimDirection = new THREE.Vector3();
-    let aimMap;
-    let aimAge = Infinity;
-    let aimDistance = 160;
-    let closeToWall = false;
-    let cameraDistance = Infinity;
-
-    function resetViewTrace() {
-      aimAge = Infinity;
-      closeToWall = false;
-      cameraDistance = Infinity;
-    }
-
+    const shoulderView = window.SaltPlayerCombat.shoulderView(THREE, physics);
+    const resetViewTrace = () => shoulderView.reset();
     const presentedPosition = new THREE.Vector3();
     const presentedRotation = new THREE.Quaternion();
     let hasPresentedView = false;
@@ -859,38 +768,8 @@
 
       firstPosition.copy(camera.position);
       firstRotation.copy(camera.quaternion);
-      aimForward.set(0, 0, -1).applyQuaternion(firstRotation);
       const map = currentMap();
-      if (map !== aimMap) {
-        aimMap = map;
-        resetViewTrace();
-      }
-      aimAge += dt;
-      if (aimAge >= .05 || firstPosition.distanceToSquared(lastAimOrigin) > .01 ||
-          aimForward.dot(lastAimDirection) < .99995) {
-        aimAge = 0;
-        lastAimOrigin.copy(firstPosition);
-        lastAimDirection.copy(aimForward);
-        const target = physics.raycast(firstPosition, aimForward, 160);
-        aimDistance = target ? Math.max(.25, target.dist) : 160;
-      }
-      aimTarget.copy(firstPosition).addScaledVector(aimForward, aimDistance);
-      shoulder.crossVectors(aimForward, up).normalize();
-      cameraTravel.copy(aimForward).multiplyScalar(-3.65).addScaledVector(shoulder, .66).addScaledVector(up, .65);
-      const travel = cameraTravel.length();
-      cameraTravel.divideScalar(travel);
-      const obstacle = physics.raycast(firstPosition, cameraTravel, travel + .20);
-      const distance = obstacle ? Math.min(travel, Math.max(0, obstacle.dist - .32)) : travel;
-      // Pull in immediately at a wall. Recover gradually with a wider exit threshold
-      // so small pose or terrain changes do not rapidly switch between viewpoints.
-      if (distance < (closeToWall ? 1.3 : 1.05)) {
-        closeToWall = true;
-        cameraDistance = 1.05;
-        return false;
-      }
-      closeToWall = false;
-      cameraDistance = distance < cameraDistance ? distance :
-        THREE.MathUtils.lerp(cameraDistance, distance, 1 - Math.exp(-dt * 16));
+      if (!shoulderView.prepare(firstPosition, firstRotation, dt, map)) return false;
 
       const pose = actionPose();
       const showProp = pose && (pose.kind === 'drink' || (pose.kind === 'grenade' && pose.phase < .5) ||
@@ -902,8 +781,7 @@
       selfView.model.visible = true;
       cameraChanged = true;
       thirdPersonFrame = true;
-      camera.position.copy(firstPosition).addScaledVector(cameraTravel, cameraDistance);
-      camera.lookAt(aimTarget);
+      shoulderView.apply(camera, firstPosition);
       return true;
     }
 
@@ -990,7 +868,7 @@
       event.preventDefault();
       if (event.code === 'KeyO') event.stopImmediatePropagation();
     }, { capture: true });
-    game.renderer?.domElement?.addEventListener('wheel', onWheel, { passive: false });
+    game.renderer?.domElement?.addEventListener('wheel', weaponWheel.onWheel, { passive: false });
     window.addEventListener('saltline:shop', refreshCarriedOutfits);
     if (window.SaltShop) refreshCarriedOutfits();
     return game.frontier = {
@@ -1004,7 +882,7 @@
       get equipmentFlags() { return rules.equipmentFlags(inventory); },
       get availableWeaponIds() { return availableWeapons().map(([, id]) => id); },
       canEquipWeapon(id) { return rules.canEquip(inventory, id, currentMap()); },
-      switchWeapon(direction) { return cycleWeapon(direction); },
+      switchWeapon(direction) { return weaponWheel.cycleWeapon(direction); },
       get canFire() { return this.canEquipWeapon(game.weapon.arsenalId || 'pac9'); },
       update(dt, insertionDt = dt) {
         const inDustfall = currentMap() === rules.map;

@@ -34,6 +34,7 @@
     'frontier-rules.js',
     'frontier-models.js',
     'frontier-armor.js',
+    'player-combat-controls.js',
     'frontier.js',
     'sedan-rules.js',
     'sedan-model.js',
@@ -44,6 +45,7 @@
     'shop-catalog.js',
     'shop.js',
     'gold.js',
+    'graphics-boot.js',
     'player-input.bundle.js',
     'game.bundle.js',
     'flight-collision.js',
@@ -52,12 +54,14 @@
     'focus-mode.js',
     'death-replay-3d.js',
     'multiplayer.js',
+    'hound-flip-tuning.js',
     'kill-streak.js',
     'community.js',
     'replay.js',
     'comms.js',
     'controls.js',
-    'manual-rotate.js'
+    'manual-rotate.js',
+    'client-options.js'
   ];
   const MODULE_SCRIPTS = [
     'hunter-avatar.js',

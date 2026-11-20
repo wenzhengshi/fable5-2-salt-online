@@ -265,16 +265,28 @@ progress::-webkit-progress-bar{background:#52616a}progress::-webkit-progress-val
 <script src="/js/classic-avatar.js?v=<%= assetVersion %>"></script>
 <script src="/race/session.js?v=<%= assetVersion %>"></script>
 <script src="/js/player-input.bundle.js?v=<%= assetVersion %>"></script>
+<script src="/js/flight-collision.js?v=<%= assetVersion %>"></script>
+<script src="/js/qingyun-zone.js?v=<%= assetVersion %>"></script>
+<script src="/js/expedition-zones.js?v=<%= assetVersion %>"></script>
+<script src="/js/arsenal-rules.js?v=<%= assetVersion %>"></script>
+<script src="/js/frontier-rules.js?v=<%= assetVersion %>"></script>
+<script src="/js/player-combat-controls.js?v=<%= assetVersion %>"></script>
+<script src="/race/airspace.js?v=<%= assetVersion %>"></script>
 <div id="race-online" role="status" hidden></div>
 <div id="race-boost-status" hidden></div>
 <div id="race-player-ui" hidden>
   <div id="plaza-crosshair" aria-hidden="true"></div>
   <output id="plaza-ammo" aria-label="<%= t('raceResult.plazaAmmo') %>" data-reloading="<%= t('raceResult.plazaReloading') %>"></output>
+  <div class="plaza-field-actions">
+    <button id="plaza-view" type="button" aria-keyshortcuts="V"><%= t('frontier.switchThird') %></button>
+    <button id="plaza-switch-weapon" type="button" hidden><%= t('raceResult.plazaSwitchWeapon') %></button>
+  </div>
+  <output id="plaza-flight-speed" aria-label="<%= t('raceResult.droneSpeed') %>" hidden></output>
   <p class="race-walk-hint"><%= t('raceResult.portalHint') %></p>
   <p class="race-touch-hint"><%= t('raceResult.touchPortalHint') %></p>
 </div>
 <div id="app-toast" role="status" hidden></div>
-<script>const replayLocales={"zh-CN":{"replay":{"launch":"本地回放","launchHint":"打开本地录屏与截图，F9 开始或停止录屏","recording":"正在录制","stop":"停止保存","start":"开始录制","kicker":"SALTLINE / LOCAL REPLAY","title":"录屏与截图","intro":"录制战场画面与游戏音效，或点相机截取当前画面。","wechatTitle":"微信内置浏览器无法下载回放","wechatWarning":"请先点击右上角「···」选择「在浏览器打开」，再开始录制。微信内置浏览器不允许保存视频文件，录制完成后将无法下载。","wechatConfirm":"当前为微信内置浏览器，录制完成后将无法下载回放。\n\n请点击右上角「···」，选择「在浏览器打开」后再录制。\n\n仍要现在录制吗？","wechatContinue":"仍要录制","wechatCancel":"先不录制","wechatStatus":"微信内无法下载，请改用系统浏览器录制","wechatDownloadBlocked":"微信内置浏览器无法下载回放，请点击右上角「···」选择「在浏览器打开」","library":"本地记录","empty":"暂无本地记录。点相机截图，或按 F9 开始录制。","selectHint":"选择录屏或截图","localOnly":"仅保存在当前设备的浏览器","durationLimit":"单段最长 {minutes} 分钟","storage":"本地已用 {used} / 可用 {total}","memoryOnly":"浏览器存储不可用，记录仅在当前页面保留","ready":"录制画面与游戏音效，优先输出 MP4","recordingHint":"正在录制画面与游戏音效，点击停止后保存","unsupported":"当前浏览器不支持画布录制，请升级浏览器","fallbackFormat":"当前浏览器不支持原生 MP4，将保存为 WebM","download":"下载文件","delete":"删除","confirmDelete":"确定删除这段本地回放吗？","deleteTitle":"删除本地回放","deleteMessage":"{name}\n\n将从当前设备永久删除，此操作无法撤销。","deleteConfirm":"确认删除","cancel":"取消","deleted":"本地回放已删除","clipDetails":"{duration} · {size} · {date}","clipDetailsAudio":"{duration} · {size} · 含游戏音效 · {date}","unknownUnit":"综合战场","savedMp4":"MP4 回放已保存到本机","savedWebm":"当前浏览器已保存 WebM 回放","savedMp4Wechat":"MP4 回放仅保存在微信内，无法下载；请改用系统浏览器重新录制","savedWebmWechat":"WebM 回放仅保存在微信内，无法下载；请改用系统浏览器重新录制","startFailed":"录制启动失败，请检查浏览器权限或存储空间","emptyRecording":"录制内容为空，未保存","downloaded":"回放文件已开始下载","close":"关闭","photoHint":"打卡截图（F8）","photoPreview":"当前选中的战场截图","photoSaved":"已保存打卡截图，可在录屏与截图中下载","photoMemoryOnly":"截图已完成，浏览器存储不可用，请在当前页面下载","photoFailed":"截图失败，请稍后重试","photoDownloaded":"PNG 截图已开始下载","photoDeleteTitle":"删除打卡截图","photoDeleted":"打卡截图已删除","photoDetails":"PNG · {width} × {height} · {size} · {date}","photoWechatSave":"请长按截图预览保存图片。也可以在系统浏览器中截图并下载。"},"modal":{"kicker":"SALTLINE / 系统提示","notice":"提示","confirm":"确认","cancel":"取消","close":"关闭"}},"en-US":{"replay":{"launch":"Local replay","launchHint":"Open local recordings and screenshots. F9 starts or stops recording.","recording":"Recording","stop":"Stop & save","start":"Start recording","kicker":"SALTLINE / LOCAL REPLAY","title":"Recordings & screenshots","intro":"Record the battlefield with game audio or tap the camera to capture the current view.","wechatTitle":"Replays cannot be downloaded in WeChat","wechatWarning":"Open this page in your system browser first: tap ··· in the top-right corner and choose Open in browser. WeChat's built-in browser cannot save video files, so recorded replays cannot be downloaded.","wechatConfirm":"You are using WeChat's built-in browser. Replays recorded here cannot be downloaded.\n\nTap ··· in the top-right corner and choose Open in browser before recording.\n\nRecord anyway?","wechatContinue":"Record anyway","wechatCancel":"Not now","wechatStatus":"Downloads are blocked in WeChat. Record in your system browser.","wechatDownloadBlocked":"WeChat cannot download replays. Tap ··· and choose Open in browser.","library":"Local captures","empty":"No local captures yet. Tap the camera for a screenshot, or press F9 to start recording.","selectHint":"Select a recording or screenshot","localOnly":"Stored in this browser on this device","durationLimit":"Up to {minutes} minutes per clip","storage":"{used} used / {total} available locally","memoryOnly":"Browser storage is unavailable. Captures will last only for the current page.","ready":"Record the view with game audio, preferring MP4","recordingHint":"Recording the view and game audio. Stop to save.","unsupported":"Canvas recording is unavailable. Please update your browser.","fallbackFormat":"Native MP4 is unavailable. This browser will save WebM.","download":"Download","delete":"Delete","confirmDelete":"Delete this local replay?","deleteTitle":"Delete local replay","deleteMessage":"Permanently delete {name} from this device?\n\nThis cannot be undone.","deleteConfirm":"Delete","cancel":"Cancel","deleted":"Local replay deleted","clipDetails":"{duration} · {size} · {date}","clipDetailsAudio":"{duration} · {size} · game audio · {date}","unknownUnit":"Battlefield","savedMp4":"MP4 replay saved on this device","savedWebm":"WebM replay saved on this browser","savedMp4Wechat":"The MP4 replay is stored only inside WeChat and cannot be downloaded. Re-record in your system browser.","savedWebmWechat":"The WebM replay is stored only inside WeChat and cannot be downloaded. Re-record in your system browser.","startFailed":"Recording could not start. Check browser permissions or storage space.","emptyRecording":"The recording was empty and was not saved.","downloaded":"Replay download started","close":"Close","photoHint":"Take a screenshot (F8)","photoPreview":"Selected battlefield screenshot","photoSaved":"Screenshot saved. Open Recordings & screenshots to download it.","photoMemoryOnly":"Screenshot captured. Storage is unavailable; download it before leaving this page.","photoFailed":"Could not take the screenshot. Try again shortly.","photoDownloaded":"PNG screenshot download started","photoDeleteTitle":"Delete screenshot","photoDeleted":"Screenshot deleted","photoDetails":"PNG · {width} × {height} · {size} · {date}","photoWechatSave":"Touch and hold the preview to save the image, or capture and download it in your system browser."},"modal":{"kicker":"SALTLINE / SYSTEM NOTICE","notice":"Notice","confirm":"Confirm","cancel":"Cancel","close":"Close"}}}; const replayLang=document.cookie.includes('lang=en-US')?'en-US':'zh-CN'; window.__SALT_I18N__={lang:replayLang,messages:replayLocales[replayLang]};</script>
+<script>const replayLocales={"zh-CN":{"replay":{"launch":"本地回放","launchHint":"打开本地录屏与截图，F9 开始或停止录屏","recording":"正在录制","stop":"停止保存","start":"开始录制","kicker":"SALTLINE / LOCAL REPLAY","title":"录屏与截图","intro":"录制战场画面与游戏音效，或点相机截取当前画面。","wechatTitle":"微信内置浏览器无法下载回放","wechatWarning":"请先点击右上角「···」选择「在浏览器打开」，再开始录制。微信内置浏览器不允许保存视频文件，录制完成后将无法下载。","wechatConfirm":"当前为微信内置浏览器，录制完成后将无法下载回放。\n\n请点击右上角「···」，选择「在浏览器打开」后再录制。\n\n仍要现在录制吗？","wechatContinue":"仍要录制","wechatCancel":"先不录制","wechatStatus":"微信内无法下载，请改用系统浏览器录制","wechatDownloadBlocked":"微信内置浏览器无法下载回放，请点击右上角「···」选择「在浏览器打开」","library":"本地记录","empty":"暂无本地记录。点相机截图，或按 F9 开始录制。","selectHint":"选择录屏或截图","localOnly":"仅保存在当前设备的浏览器","durationLimit":"单段最长 {minutes} 分钟","storage":"本地已用 {used} / 可用 {total}","memoryOnly":"浏览器存储不可用，记录仅在当前页面保留","ready":"录制画面与游戏音效，优先输出 MP4","recordingHint":"正在录制画面与游戏音效，点击停止后保存","unsupported":"当前浏览器不支持画布录制，请升级浏览器","fallbackFormat":"当前浏览器不支持原生 MP4，将保存为 WebM","download":"下载文件","delete":"删除","confirmDelete":"确定删除这段本地回放吗？","deleteTitle":"删除本地回放","deleteMessage":"{name}\n\n将从当前设备永久删除，此操作无法撤销。","deleteConfirm":"确认删除","cancel":"取消","deleted":"本地回放已删除","clipDetails":"{duration} · {size} · {date}","clipDetailsAudio":"{duration} · {size} · 含游戏音效 · {date}","unknownUnit":"综合战场","savedMp4":"MP4 回放已保存到本机","savedWebm":"当前浏览器已保存 WebM 回放","savedMp4Wechat":"MP4 回放仅保存在微信内，无法下载；请改用系统浏览器重新录制","savedWebmWechat":"WebM 回放仅保存在微信内，无法下载；请改用系统浏览器重新录制","startFailed":"录制启动失败，请检查浏览器权限或存储空间","emptyRecording":"录制内容为空，未保存","downloaded":"回放文件已开始下载","close":"关闭","photoHint":"打卡截图（F8）","photoPreview":"当前选中的战场截图","photoSaved":"已保存打卡截图，可在录屏与截图中下载","photoMemoryOnly":"截图已完成，浏览器存储不可用，请在当前页面下载","photoFailed":"截图失败，请稍后重试","photoDownloaded":"PNG 截图已开始下载","photoDeleteTitle":"删除打卡截图","photoDeleted":"打卡截图已删除","photoDetails":"PNG · {width} × {height} · {size} · {date}","photoWechatSave":"请长按截图预览保存图片。也可以在系统浏览器中截图并下载。"},"modal":{"kicker":"SALTLINE / 系统提示","notice":"提示","confirm":"确认","cancel":"取消","close":"关闭"}},"en-US":{"replay":{"launch":"Local replay","launchHint":"Open local recordings and screenshots. F9 starts or stops recording.","recording":"Recording","stop":"Stop & save","start":"Start recording","kicker":"SALTLINE / LOCAL REPLAY","title":"Recordings & screenshots","intro":"Record the battlefield with game audio or tap the camera to capture the current view.","wechatTitle":"Replays cannot be downloaded in WeChat","wechatWarning":"Open this page in your system browser first: tap ··· in the top-right corner and choose Open in browser. WeChat's built-in browser cannot save video files, so recorded replays cannot be downloaded.","wechatConfirm":"You are using WeChat's built-in browser. Replays recorded here cannot be downloaded.\n\nTap ··· in the top-right corner and choose Open in browser before recording.\n\nRecord anyway?","wechatContinue":"Record anyway","wechatCancel":"Not now","wechatStatus":"Downloads are blocked in WeChat. Record in your system browser.","wechatDownloadBlocked":"WeChat cannot download replays. Tap ··· and choose Open in browser.","library":"Local captures","empty":"No local captures yet. Tap the camera for a screenshot, or press F9 to start recording.","selectHint":"Select a recording or screenshot","localOnly":"Stored in this browser on this device","durationLimit":"Up to {minutes} minutes per clip","storage":"{used} used / {total} available locally","memoryOnly":"Browser storage is unavailable. Captures will last only for the current page.","ready":"Record the view with game audio, preferring MP4","recordingHint":"Recording the view and game audio. Stop to save.","unsupported":"Canvas recording is unavailable. Please update your browser.","fallbackFormat":"Native MP4 is unavailable. This browser will save WebM.","download":"Download","delete":"Delete","confirmDelete":"Delete this local replay?","deleteTitle":"Delete local replay","deleteMessage":"Permanently delete {name} from this device?\n\nThis cannot be undone.","deleteConfirm":"Delete","cancel":"Cancel","deleted":"Local replay deleted","clipDetails":"{duration} · {size} · {date}","clipDetailsAudio":"{duration} · {size} · game audio · {date}","unknownUnit":"Battlefield","savedMp4":"MP4 replay saved on this device","savedWebm":"WebM replay saved on this browser","savedMp4Wechat":"The MP4 replay is stored only inside WeChat and cannot be downloaded. Re-record in your system browser.","savedWebmWechat":"The WebM replay is stored only inside WeChat and cannot be downloaded. Re-record in your system browser.","startFailed":"Recording could not start. Check browser permissions or storage space.","emptyRecording":"The recording was empty and was not saved.","downloaded":"Replay download started","close":"Close","photoHint":"Take a screenshot (F8)","photoPreview":"Selected battlefield screenshot","photoSaved":"Screenshot saved. Open Recordings & screenshots to download it.","photoMemoryOnly":"Screenshot captured. Storage is unavailable; download it before leaving this page.","photoFailed":"Could not take the screenshot. Try again shortly.","photoDownloaded":"PNG screenshot download started","photoDeleteTitle":"Delete screenshot","photoDeleted":"Screenshot deleted","photoDetails":"PNG · {width} × {height} · {size} · {date}","photoWechatSave":"Touch and hold the preview to save the image, or capture and download it in your system browser."},"modal":{"kicker":"SALTLINE / SYSTEM NOTICE","notice":"Notice","confirm":"Confirm","cancel":"Cancel","close":"Close"}}}; Object.assign(window.__SALT_I18N__.messages, replayLocales[window.__SALT_I18N__.lang]);</script>
 <script src="/js/modal.js?v=race-media1"></script>
 <script src="/js/audio-tap.js?v=race-media1"></script>
 <script src="/js/replay.js?v=race-media1"></script>
@@ -6724,12 +6736,6 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
       glide(at+.018,.20,517,493,.07+strength*.05,'sine');
     }
   }
-  function shot(volume=1) {
-    if(ctx?.state!=='running'||!audible||muted||volume<=0)return;
-    const at=ctx.currentTime;
-    burst({at,length:.105,volume:.21*volume,type:'highpass',frequency:690,q:.6});
-    glide(at,.095,154,59,.16*volume,'triangle');
-  }
   function setAudible(value) {
     if(audible===value)return;
     audible=value;
@@ -6748,7 +6754,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     engineTargets.delete(engine.level.gain);
     sweep(engine.level.gain,0,.07);
   }
-  return {get ctx(){return ctx;},start,update,setHorn,impact,setAudible,setMuted,stop,shot,prepare:unlock,resume(){if(ctx)unlock();}};
+  return {get ctx(){return ctx;},start,update,setHorn,impact,setAudible,setMuted,stop,prepare:unlock,resume(){if(ctx)unlock();}};
 }
 
 (async () => {
@@ -7116,6 +7122,10 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     for(const box of P.nearby((from+to)/2,(to-from)/2).filter(box=>box.z>=from&&box.z<to)) {
       obstacles.push({x:box.x,y:0,z:box.z,yaw:box.finish%2?0:Math.PI,kind:box.kind,color:paints[box.finish]});
     }
+    group.userData.sideBoxes=sideBoxes.map(({x,y,z,kind})=>{
+      const {width,length,height}=PortContainers.specs[kind];
+      return plazaBox(x,z,width,length,height,y);
+    });
     batch(group,floorGeo,roadLine,lines);
     paintBoosts(group,from,to);
     batchContainers(group,sideBoxes);
@@ -7311,6 +7321,9 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
       Object.assign(request,view);
       if(podiumPose)view.model.rotation.y=Math.PI;
       root.add(view.model);
+      request.body=view.model;
+      request.viewWeaponParts=view.weaponParts;
+      request.machine=view.kind==='hound'||view.kind==='drone';
     }).catch(error=>console.warn('[race] unit setup failed',error));
   }
   const plazaPlayers=new Map();
@@ -7343,10 +7356,12 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
       player.root.rotation.y=peer.heading;
       if(peer.shot>player.shot){
         player.shot=peer.shot;
-        const distance=camera.position.distanceTo(player.root.position);
-        drawPlazaShot(player.root.position,peer.heading,peer.pitch,peer.unit,Math.max(0,1-distance/55)*.7);
+        if(camera.position.distanceToSquared(player.root.position)<90**2)
+          plazaCombat?.remoteShot(player.root.position,peer.heading,peer.pitch,peer.unit,peer.weapon);
       }
-      unitViews.get(player.root)?.rig?.update(dt,{moving:peer.moving,sprint:peer.sprinting});
+      const view=unitViews.get(player.root);
+      if(view?.model)window.SaltPlayerCombat.updateAvatarWeapon(view,peer.weapon||'pac9',true);
+      view?.rig?.update(dt,{moving:peer.moving,sprint:peer.sprinting});
     }
   }
   const champions=podiumSeats.map(({x,h,color,ink},rank)=>{
@@ -7379,68 +7394,81 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   walker.name='race-local-driver';
   walker.visible=false;
   scene.add(walker);
-  let plazaInput;
-  let plazaYaw=Math.PI, plazaPitch=0, plazaThirdPerson=false;
+  let plazaInput, plazaCombat, plazaSound;
+  let plazaYaw=Math.PI, plazaPitch=0, plazaThirdPerson=false, plazaRenderingThird=false;
   let verticalSpeed=0, grounded=true;
   let standingOn=-1,walked=false;
-  const plazaHeading=new T.Vector3();
-  const plazaMagazine=30;
-  let plazaRounds=plazaMagazine, plazaReloadAt=0, plazaShotAt=0, plazaShot=0, plazaKick=0;
-  const plazaShotEffects=[];
-  const sparkGeometry=new T.SphereGeometry(.095,8,6);
-  const sparkMaterial=new T.MeshBasicMaterial({color:0xffd58a});
-  const tracerMaterial=new T.LineBasicMaterial({color:0xffd98d,transparent:true,opacity:.76,depthWrite:false});
-
-  function drawPlazaShot(position,yaw,pitch,unit,volume){
-    const height=unit==='hound' ? .62 : unit==='drone' ? .86 : 1.37;
-    const spread=Math.cos(pitch);
-    const direction=new T.Vector3(-Math.sin(yaw)*spread,Math.sin(pitch),-Math.cos(yaw)*spread);
-    const origin=position.clone().addScaledVector(direction,.85);
-    origin.x+=Math.cos(yaw)*.23;
-    origin.z-=Math.sin(yaw)*.23;
-    origin.y+=height;
-    const distance=direction.y<-.01?Math.min(36,origin.y/-direction.y):36;
-    const end=origin.clone().addScaledVector(direction,distance);
-    const flash=new T.Mesh(sparkGeometry,sparkMaterial);
-    flash.name='race-plaza-muzzle';
-    flash.position.copy(origin);
-    const geometry=new T.BufferGeometry().setFromPoints([origin,end]);
-    const tracer=new T.Line(geometry,tracerMaterial);
-    tracer.name='race-plaza-tracer';
-    scene.add(flash,tracer);
-    plazaShotEffects.push({flash,tracer,expires:performance.now()+95});
-    audio.shot(volume);
+  let plazaShot=0, flightSpeed=0, reloadAge=0, reloadDuration=0;
+  let plazaSuspended=false, recoilPitch=0, recoilYaw=0;
+  const plazaPhysics=createPortRay();
+  const shoulderView=window.SaltPlayerCombat.shoulderView(T,plazaPhysics);
+  const unitTouch={descend:false};
+  const reloadHand=new T.Vector3();
+  const rules=window.SaltFrontierRules;
+  const airspace=window.SaltRaceAirspace;
+  const defaultInventory=rules.normalize();
+  const activeInventory=()=>raceSession.plazaInventory||defaultInventory;
+  const drivingDrone=()=>raceSession.unit==='drone';
+  const machineUnit=()=>drivingDrone()||raceSession.unit==='hound';
+  const plazaPlayer={
+    pos:walker.position, vel:new T.Vector3(), eye:new T.Vector3(), forward:new T.Vector3(),
+    alive:true, onGround:true, speed:0, sprinting:false, ads:0,
+    addRecoil(pitch,yaw){recoilPitch+=pitch;recoilYaw+=yaw;}
+  };
+  const podiumBoxes=podiumSeats.map(({x,h})=>plazaBox(x,P.length+13,2.18,1.55,h));
+  function plazaBox(x,z,w,d,h,y=0,surface='metal'){
+    return {min:{x:x-w/2,y,z:z-d/2},max:{x:x+w/2,y:y+h,z:z+d/2},surface};
   }
-
-  function updatePlazaFire(suspended,dt){
-    const now=performance.now();
-    plazaKick*=Math.exp(-dt*18);
-    if(plazaReloadAt&&now>=plazaReloadAt){
-      plazaReloadAt=0;
-      plazaRounds=plazaMagazine;
+  function flightBoxes(position,reach=5){
+    return P.nearby(position.z,reach).map(({x,z,w,d,h})=>plazaBox(x,z,w,d,h)).concat(podiumBoxes);
+  }
+  function startPlazaCombat(inputUi){
+    const game=Object.assign(window.__G,{renderer,scene,camera,player:plazaPlayer,input:plazaInput,physics:plazaPhysics});
+    import('/race/plaza-combat.js?v=<%= assetVersion %>').then(module=>module.install(game,{
+      version:'<%= assetVersion %>',
+      running:()=>finished&&!plazaSuspended,
+      inventory:activeInventory,
+      onShot(){plazaShot++;},
+      onAudio(sound){plazaSound=sound;},
+      isMachine:machineUnit,
+      getMuted:()=>muted
+    })).then(combat=>{
+      plazaCombat=combat;
+      game.events.on('weapon:reload',event=>{
+        if(event.phase==='start'){reloadAge=0;reloadDuration=event.duration;}
+        if(event.phase==='done')reloadDuration=0;
+      });
+    }).catch(error=>console.error('[race] battlefield runtime failed',error));
+    $('plaza-view').onclick=togglePlazaView;
+    $('plaza-switch-weapon').onclick=()=>plazaCombat?.switchWeapon(1);
+    inputUi.addEventListener('pointerdown',()=>plazaSound?.resume());
+  }
+  function togglePlazaView(){
+    plazaThirdPerson=!plazaThirdPerson;
+    shoulderView.reset();
+    $('plaza-view').textContent=window.__SALT_I18N__.messages.frontier[
+      plazaThirdPerson?'switchFirst':'switchThird'];
+  }
+  function updatePlazaWeapon(dt){
+    const game=window.__G;
+    if(!game.weapon||!plazaCombat)return;
+    game.weapon.root.visible=true;
+    const weaponId=game.weapon.arsenalId;
+    if(!plazaSuspended){
+      // The shared gun animation uses small physics steps, even when the track renders slowly.
+      const steps=Math.ceil(dt/.05);
+      for(let step=0;step<steps;step++)game.weapon.update(dt/steps);
     }
-    if(!suspended&&!plazaReloadAt){
-      if(plazaRounds<plazaMagazine&&(plazaInput.pressed('reload')||(!plazaRounds&&plazaInput.fire))){
-        plazaReloadAt=now+1450;
-      }else if(plazaInput.fire&&now>=plazaShotAt&&plazaRounds){
-        plazaShotAt=now+130;
-        plazaRounds--;
-        plazaShot++;
-        plazaKick=.026;
-        drawPlazaShot(walker.position,plazaYaw,plazaPitch,raceSession.unit,1);
-      }
-    }
+    const profile=window.SaltArsenalRules[weaponId];
     const ammo=$('plaza-ammo');
-    const label=plazaReloadAt?ammo.dataset.reloading:plazaRounds+' / '+plazaMagazine;
-    if(ammo.textContent!==label)ammo.textContent=label;
-  }
-
-  function expirePlazaEffects(now){
-    while(plazaShotEffects[0]?.expires<=now){
-      const {flash,tracer}=plazaShotEffects.shift();
-      scene.remove(flash,tracer);
-      tracer.geometry.dispose();
-    }
+    const label=profile.mag
+      ? (game.weapon.state==='reloading'?ammo.dataset.reloading:game.weapon.ammo+' / '+game.weapon.reserve)
+      : '';
+    const display=profile.name+(label?' · '+label:'');
+    if(ammo.textContent!==display)ammo.textContent=display;
+    if(game.weapon.state==='reloading'&&!plazaSuspended)reloadAge+=dt;
+    else reloadDuration=0;
+    $('plaza-switch-weapon').hidden=machineUnit()||rules.availableWeapons(activeInventory(),'race').length<2;
   }
 
   function enterPlaza(){
@@ -7462,6 +7490,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     camera.updateProjectionMatrix();
     walker.rotation.y=plazaYaw;
     walker.visible=true;
+    startPlazaCombat(inputUi);
     document.body.classList.add('race-complete');
     inputUi.hidden=false;
     const units=$('race-plaza-units'), unitPicker=$('race-unit-dialog');
@@ -7469,14 +7498,25 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     units.addEventListener('click',openPlazaUnits);
     for(const button of unitPicker.querySelectorAll('[data-plaza-unit]')){
       button.addEventListener('click',()=>{
+        const wasDrone=drivingDrone();
         raceSession.selectUnit(button.dataset.plazaUnit);
+        if(wasDrone&&!drivingDrone()){
+          for(const box of flightBoxes(walker.position)){
+            const pos=walker.position;
+            if(pos.x>box.min.x-.38&&pos.x<box.max.x+.38&&pos.z>box.min.z-.38&&pos.z<box.max.z+.38)
+              pos.z=box.min.z-.39;
+          }
+          walker.position.y=0;
+          verticalSpeed=0;
+          grounded=true;
+        }
+        plazaPlayer.vel.set(0,0,0);
+        shoulderView.reset();
         showUnit(walker,raceSession.unit,plazaOutfit);
         unitPicker.close();
       });
     }
-    renderer.domElement.addEventListener('pointerdown',audio.prepare);
-    inputUi.addEventListener('pointerdown',audio.prepare);
-    window.addEventListener('keydown',event=>{if(event.code==='Enter')audio.prepare();});
+    renderer.domElement.addEventListener('pointerdown',()=>plazaSound?.resume());
     syncAudio();
     plazaInput.setGameplay(true);
     raceSession.joinPlaza(plazaOutfit);
@@ -7493,18 +7533,20 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     unitPicker.showModal();
   }
 
-  function plazaCamera(){
+  function plazaCamera(dt=0,weaponDt=dt){
     const pos=walker.position;
+    const eye={hound:.68,drone:.9}[raceSession.unit]??1.68;
+    plazaPlayer.eye.set(pos.x,pos.y+eye,pos.z);
+    camera.position.copy(plazaPlayer.eye);
+    camera.rotation.set(clamp(plazaPitch+recoilPitch,-1.5,1.5),plazaYaw+recoilYaw,0,'YXZ');
+    camera.getWorldDirection(plazaPlayer.forward);
+    if(!dt)return;
+    updatePlazaWeapon(weaponDt);
     const view=unitViews.get(walker);
-    if(view?.model)view.model.visible=plazaThirdPerson;
-    const eye = { hound: .8, drone: 1.05 }[raceSession.unit] ?? 1.68;
-    camera.position.set(pos.x,pos.y+eye,pos.z);
-    camera.rotation.set(clamp(plazaPitch+plazaKick,-1.5,1.5),plazaYaw,0,'YXZ');
-    if(plazaThirdPerson){
-      camera.getWorldDirection(plazaHeading);
-      camera.position.addScaledVector(plazaHeading,-3.8);
-      camera.position.y=Math.max(pos.y+.55,camera.position.y+.3);
-    }
+    plazaRenderingThird=!!(view?.model&&plazaThirdPerson&&!plazaInput.ads&&
+      shoulderView.prepare(plazaPlayer.eye,camera.quaternion,dt,'race'));
+    if(view?.model)view.model.visible=plazaRenderingThird;
+    if(plazaRenderingThird)shoulderView.apply(camera,plazaPlayer.eye);
   }
   function exitCar(){
     finished=true;
@@ -7528,9 +7570,9 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     grounded=true;
     champions[index].avatar.visible=false;
   }
-  function walkPlaza(dt){
-    const suspended=document.hidden||window.SaltModal?.isOpen||
-      !document.getElementById('race-history').hidden||!document.getElementById('modal').hidden||$('race-unit-dialog').open;
+  function walkPlaza(dt,flightDt){
+    const suspended=plazaSuspended=!!(document.hidden||window.SaltModal?.isOpen||
+      !document.getElementById('race-history').hidden||!document.getElementById('modal').hidden||$('race-unit-dialog').open);
     if(suspended&&plazaInput.locked)plazaInput.exitLock();
     plazaInput.setGameplay(!suspended);
     plazaInput.update(dt);
@@ -7544,7 +7586,24 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     const pos=walker.position;
     const spawn=raceSession.takePlazaSpawn();
     if(spawn&&!walked)pos.set(spawn.x,0,spawn.z);
-    if(moving){
+    const drone=drivingDrone();
+    const text=window.__SALT_I18N__.messages;
+    window.SaltPlayerCombat.unitTouchControls($('race-player-ui').querySelector('.touch'),raceSession.unit,key=>text.mp[key],unitTouch);
+    if(drone){
+      const ascend=!suspended&&plazaInput.down('jump');
+      const descend=!suspended&&(plazaInput.down('sprint')||unitTouch.descend);
+      if(moving||ascend||descend)walked=true;
+      if(standingOn>=0&&(moving||ascend||descend)){
+        champions[standingOn].avatar.visible=!!champions[standingOn].ranked;
+        standingOn=-1;
+      }
+      if(suspended)plazaPlayer.vel.set(0,0,0);
+      // Ground-height portals activate only after descending and coming to a stop.
+      flightSpeed=airspace.fly(pos,plazaPlayer.vel,plazaInput.move,plazaYaw,flightDt,{
+        ascend,descend,length:P.length,boxes:flightBoxes(pos,airspace.maxSpeed*flightDt+4),collision:window.SaltFlightCollision
+      });
+      grounded=pos.y<=airspace.minAltitude+.02&&flightSpeed<.8;
+    }else if(moving){
       walked=true;
       const speed=(sprint?6.4:3.8)*(y<0?1+.18*y:1);
       const sin=Math.sin(plazaYaw),cos=Math.cos(plazaYaw);
@@ -7562,12 +7621,12 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
       }
     }
     const floor=podiumSeats[standingOn]?.h||0;
-    if(grounded&&plazaInput.pressed('jump')){
+    if(!drone&&grounded&&plazaInput.pressed('jump')){
       verticalSpeed=Math.sqrt(2*21);
       grounded=false;
       walked=true;
     }
-    if(!grounded){
+    if(!drone&&!grounded){
       verticalSpeed-=21*dt;
       pos.y+=verticalSpeed*dt;
       if(pos.y<=floor&&verticalSpeed<=0){
@@ -7576,17 +7635,43 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
         grounded=true;
       }
     }
-    updatePlazaFire(suspended,dt);
+    const flightHud=$('plaza-flight-speed');
+    flightHud.hidden=!drone;
+    if(drone){
+      const speed=Math.round(flightSpeed)+' km/h';
+      if(flightHud.textContent!==speed)flightHud.textContent=speed;
+    }
+    plazaPlayer.onGround=grounded;
+    plazaPlayer.sprinting=!drone&&sprint;
+    plazaPlayer.speed=drone?flightSpeed/3.6:moving?(sprint?6.4:3.8):0;
+    plazaPhysics.boxes.length=0;
+    plazaPhysics.boxes.push(...P.nearby(pos.z,165).map(({x,z,w,d,h})=>plazaBox(x,z,w,d,h)),...podiumBoxes);
+    for(let row=Math.floor((pos.z-165)/P.chunk);row<=Math.floor((pos.z+165)/P.chunk);row++){
+      const sides=rows.get(row)?.userData.sideBoxes;
+      if(sides)plazaPhysics.boxes.push(...sides);
+    }
+    recoilPitch*=Math.exp(-dt*18);
+    recoilYaw*=Math.exp(-dt*18);
     walker.rotation.y=plazaYaw;
-    unitViews.get(walker)?.rig?.update(dt,{moving,sprint});
+    const view=unitViews.get(walker);
+    if(view?.model){
+      if(drone){
+        view.model.rotation.x=plazaPitch*.22;
+        view.model.rotation.z=-x*.10;
+      }
+      const phase=reloadDuration?Math.min(1,reloadAge/reloadDuration):0;
+      view.rig?.update(dt,{moving:drone?flightSpeed>1:moving,sprint:!drone&&sprint,
+        gesture:reloadDuration?window.SaltPlayerCombat.actionPose(T,'reload',phase,reloadHand):null});
+    }
+    plazaCamera(dt,flightDt);
+    if(view?.model)window.SaltPlayerCombat.updateAvatarWeapon(view,window.__G.weapon?.arsenalId||'pac9',true);
     const gate=grounded ? exitGates.find(portal=>Math.abs(pos.x-portal.position.x)<=1.35&&
       Math.abs(pos.z-podium.position.z-portal.position.z)<=.85) : null;
     if(holdRaceExit(gate?.userData.destination,performance.now()/1000,!suspended&&!moving)){
       plazaInput.exitLock();
       raceSession.travel(gate.userData.destination);
     }
-    raceSession.publishPlaza({x:pos.x,y:pos.y,z:pos.z,heading:plazaYaw,pitch:plazaPitch,shot:plazaShot,unit:raceSession.unit,moving,sprinting:sprint,airborne:!grounded});
-    plazaCamera();
+    raceSession.publishPlaza({x:pos.x,y:pos.y,z:pos.z,heading:plazaYaw,pitch:plazaPitch,shot:plazaShot,weapon:window.__G.weapon?.arsenalId,unit:raceSession.unit,moving:drone?flightSpeed>1:moving,sprinting:!drone&&sprint,airborne:!grounded});
     plazaInput.endFrame();
   }
   raceSession.onRanking(rows=>{
@@ -7705,7 +7790,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
       }
       if(event.code==='KeyV'&&!event.repeat&&!event.defaultPrevented&&!window.SaltModal?.isOpen&&
           document.getElementById('race-history').hidden&&!$('race-unit-dialog').open&&!event.target?.closest?.('button,a,input,textarea,select')){
-        plazaThirdPerson=!plazaThirdPerson;
+        togglePlazaView();
       }
       return;
     }
@@ -7749,6 +7834,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   $('sound').addEventListener('click',()=>{
     muted=!muted;
     audio.setMuted(muted);
+    plazaSound?.setVolume(muted?0:.8);
     $('sound').setAttribute('aria-pressed',String(muted));
     $('sound').textContent=muted?'开声音':'静音';
   });
@@ -7830,7 +7916,8 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     steeringRotor.style.transform='rotate('+(wheelPosition*steeringTravel).toFixed(2)+'deg)';
   }
   function frame(now) {
-    const dt=last?Math.min(.065,(now-last)/1000):1/60;
+    const wallDt=last?Math.max(.001,(now-last)/1000):1/60;
+    const dt=Math.min(.065,wallDt);
     last=now;
     const buttonSteer=taking('right')-taking('left');
     moveSteering(paused||finished?0:buttonSteer,dt);
@@ -7923,7 +8010,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     cameraTargets();
     // A world-space follow delay would leave the driver's eye behind the moving seat.
     for(const gate of exitGates)gate.children[1].material.uniforms.time.value=now/1000;
-    if(finished)walkPlaza(dt);
+    if(finished)walkPlaza(dt,Math.min(.25,wallDt));
     else {
       if(cockpit)camera.position.copy(follow);
       else camera.position.lerp(follow,1-Math.exp(-dt*15));
@@ -7943,7 +8030,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     const visiblePeers=finished?plazaState:networkState;
     updatePlayerCars(visiblePeers?.peers||[]);
     updatePlazaPlayers(visiblePeers?.walkers||[],dt);
-    expirePlazaEffects(now);
+    if(finished){window.__G.fx?.update(dt);plazaSound?.update(dt);}
     const shadowTarget=finished?walker.position:car;
     const heading=finished?plazaYaw:car.heading;
     const moved=shadowTarget.x!==shadowX||sceneZ!==shadowZ||heading!==shadowHeading;
@@ -7958,6 +8045,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     }
     presented++;
     renderer.render(scene,camera);
+    if(finished&&!plazaRenderingThird)plazaCombat?.drawWeapon();
     window.__ready=true;
     window.__G.captureScreenshotFrame?.();
     requestAnimationFrame(frame);

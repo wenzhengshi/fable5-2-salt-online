@@ -259,7 +259,6 @@ body { background: var(--ink); color: var(--bone); overflow: hidden; font-family
   color: #c9ffdf;
 }
 .is-touch .h-ammo-n { font-size: 44px; } .is-touch .h-ammo.infinite .h-ammo-n::after { font-size: 44px; } .is-touch .h-pips { margin: 6px 0 5px; } .is-touch .h-pips i { height: 7px; width: 2px; }
-.is-touch .h-health { bottom: auto; top: calc(128px + var(--sat)); }
 .is-touch .h-feed { top: calc(150px + var(--sat)); }
 .is-touch .comms { bottom: auto; top: calc(27% + var(--sat)); }
 .is-touch .h-compass { width: min(300px, calc(var(--vp-w, 100vw) - var(--gl) - var(--gr) - 120px)); }
@@ -392,7 +391,6 @@ kbd { display: inline-block; font: 500 10px/1 var(--f-mono); color: var(--bone);
   .h-heading { display: none; }
   .h-ammo-n { font-size: 56px; } .h-ammo.infinite .h-ammo-n::after { font-size: 56px; }
   .is-touch .h-ammo { top: calc(78px + var(--sat)); }
-  .is-touch .h-health { top: calc(150px + var(--sat)); }
   .m-title { padding-left: var(--gl); padding-right: var(--gr); }
   .m-word { font-size: clamp(52px, 20vw, 150px) !important; }
   .m-eyebrow { font-size: 11px; letter-spacing: .2em; }

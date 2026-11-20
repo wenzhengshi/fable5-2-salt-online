@@ -8,7 +8,9 @@
   const EPSILON = 0.001;
   const MAX_CONTACTS = 12;
   const AIR_WALL = Object.freeze({ minX: -40, maxX: 40, minZ: -30, maxZ: 30, padding: 0.4 });
-  const PORT_PLAYER_START = Object.freeze({ x: -32, y: 0, z: 6 });
+  // 盐港出生点：罗盘 90° = 地图正东（+X），与关卡 playerStart 的 yaw 一致。
+  const PORT_SPAWN_YAW = -Math.PI / 2;
+  const PORT_PLAYER_START = Object.freeze({ x: -32, y: 0, z: 6, yaw: PORT_SPAWN_YAW });
 
   function finite(value, fallback) {
     const number = Number(value);
@@ -226,5 +228,5 @@
     return !bounded.clampedX && !bounded.clampedZ;
   }
 
-  return Object.freeze({ resolve, sweep, clampToBounds, isInsideAirWall, AIR_WALL, PORT_PLAYER_START });
+  return Object.freeze({ resolve, sweep, clampToBounds, isInsideAirWall, AIR_WALL, PORT_PLAYER_START, PORT_SPAWN_YAW });
 });

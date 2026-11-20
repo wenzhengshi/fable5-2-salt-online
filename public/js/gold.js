@@ -133,7 +133,7 @@
       else closeGiftDialog();
     }, true);
 
-    let mp, off, map, target, carried = 0, reward = 0, issued = 0, remaining = 0;
+    let mp, off, map, target, carried = 0, carriedKnown = false, reward = 0, issued = 0, remaining = 0;
     let ordinaryRemaining = 0, ordinaryUntilPity = 5;
     let remainingTargets = 0, remainingGold = 0, totalGold = 0, dispatchSynced = false, requested = -Infinity;
     let giftSequence = 0, giftRequest = 0, giftTarget = '', giftAmount = 0, giftOfferId = '';
@@ -430,7 +430,7 @@
       giftRequest = 0;
       giftOfferId = '';
       giftOfferExpiresAt = 0;
-      if (Number.isSafeInteger(msg.carried)) carried = msg.carried;
+      if (Number.isSafeInteger(msg.carried)) { carried = msg.carried; carriedKnown = true; }
       const name = msg.toName || giftTarget || '';
       const amount = format(msg.amount || giftAmount);
       if (msg.error) {
@@ -458,7 +458,7 @@
     function recipientResult(msg) {
       resolvedIncoming.add(msg.offerId);
       if (msg.offerId === activeIncomingOfferId) dismissIncomingOffer?.();
-      if (Number.isSafeInteger(msg.carried)) carried = msg.carried;
+      if (Number.isSafeInteger(msg.carried)) { carried = msg.carried; carriedKnown = true; }
       const name = msg.fromName || '';
       const amount = format(msg.amount);
       let key = 'incomingFailed';
@@ -470,7 +470,8 @@
     }
     function receive(msg) {
       if (msg.type === 'goldList') {
-        carried = msg.carried;
+        carried = Number.isSafeInteger(msg.carried) ? msg.carried : 0;
+        carriedKnown = true;
         issued = msg.issued;
         reward = msg.reward;
         remaining = msg.remaining;
@@ -555,6 +556,7 @@
     game.gold = {
       get editing() { return modalGuard || dialogsOpen(); },
       get carried() { return carried; },
+      get carriedKnown() { return carriedKnown; },
       intersect(origin, direction, range) {
         if (!mp?.connected || map !== currentMap()) return null;
         let best = null;
@@ -577,6 +579,12 @@
           state = { targets: [], drops: [] };
           map = next;
           requested = -Infinity;
+          carriedKnown = false;
+        }
+        /* 刷新后 welcome/joined 已带 coins；若这条链路还没到，先标为未知，避免 HUD 把“未同步”显示成 0。 */
+        if (!carriedKnown && mp?.coinsKnown && Number.isSafeInteger(mp.coins)) {
+          carried = mp.coins;
+          carriedKnown = true;
         }
         hud.hidden = !active;
         group.visible = !!active;
@@ -600,7 +608,7 @@
           if (giftDialog.open) renderGiftList();
         }
         giftCandidates = nearbyPlayers();
-        giftButton.hidden = giftDialog.open || !giftCandidates.length || carried <= 0;
+        giftButton.hidden = giftDialog.open || !giftCandidates.length || !carriedKnown || carried <= 0;
         if (giftDialog.open && now - giftRenderAt > 500) renderGiftList();
         if (now - requested > 1500) {
           mp.send({ type: 'goldList' });
@@ -628,7 +636,7 @@
           const pickup = hudText('pick', { amount: format(target.amount) });
           if (button.textContent !== pickup) button.textContent = pickup;
         }
-        const label = hudText('carried', { amount: format(carried) });
+        const label = hudText('carried', { amount: carriedKnown ? format(carried) : '—' });
         if (status.textContent !== label) status.textContent = label;
         const value = dispatchSynced ? format(remainingGold) : '—';
         if (dispatchValue.textContent !== value) dispatchValue.textContent = value;
@@ -643,7 +651,7 @@
         const percent = totalGold > 0 ? Math.max(0, Math.min(100, remainingGold / totalGold * 100)) : 0;
         const width = (dispatchSynced ? percent : 0).toFixed(1) + '%';
         if (dispatchBar.style.width !== width) dispatchBar.style.width = width;
-        reminder.hidden = !carried;
+        reminder.hidden = !(carriedKnown && carried);
         const reminderText = hudText('reminder');
         if (carried && reminder.textContent !== reminderText) reminder.textContent = reminderText;
       }

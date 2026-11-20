@@ -463,5 +463,11 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
   }
   return { handle, shoot, ordinaryHit, awardMachineKill, deposited, dropOnDeath, tick, reserved: pendingAmount,
     refreshWallets() {state=storage.readJson(FILE).gold||{};broadcastAll(Date.now());},
-    settleBossReward, bossBudget: now => bossRewards.budgetFor(load(), now) };
+    settleBossReward, bossBudget: now => bossRewards.budgetFor(load(), now),
+    /* 排行榜金币列：读取玩家当前随身金币（无签名/非法值回落 0），不写盘、不改账本 */
+    balanceFor(player) {
+      if (!player || !player.signOwner) return 0;
+      const amount = load().carried?.[player.signOwner];
+      return Number.isSafeInteger(amount) && amount >= 0 ? amount : 0;
+    } };
 };

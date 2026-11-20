@@ -325,7 +325,12 @@ body:has(.scope-zoom-tools:not([hidden])) .frontier.frontier-touch:not(.frontier
 
 @media (max-width: 740px) {
   .is-touch:has(.mobile-field-dock:not([hidden]) button:not([hidden])) .t-ads {
-    bottom: calc(54px + var(--sab, 0px));
+    bottom: calc(62px + var(--sab, 0px));
+  }
+  /* A narrow browser can be rotated in-page while this media query still applies. */
+  .is-touch:has(.mobile-field-dock:not([hidden]) button:not([hidden])) .t-reload {
+    right: calc(132px + var(--sar, 0px));
+    bottom: calc(126px + var(--sab, 0px));
   }
 }
 .mobile-field-dock .container-tools { order: 1; }

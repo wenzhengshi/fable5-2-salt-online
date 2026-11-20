@@ -12,6 +12,7 @@ const adminRouter = require('./routes/admin');
 const chatHistory = require('./services/chatHistory');
 const focusMode = require('./services/focusMode');
 const groupQr = require('./services/groupQr');
+const houndTuning = require('./services/houndTuning');
 const roadSigns = require('./services/roadSigns');
 const { attachMultiplayer, shutdownMultiplayer } = require('./realtime/multiplayer');
 const { version: RELEASE_VERSION } = require('./package.json');
@@ -21,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // 托管平台的反向代理通常不在应用所在容器的回环命名空间内。
 // 默认监听所有网卡；预览网关会显式注入 HOST=127.0.0.1，仍按平台值启动。
 const HOST = process.env.HOST || '0.0.0.0';
-const ASSET_VERSION = '20261119-race-rifts-v' + RELEASE_VERSION;
+const ASSET_VERSION = '20261120-merge-flip-gfx-roster-wreck-selectui-tablang-houndfix-selectfit-v' + RELEASE_VERSION;
 
 app.set('view engine', 'ejs');
 app.engine('html', ejs.renderFile);
@@ -126,7 +127,16 @@ app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: true,
-  maxAge: '5m'
+  maxAge: 0,
+  setHeaders(res, filePath) {
+    // JS/CSS are versioned in the page URL, but an old HTML page can keep an
+    // old ?v= URL. Revalidation here makes a normal reload pick up the new
+    // file even before the Node process is restarted; images/audio keep the
+    // browser's normal conditional-cache behaviour.
+    if (/\.(?:js|css)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+  }
 }));
 
 app.use('/api', (req, res, next) => {
@@ -137,6 +147,13 @@ app.use('/api', (req, res, next) => {
 });
 
 app.use('/api', apiRouter);
+
+// Small deployment diagnostic: lets you verify which asset version the
+// running Node process is actually serving, without opening the game.
+app.get('/version', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.type('text/plain').send(ASSET_VERSION);
+});
 
 const raceDestinations = new Set(['port','qingyun','bayhaven','mothlight','dustfall','lunar']);
 app.get(['/','/race/transfer/:map'], (req, res, next) => {
@@ -160,6 +177,7 @@ app.get(['/','/race/transfer/:map'], (req, res, next) => {
     groupQr: groupQr.info(),
     raceTransfer,
     preloadQingyun: raceTransfer === 'qingyun',
+    houndFlipChance: houndTuning.read().chance,
     assetVersion: ASSET_VERSION
   });
 });

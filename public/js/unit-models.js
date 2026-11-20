@@ -15,11 +15,29 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
   const waiters = new Map();
   const externalSources = new Map();
 
+  function isUsableSource(unit) {
+    return !!(unit && unit.rig && unit.rig.group);
+  }
+
+  function isHealthySource(unit) {
+    return isUsableSource(unit) && !!unit.active && !!unit.alive && !unit.wreck &&
+      Number(unit.hp) > 0;
+  }
+
+  function isPristineSource(unit) {
+    return isUsableSource(unit) && !unit.wreck &&
+      Number(unit.sink || 0) <= 0 && Number(unit.hp) > 0;
+  }
+
   function sourceFor(kind) {
     const debug = window.__G && window.__G.enemies && window.__G.enemies.debug;
     if (!debug) return externalSources.get(kind) || null;
     const pool = kind === 'drone' ? debug.gulls : kind === 'hound' ? debug.hounds : null;
-    return Array.isArray(pool) && pool.length ? pool[0] : null;
+    if (!Array.isArray(pool) || !pool.length) return externalSources.get(kind) || null;
+    // 敌人死亡后会继续留在对象池里，pool[0] 可能正是一具翻倒的残骸。
+    // 不能直接克隆 pool[0]，优先选活着的单位，其次选未被击毁的干净槽位。
+    return pool.find(isHealthySource) || pool.find(isPristineSource) || pool.find(isUsableSource) ||
+      externalSources.get(kind) || null;
   }
 
   function three() {
@@ -32,6 +50,17 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       if (node && BONE_NAMES.includes(node.name)) bones[node.name] = node;
     });
     return bones;
+  }
+
+  function resetBindPose(model) {
+    const skeletons = new Set();
+    model.traverse((node) => {
+      if (node && node.isSkinnedMesh && node.skeleton && typeof node.skeleton.pose === 'function') {
+        skeletons.add(node.skeleton);
+      }
+    });
+    for (const skeleton of skeletons) skeleton.pose();
+    model.updateMatrixWorld(true);
   }
 
   function hideUnitLabels(bones) {
@@ -151,6 +180,9 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
     model.position.set(0, 0, 0);
     model.rotation.set(0, 0, 0);
     model.updateMatrixWorld(true);
+    // 敌人死亡时骨骼会停在翻倒、蜷缩或缺失旋翼的残骸姿态；克隆后先回到绑定姿态，
+    // 否则玩家模型会以“被击毁的机械狗/无人机”姿态出生。
+    resetBindPose(model);
     if (kind === 'drone' && model.children.length > 1) {
       // The second skinned mesh is the oversized distant rotor-blur effect.
       model.children[1].visible = false;

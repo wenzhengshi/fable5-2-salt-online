@@ -246,6 +246,40 @@ router.post('/shop/:key', requireSession, (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+/* ---------- 机械猎犬死亡动作（后空翻概率）控制 ---------- */
+function tuningPage(req, res, status = 200, messageKey = '') {
+  const tuning = require('../services/houndTuning').read();
+  const percent = Math.round(tuning.chance * 1000) / 10;
+  return res.status(status).render('admin', {
+    view: 'tuning', csrf: req.backupSession.csrf, returnTo: '/admin/tuning',
+    message: messageKey ? req.t(messageKey) : '', tuning, percent
+  });
+}
+
+router.get('/tuning', (req, res, next) => {
+  if (!req.backupSession) return res.redirect(303, '/admin');
+  if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
+  try {
+    return tuningPage(req, res, 200, req.query.result === 'saved' ? 'admin.houndSaved' : '');
+  } catch (error) { next(error); }
+});
+
+router.post('/tuning', requireSession, (req, res, next) => {
+  if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
+  const raw = typeof req.body?.percent === 'string' ? req.body.percent.trim() : '';
+  const percent = raw === '' ? NaN : Number(raw);
+  try {
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      return tuningPage(req, res, 400, 'admin.houndInvalid');
+    }
+    /* 百分比 → 0~1；四舍五入到 0.1% 精度，避免浮点尾巴 */
+    const saved = require('../services/houndTuning').save(Math.round(percent * 10) / 1000);
+    if (!saved) return tuningPage(req, res, 400, 'admin.houndInvalid');
+    require('../realtime/multiplayer').broadcastHoundFlip(saved.chance);
+    return res.redirect(303, '/admin/tuning?result=saved');
+  } catch (error) { next(error); }
+});
+
 router.get('/qr', (req, res) => {
   const session = req.backupSession;
   if (!session) return res.redirect(303, '/admin');

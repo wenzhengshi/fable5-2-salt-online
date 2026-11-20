@@ -1,214 +1,867 @@
 # 变更日志
 
+## v1.34.10 — 2026-11-20
+
+- 修复移动端底部工具栏出现时换弹与瞄准按钮重叠的问题，适配页面内强制横屏。
+
+## v1.34.9 — 2026-11-20
+
+- 以 v1.34.8 为基础，保留画质高级选项、猎犬配置与击毁表现、名单和单位选择页。
+- 补回 v1.33.14 的赛道无人机、最高 600 km/h HUD、共用战场武器与肩后视角，以及手机 HUD 和重生保护。
+- 高级画质菜单增加可选的「流畅」档，沿用 v1.34.8 的自动设备选择和地图档位上限。
+
+## v1.34.8 — 2026-11-20（第 8 次修改：低高度横屏单位选择页布局）
+
+版本说明：`v1.34.8` 接在 `v1.34.7` 之后，只改设置页 “操控单位 → 更换” 的选择页布局，解决 844×390 一类低高度横屏下 5 张单位卡被压窄、左列与预览区下半部大面积留白的问题；TAB 文案与共享猎犬死亡表现未改。
+
+### 第 8 次修改 — 2026-11-20（卡片区与预览框纵向填满）
+
+**问题现象**：在 844×390、1128×478 等低高度横屏下，左侧 5 张单位卡只占上半部，单卡约 50px 高；右侧预览框固定约 200px 高，预览框以下到保存栏之间约 90px 空白；卡片与预览都没有吃到 `.ss-layout` 的剩余高度。
+
+**根因**：`public/js/soldier-select.js` L312–313 已正确给 `#soldier-select` 加 `.ss-compact`，但旧 `.ss-compact` 只在字号 / 间距上做压缩：
+
+
+
+1. `.ss-options` 仍是普通 grid，没有 `flex:1`，`grid-auto-rows` 也没有均分剩余高度；卡片只按内容高度（约 50px）排布。
+
+2. `.ss-stage-frame` 固定 `height:clamp(200px,44vh,300px)`，390px 高视口取 200px 下限，预览框不随 stage 拉伸。
+
+3. `.ss-layout` 的高度虽然是 stretch，但左列 `.ss-copy` 与右列 `.ss-stage` 内部没有纵向分配规则，剩余高度只能空着。
+
+**修改**：
+
+
+
+| 编号  | 文件                              | 修改后位置     | 作用                                                                                                                                                                                                                                                                                                                                                                                                           | 回退                                                                                                                    |
+| --- | ------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| H01 | `public/css/soldier-select.css` | L549–570  | `.ss-compact .ss-layout` 保持左右两列并 stretch；`.ss-copy` 改为 `height:100%; min-height:0; overflow-y:auto`；`.ss-options` 改为 `flex:1 1 auto; min-height:0; grid-auto-rows:minmax(0,1fr); align-content:stretch`，3 行卡片均分剩余高度；`.ss-card` 改为 `height:100%; min-height:0`；`.ss-stage` 改为纵向 flex 并 `height:100%; overflow:hidden`；`.ss-stage-frame` 改为 `flex:1 1 0; height:auto; min-height:0`；`.ss-outfit` 固定高度，服装选择不被压掉 | 恢复第 5 轮 `.ss-compact` 规则：options 普通 grid、card `min-height:48px`、stage-frame 固定 `clamp(200px,44vh,300px)`、stage 非 flex |
+| H02 | `public/css/soldier-select.css` | L572–575  | 新增 `@media (min-width:780px) and (max-width:940px) and (max-height:460px) and (orientation:landscape)`：`.ss-compact .ss-layout` 改为 `minmax(0,1fr) clamp(290px,34vw,330px)`，把预览列让出约 70px 给左列，844×390 单卡宽度由约 215px 增至约 255px，避免 “卡片变窄”                                                                                                                                                                         | 删除该媒体查询，恢复 `1.2fr / 1fr`                                                                                              |
+| H03 | `public/css/soldier-select.css` | L577–582  | 新增 `@media (min-width:780px) and (min-height:450px) and (max-height:600px) and (orientation:landscape)`：卡片拉高后重新显示 `em`、`small`、`.ss-tags`，1128×478 / 1024×600 不再只剩编号和大片空白                                                                                                                                                                                                                                    | 删除该媒体查询，恢复紧凑模式隐藏 `em/small/.ss-tags`                                                                                  |
+| H04 | `package.json`                  | L3        | 1.34.7 → **1.34.8**，刷新选择页 CSS 缓存                                                                                                                                                                                                                                                                                                                                                                             | 改回 1.34.7                                                                                                             |
+| H05 | `package-lock.json`             | L3、L9     | 同步 1.34.8                                                                                                                                                                                                                                                                                                                                                                                                    | 改回 1.34.7                                                                                                             |
+| H06 | `index.js`                      | L25       | `ASSET_VERSION` 前缀改为 `20261120-merge-flip-gfx-roster-wreck-selectui-tablang-houndfix-selectfit-v`                                                                                                                                                                                                                                                                                                            | 改回 `...-houndfix-v`                                                                                                   |
+| H07 | `API.md`                        | L16       | 当前版本 1.34.8，并记录低高度横屏选择页布局                                                                                                                                                                                                                                                                                                                                                                                    | 改回 1.34.7 并删除该句                                                                                                       |
+| H08 | `CHANGELOG.md`                  | 本节        | 记录几何数据、截图与回退                                                                                                                                                                                                                                                                                                                                                                                                 | 删除本节                                                                                                                  |
+| H09 | `合并说明-20261120.md`              | 顶部版本行、§17 | 同步 v1.34.8 与第八轮记录                                                                                                                                                                                                                                                                                                                                                                                            | 删除 §17，版本行改回 1.34.7                                                                                                   |
+
+**关键规则（修改后）**：
+
+
+
+```
+.ss-compact .ss-copy { height:100%; min-height:0; overflow-y:auto; }
+.ss-compact .ss-options { flex:1 1 auto; min-height:0; grid-auto-rows:minmax(0,1fr); align-content:stretch; }
+.ss-compact .ss-card { height:100%; min-height:0; }
+.ss-compact .ss-stage { display:flex; flex-direction:column; height:100%; overflow:hidden; }
+.ss-compact .ss-stage-frame { flex:1 1 0; height:auto; min-height:0; }
+.ss-compact .ss-outfit { flex:0 0 auto; }
+```
+
+**验证（CDP 真视口，完整&#x20;**`soldier-select.css`**&#x20;+&#x20;**`mobile.css`**&#x20;+ 真实 5 卡 DOM）**：
+
+
+
+| 视口                                                     | 修改前 options /stage | 修改后 options /stage    | 单卡高度             | 结果                                                                                                    |
+| ------------------------------------------------------ | ------------------ | --------------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
+| 844×390                                                | 436×156 / 370×282  | **516×236 / 290×282** | 约 77px（旧约 50px）  | 5 卡全部可见，第 5 张横跨两列；预览框由约 200px 增至约 244px；footer y332、保存按钮 y336–380 仍在视口内；root 无滚动；底部留白由约 91px 降到约 11px |
+| 667×375                                                | 339×156 / 290×267  | **339×221 / 290×267** | 约 70px           | 5 卡可见，footer y317，保存按钮 y321–365；无滚动                                                                   |
+| 1024×600                                               | 534×156 / 452×492  | **534×446 / 452×492** | 约 148px          | 卡片填满三行，显示标签；footer y542                                                                               |
+| 1128×478                                               | 591×156 / 499×370  | **591×324 / 499×370** | 约 104px（旧约 50px） | 与用户截图同宽视口；左列下半部空白消失，预览框由约 303px 增至约 332px；卡片显示 `em/tags`                                              |
+| 932×430                                                | —                  | **577×276 / 317×322** | 约 88px           | 宽度媒体查询生效，单卡约 290px；预览与卡片同时填满                                                                          |
+| 1920×1080 / 1366×768 / 1024×768 / 768×1024 / 390×844 等 | —                  | 非 `.ss-compact`       | —                | 未触发本轮媒体查询，保持原布局                                                                                       |
+
+
+
+* CDP 实测 `getBoundingClientRect()`：844×390 下 `layout 824×282`、`copy 524×282`、`options 516×236`、`stage 290×282`；`clientWidth/scrollWidth = 844/844`、`clientHeight/scrollHeight = 390/390`，无页面滚动。
+
+* 截图：`...\cdp-844x390.png`、`...\cdp-1128x478.png`、`...\cdp-1024x600.png`、`...\cdp-932x430.png`、`...\cdp-667x375.png`、`...\cdp-740x360.png`。
+
+* `node --check index.js`、`node --check public/js/soldier-select.js` 与 `npm run check` 已执行，exit 0；本轮未在真实游戏入口点开选择页（无头 Chrome 停在启动页 “正在唤醒渲染器”，`window.SoldierSelect` 未就绪），以上为真实完整 CSS 栈 + 真实模板 DOM 的几何 / 视觉验证，不等同于游戏内模型加载后的最终观感。
+
+* `npm run release:check` 仍失败，原因与第 7 轮相同：项目 `data/` 已有运行数据 `chat-history.jsonl`、`frontier-inventory.json`、`gold-ledger.jsonl`、`leaderboard.json`、`portal-bosses.json`、`race-names.json`、`road-signs`；脚本要求只保留 `.gitkeep`，本轮未删除这些数据。
+
+* 本地 `http://127.0.0.1:3123/version` 实测 `20261120-merge-flip-gfx-roster-wreck-selectui-tablang-houndfix-selectfit-v1.34.8`；页面 CSS 链接已带该版本串。
+
+**风险与边界**：
+
+
+
+* 844×390 下预览列由 370px 缩到 290px，预览模型可视宽度变小；这是为了把单卡宽度从约 215px 提到约 255px 的有意交换。
+
+* 780–940px 宽、≤460px 高的横屏会走宽度媒体查询；941px 以上同高度仍用 `1.2fr/1fr`，在 940/941px 边界存在一次列宽跳变。
+
+* 卡片拉高后，实际单位缩略图会等比放大；若后续觉得缩略图过大，可只调 `.ss-card-media` 宽度，不影响 5 卡可见性。
+
+**回退**：
+
+
+
+* 删除 `public/css/soldier-select.css` L572–582 两段媒体查询，并按 H01 恢复第 5 轮 `.ss-compact` 规则；H04–H07 改回 1.34.7 与 `...-houndfix-v`；删除本节与 §17。
+
+* 本轮未改 `public/js/soldier-select.js`、`public/css/mobile.css`、`game.bundle.js`、`game.bundle.js.bak`、`.env`。
+
+
+
+***
+
+## v1.34.7 — 2026-11-20（第 7 次修改：其他地图共享猎犬死亡表现）
+
+版本说明：`v1.34.7` 接在 `v1.34.6` 之后，只修其他地图共享巡逻机械狗的死亡动作与概率；盐港本地 `game.bundle.js` 的引擎猎犬一行未改。
+
+### 第 7 次修改 — 2026-11-20（共享猎犬：50% 复刻盐港本地 / 50% 直接消失）
+
+**问题现象**：盐港本地机械狗的 “击毁 → 后空翻 → 倒地 → 残骸” 效果正常；其他地图（Qingyun / 湾城 / 西部荒原 / 霓虹雨城 / 月球战区）的共享巡逻小型机械狗会出现 720° 翻转或侧翻，且并非严格 50% 直接消失。用户要求其他地图固定 50% 走盐港本地表现、50% 和新版一样直接消失。
+
+**根因**：
+
+
+
+1. 旧 `shared-patrols.js` 把后空翻写在**模型根节点**上：`model.rotation.x = -Math.PI * 2 * p`，同时 `model.rotation.y = yaw`。Three.js 默认 Euler 的 x+y 组合会把 “局部后仰” 变成斜轴横滚，所以看起来像侧翻 / 720°。盐港本地引擎只把俯仰写进 `body` 骨骼，根节点只保留 yaw。
+
+2. 旧共享动画时长 0.55s、线性旋转、抬升 0.85m；盐港本地是 1.0s、smoothstep（0.14–0.84 转到 -2π）、`flipDip .06` / `flipApex .8` / `flipLand .1`，两者不同。
+
+3. 旧倒地阶段把 `model.rotation.z` 直接拧到 `dir * 1.25` rad（约 72°），且根节点只下降 0.07m；本地倒地是 `dieRoll ±0.25–0.55` rad（约 14°–31°）、`diePitch ±0.125` rad、机身落到地面（`0.215 - stand = -0.505m`）。
+
+4. 旧 `destroyed()` 无论是否翻转都调用 `startWreck()`，没有 “直接消失” 分支；概率还取 `window.__SALT_FLIP__`（调参值），每个客户端各自掷骰，无法保证同一次击杀 50% 一致。
+
+**修改**：
+
+
+
+| 编号  | 文件                            | 修改后位置        | 作用                                                                                                                                                                                                                                                                     | 回退                                                                                 |
+| --- | ----------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| F01 | `public/js/shared-patrols.js` | 全文重写，约 430 行 | 新增 `SHARED_HOUND_FLIP_CHANCE=0.5`；固定 `FLIP_TIME=1`、`FALL_TIME=2.2`、`FLIP_SPIN=-6.283185307179586`；俯仰 / 侧倾改写到 `bones.body`，根节点只保留 yaw；移植本地 `flipHeight/flipSpin/flipTuck` 与 `q_` 腿部 IK；倒地改用本地 `diePitch/dieRoll` + 重力落地；50% 分支直接 `disposeUnit` 不留残骸；`#mp-status-tip` 无关 | `_backup-round7-20261120\public\js\shared-patrols.before-local-hound-death-fix.js` |
+| F02 | `realtime/multiplayer.js`     | L1011–1017   | `destroy()` 服务端统一掷骰：`flip = unit.kind === 'hound' && Math.random() < 0.5`，随 `patrolDestroyed` 广播 `flip`，保证同一击杀所有客户端同一分支                                                                                                                                                | `_backup-round7-20261120\realtime\multiplayer.before-patrol-flip-roll.js`          |
+| F03 | `package.json`                | L3           | 1.34.6 → **1.34.7**，刷新 `shared-patrols.js` 静态缓存                                                                                                                                                                                                                        | 改回 1.34.6                                                                          |
+| F04 | `package-lock.json`           | L3、L9        | 同步 1.34.7                                                                                                                                                                                                                                                              | 改回 1.34.6                                                                          |
+| F05 | `index.js`                    | L25          | `ASSET_VERSION` 前缀改为 `20261120-merge-flip-gfx-roster-wreck-selectui-tablang-houndfix-v`                                                                                                                                                                                | 改回 `...-tablang-v`                                                                 |
+| F06 | `API.md`                      | L16          | 当前版本 1.34.7，并记录共享猎犬 50/50 表现                                                                                                                                                                                                                                           | 改回 1.34.6 并删除该句                                                                    |
+| F07 | `CHANGELOG.md`                | 本节           | 记录根因、落地、验证与回退                                                                                                                                                                                                                                                          | 删除本节                                                                               |
+| F08 | `合并说明-20261120.md`            | 顶部版本行、§16    | 同步 v1.34.7 与第七轮记录                                                                                                                                                                                                                                                      | 删除 §16，版本行改回 1.34.6                                                                |
+
+**关键实现**：
+
+
+
+* 盐港本地基准（`game.bundle.js` 已存在、未改）：`Gt.flipDur=1`、`flipApex=.8`、`flipDip=.06`、`flipLand=.1`、`flipSpin=-2π`；`flipPose` 写 `sY.x/sP.x/sR.x`；`O(T)` 只把 `sP.x/sR.x` 写进 `body.rotation`，根节点只写 `yaw`；倒地 `dieRoll` 为 `sign(.25 + rand*.3)`，`diePitch` 为 `(rand-.5)*.25`。
+
+* 共享侧现在使用同一组时序和同一组腿长 / 髋关节尺寸（`L1=.4`、`L2=.42`、`l0=.075`、`hipX=.165`、`hipY=-.01`、`hipZ=.4`、`footX=.275`、`footZ=[.37,.37,-.42,-.42]`），按本地 `q_()` 的坐标换算做三关节 IK。
+
+* 根节点在死亡全程只执行 `model.rotation.set(0, yaw, 0)`；`body` 骨骼承担俯仰 / 侧倾 / 升降。这样能消除 Euler x+y 的斜轴旋转，不会再有 720°/ 侧翻。
+
+* `flip=false`：火花 + `disposeUnit(unit)`，立即消失，不进入 `wrecks`；`flip=true`：`startWreck()` → 1.0s 后空翻 → 2.2s 本地式倒地 → 残骸保留，仍受 5 具上限、最旧 0.22/s 下沉 3.2s 后移除。
+
+* 服务端广播携带 `flip`；客户端若收到旧服务端没有该字段，才回退到本地 50% 掷骰。
+
+**验证**：
+
+
+
+* `node --check public/js/shared-patrols.js`、`node --check realtime/multiplayer.js`、`node --check index.js`：全部 exit 0。
+
+* 自检 harness `...\shared-patrol-death-test.js`：`flip=false` 模型立即 `removeFromParent()` 且根节点旋转为 0；`flip=true` 根节点 x/z 全程为 0，`body.rotation.x` 最小值 `-6.283185307179586`（恰好一次后空翻），`body.rotation.z` 瞬态最大 ≤0.61 rad（本地 dieRoll 目标与弹簧过冲的理论上限），最终 `body.position.y=0.215`，`model.position.y=0`。
+
+* 对源文件静态检查：共享死亡路径不再存在 `model.rotation.x` 或 `1.25` rad 侧倾；`SHARED_HOUND_FLIP_CHANCE=0.5` 固定。
+
+* `npm run release:check` 仅因项目 `data/` 已有运行数据失败（`chat-history.jsonl`、`frontier-inventory.json`、`gold-ledger.jsonl`、`leaderboard.json`、`portal-bosses.json`、`race-names.json`、`road-signs`）；脚本要求该目录只保留 `.gitkeep`，本轮未删除这些数据。
+
+* 未做真实游戏内 TAB / 悬停截图；本轮验证到共享动画状态机、根 / 骨骼旋转数值与服务端广播字段。
+
+**回退**：
+
+
+
+* 只回退共享猎犬表现：用 `_backup-round7-20261120\public\js\shared-patrols.before-local-hound-death-fix.js` 覆盖 `public/js/shared-patrols.js`；用 `_backup-round7-20261120\realtime\multiplayer.before-patrol-flip-roll.js` 覆盖 `realtime/multiplayer.js`；F03–F06 改回 1.34.6 与 `...-tablang-v`；删除本节与 §16。
+
+* 盐港本地 `game.bundle.js`、`game.bundle.js.bak`、`.env` 均未改动。
+
+
+
+***
+
+## v1.34.6 — 2026-11-20（第 6 次修改：TAB 实时名单状态提示单语化）
+
+版本说明：`v1.34.6` 接在 `v1.34.5` 之后，仅修复 TAB 实时名单 “玩家位置 / 状态” 提示的中英混排；上游基线仍为 v1.33.12。
+
+### 第 6 次修改 — 2026-11-20（TAB：玩家位置 / 状态全中文或全英文）
+
+**问题现象**：按下 TAB 打开的实时名单中，玩家位置 / 状态的悬停与键盘聚焦提示（`#mp-status-tip`，同时写入状态徽标 `aria-label`）在中文界面里仍带英文：`主页界面 · 尚未进入地图 / Home screen`、`当前地图：{map} / Current map`、`专注观战模式 · 正在观战 / Focus spectating`；英文界面反向带中文：`Home screen · not in a map / 主页界面`、`Focus spectating mode / 专注观战模式`。用户要求 TAB 里要么全中文、要么全英文，并对照旧版修正。
+
+**根因**：不是 `multiplayer.js` 的名单 DOM 或 `rosterStatus()` 判定问题。`renderRoster()` 把 `rosterStatusTip(item, status)` 同时写入 `badge.dataset.tip` 与 `aria-label`，`showStatusTip()` 再读取 `dataset.tip` 显示；混排来自 `locales/zh-CN.json` 与 `locales/en-US.json` 的 `mp.status*Tip` 文案被追加了另一种语言。
+
+**修改**：
+
+
+
+| 编号  | 文件                   | 位置（修改后）   | 作用                                                                                                                | 回退                                                                |
+| --- | -------------------- | --------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| E01 | `locales/zh-CN.json` | L379–381  | 三条状态提示恢复旧版纯中文：`主页界面 · 尚未进入地图`、`当前地图：{map}`、`专注观战模式 · 正在观战`                                                        | 恢复被删除的 ` / Home screen`、` / Current map`、` / Focus spectating` 后缀 |
+| E02 | `locales/en-US.json` | L639、L641 | 两条状态提示恢复旧版纯英文：`Home screen · not in a map`、`Focus spectating mode`；`statusMapTip` 原本已是纯英文，未改                      | 恢复 ` / 主页界面`、` / 专注观战模式` 后缀                                       |
+| E03 | `package.json`       | L3        | 1.34.5 → **1.34.6**，触发页面与静态资源缓存刷新                                                                                 | 改回 1.34.5                                                         |
+| E04 | `package-lock.json`  | L3、L9     | 同步 1.34.6                                                                                                         | 改回 1.34.5                                                         |
+| E05 | `index.js`           | L25       | `ASSET_VERSION` 前缀改为 `20261120-merge-flip-gfx-roster-wreck-selectui-tablang-v`，`/version` 为 `...-tablang-v1.34.6` | 改回 `...-selectui-v` 前缀                                            |
+| E06 | `API.md`             | L16       | 当前版本 1.34.6，并注明 TAB 状态提示按语言单语输出                                                                                   | 改回 1.34.5 并删除该句                                                   |
+| E07 | `CHANGELOG.md`       | 本节        | 记录第 6 次修改、对照值与回退                                                                                                  | 删除本节                                                              |
+| E08 | `合并说明-20261120.md`   | 顶部版本行、§15 | 同步 v1.34.6 与第六轮记录                                                                                                 | 删除 §15，版本行改回 1.34.5                                               |
+
+**旧版对照（最终值）**：
+
+
+
+| 键                | 旧版 / 当前 `zh-CN` | 旧版 / 当前 `en-US`            |
+| ---------------- | --------------- | -------------------------- |
+| `statusHomeTip`  | 主页界面・尚未进入地图     | Home screen · not in a map |
+| `statusMapTip`   | 当前地图：{map}      | Current map: {map}         |
+| `statusFocusTip` | 专注观战模式・正在观战     | Focus spectating mode      |
+
+**验证**：
+
+
+
+* `JSON.parse` 读取 `locales/zh-CN.json`、`locales/en-US.json`：均通过。
+
+* 以完整 `mp` 段逐键对比旧版与新版：`zh-CN` 差异 0 条、`en-US` 差异 0 条；中文三条状态提示不再含英文字母，英文两条不再含中文汉字。
+
+* 对 `statusMapTip` 用 6 个本地化地图名逐一插值，再加 home/focus 两条，共 8 条中文样本与 8 条英文样本：中文样本拉丁字母 0 条、英文样本 CJK 0 条。
+
+* `npm run check`：全量 `node --check` exit 0；`node --check index.js` 通过。
+
+* 重启本地 3123 服务后 `/version` 为 `20261120-merge-flip-gfx-roster-wreck-selectui-tablang-v1.34.6`；分别请求 `/?lang=zh-CN`、`/?lang=en-US`，页面内联的 `window.__SALT_I18N__.messages.mp` 实测为：中文 `主页界面 · 尚未进入地图` / `当前地图：{map}` / `专注观战模式 · 正在观战`，英文 `Home screen · not in a map` / `Current map: {map}` / `Focus spectating mode`；`statusHome/statusMap/statusFocus` 与地图名同样各自单语。
+
+* `npm run release:check` 仅因项目 `data/` 已有运行数据（`chat-history.jsonl` 等）失败，脚本要求该目录只保留 `.gitkeep`；本轮未删除用户数据，版本、API 文档、locale 解析本身均通过。
+
+* `multiplayer.js` 未改：`rosterStatus()` 的 `home / map / focus` 判定、`MAP_KEYS`、地图名本地化、`renderRoster()`、`showStatusTip()` 全部保持原样；`#mp-status-tip` 仍读取 `badge.dataset.tip`，`aria-label` 与可见提示同步。
+
+* `mp.statusHome/statusMap/statusFocus`、`mp.mapPort…mapLunar` 原本已是纯中文 / 纯英文，不在本轮改动范围。
+
+
+
+***
+
+## v1.34.5 — 2026-11-20（第 5 次修改：单位选择页布局重排）
+
+版本说明：`v1.34.5` 是本次第 5 轮修复的本地发布号，接在 `v1.34.4` 之后，仅用于资产缓存、`/version` 与回退标识；上游基线仍为 v1.33.12。
+
+### 第 5 次修改 — 2026-11-20（设置 → 操控单位 → 更换：选择页 UI）
+
+**问题现象**：选择页标题 “选择单位” 字号过大；桌面 1366×768、平板 1024×768、手机横屏 844×390 / 667×375 下，左侧 5 张卡片（4 个单位 + 1 个方块人怀旧）超出横屏高度；右侧仍显示 “实时单位预览”“模型已就绪”；预览窗口偏大、位置偏下；底部 “保存选择” 容易被内容挤出或遮挡。用户要求：保持左侧 “四个单位 + 一个方块人（怀旧）” 布局不变，删掉预览标题 / 状态文字，预览缩小并上移，保存按钮固定在右下角；桌面与手机横屏同布局，手机竖屏允许改布局但按钮不能被遮挡。
+
+**修改**：
+
+
+
+| 编号  | 文件                              | 位置（修改后）                                                                                                                                                                            | 作用                                                                                                                                                                                                                                          | 回退                                                          |
+| --- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| D01 | `public/js/soldier-select.js`   | 687 行；L122–143                                                                                                                                                                     | 删除可见的 `.ss-stage-head`（“实时单位预览” 标题与 “模型已就绪” 状态文字）；保留 1px 视觉隐藏的 `#ss-model-state.ss-state-only` 供 `setModelState()` 使用；`canvas#ss-preview` 改 `aria-hidden`，避免文案以可访问名称残留                                                                      | 恢复 L122–143 原 `.ss-stage-head` 段落，并恢复 canvas 的 `aria-label` |
+| D02 | `public/css/soldier-select.css` | 614 行；`#soldier-select` L2、`.ss-layout` L106、`.ss-title` L132、`.ss-state-only` L306、`.ss-stage-frame` L318、`.ss-footer` L389、`.ss-confirm` L405、1060 竖屏 L434、680 竖屏 L501、紧凑横屏 L535 | 标题 `112px` 上限收紧到 `56px`；卡片媒体高度 `154px → 108px`、classic 行 `138px → 104px`；预览高度 `61vh → 48vh`；左右占比由 `1.1/0.9` 调为 `1.18/0.82`；页脚 sticky 右下角并缩按钮；新增 1060 竖屏两列卡片、680 竖屏两列卡片、紧凑横屏强制两列 + classic 整行；根节点改用 `auto / 1fr / auto` 三行，防止内容把 footer 顶出屏幕 | 按本节逐条反向修改；或恢复本轮前 CSS（本轮未单独快照，见回退说明）                         |
+| D03 | `public/css/mobile.css`         | 删除原 L131–141、L189–190 的 `.ss-*` 字号覆盖                                                                                                                                               | `mobile.css` 在 `max-width:760px` 或 `pointer:coarse` 时用 `!important` 把 `.ss-title` 强制到 36–54px、卡片名到 16px，会把新紧凑横屏重新撑坏；移除后由 `soldier-select.css` 自己控制字号。顺带移除已不存在 DOM 的 `.ss-stage-head` 死选择器                                                   | 恢复这 13 条 `.ss-*` 规则；恢复后手机横屏会重新出现标题 / 卡片超限                   |
+| D04 | `package.json`                  | L3                                                                                                                                                                                 | 1.34.4 → **1.34.5**，触发客户端 CSS/JS 缓存刷新                                                                                                                                                                                                       | 改回 1.34.4                                                   |
+| D05 | `package-lock.json`             | L3、L9                                                                                                                                                                              | 同步 1.34.5                                                                                                                                                                                                                                   | 改回 1.34.4                                                   |
+| D06 | `index.js`                      | L25                                                                                                                                                                                | `ASSET_VERSION` 前缀改为 `20261120-merge-flip-gfx-roster-wreck-selectui-v`，`/version` 变为 `...-selectui-v1.34.5`                                                                                                                                 | 改回 `...-wreck-v` 前缀                                         |
+| D07 | `API.md`                        | L16                                                                                                                                                                                | 当前版本 1.34.5                                                                                                                                                                                                                                 | 改回 1.34.4                                                   |
+| D08 | `CHANGELOG.md`                  | 本节                                                                                                                                                                                 | 记录第 5 次修改、文件、行为与回退                                                                                                                                                                                                                          | 删除本节                                                        |
+
+**布局规则（修改后）**：
+
+
+
+* **桌面 / 平板横屏 / 手机横屏（宽度 > 680，且不是&#x20;**`height ≤ 600`**&#x20;的紧凑模式）**：`.ss-layout` 两栏，左栏 1.18fr、右栏 0.82fr；左侧 `.ss-options` 恒为 2 列，`classic` 在宽度 ≥681 时 `grid-column:1/-1`，始终是 “四个单位 + 方块人整行”。1366×768 下 cards 结束于 y=640、footer 从 y=688 开始；1024×768 下 cards 结束于 y=594、footer 从 y=696 开始，均完整可见。
+
+* **手机紧凑横屏（宽度 > 高度且高度 ≤600，JS&#x20;**`resizePreview()`**&#x20;加&#x20;**`ss-compact`**）**：仍保持左右两栏；左栏 `.ss-options` 强制 `repeat(2,minmax(0,1fr))`，`classic` 强制 `1/-1`；卡片改为 54px 媒体 + 文字的单行结构。844×390 下 cards 结束于 y=241、footer 从 y=332 开始；667×375 下 cards 结束于 y=241、footer 从 y=317 开始。
+
+* **手机 / 窄屏竖屏（≤680 且 portrait）**：改为 “预览在上、标题与卡片在下” 的纵向布局；卡片 2 列、`classic` 整行；390×844、375×667、360×780 下 5 张卡片均在首屏内，footer 为普通流（不是 sticky 覆盖），保存按钮在右下且不与卡片重叠。
+
+* **平板竖屏（≤1060 且 portrait）**：预览在上、卡片在下；卡片横向 96px 媒体 + 文字，`classic` 整行；768×1024 下 scrollHeight = clientHeight = 1024，无内容溢出。
+
+* **保存按钮**：桌面 / 横屏在 `.ss-footer` 右侧、`position:sticky` 底部；紧凑横屏和竖屏由 footer 自身布局承载。844×390 按钮区域 `x=684,w=150,y=336,h=44`，右边距 10、底边距 10；390×844 按钮 `x=227,w=150,y=774,h=48`，右边距 13、底边距 22；均未越界、未压卡片。
+
+**验证**：
+
+
+
+* `node --check public/js/soldier-select.js`：exit 0。
+
+* `node --check public/js/shared-patrols.js`：exit 0。
+
+* `npm run check`：全量 `node --check` exit 0。
+
+* CSS 括号平衡：`soldier-select.css` `{0,minDepth:0}`、`mobile.css` `{0,minDepth:0}`。
+
+* 用与 `soldier-select.js` 模板一致的静态 harness + 实际 `soldier-select.css` / `mobile.css`，通过 Chrome DevTools Protocol 真机视口截图逐张核对：1920×1080、1366×768、1024×768、1024×600、844×390、667×375、768×1024、430×932、390×844、375×667、360×780。全部 5 张卡片可见；保存按钮 rect 均在视口内；`scrollWidth == clientWidth`；无 “实时单位预览 / 模型已就绪” 文字。
+
+* 另外在真实 `http://127.0.0.1:3123/` 页面加载完整 CSS 栈（含 `game.css` / `style.css` / `mobile.css` 与实际字体）后，注入与 JS 模板相同的选择页 DOM，在 1366×768、1024×768、844×390、667×375、768×1024、390×844 复核：rect 与 harness 完全一致，`previewText=false`、`stageHead=false`。这一步验证了后置样式与实际字体不会把布局改坏。
+
+* **未完成**：无头 Chrome 打开真实游戏页时停在启动页 “正在唤醒渲染器（80%）”，`window.SoldierSelect` 未就绪，未能在真实游戏内点开设置入口做端到端截图；本轮布局验收基于与 JS 模板逐项对齐的 harness 及真实 CSS 注入，需在真实浏览器按 “设置 → 操控单位 → 更换” 再点验一次。
+
+**回退**：
+
+
+
+* D01 恢复 `soldier-select.js` 的 `.ss-stage-head` 可见块与 canvas `aria-label`；D02 按本节反向恢复 `soldier-select.css` 的原字号 / 高度 / 两栏比例 / 页脚 / 媒体查询；D03 恢复 `mobile.css` 的 13 条 `.ss-*` 覆盖；D04–D06 版本串改回 1.34.4 与 `...-wreck-v` 前缀。
+
+* 本轮未生成单独改动前快照；若需要文件级回滚，使用 `_backup-before-merge-20261120\public\css\soldier-select.css` 会同时回退前四轮，不建议直接覆盖。回退 D03 时会恢复手机横屏标题 36–54px 的旧行为，便于对照复现 “卡片超出屏幕”。
+
+## v1.34.4 — 2026-11-20（第 4 次修改：机械狗击毁表现）
+
+版本说明：`v1.34.4` 是本次第 4 轮修复的本地发布号，接在 `v1.34.3` 之后，仅用于资产缓存、`/version` 与回退标识；上游基线仍为 v1.33.12。
+
+### 第 4 次修改 — 2026-11-20（机械狗击毁：后空翻 + 原版倒地 + 残骸保留）
+
+**问题现象**：新版机械狗被击毁后，一部分直接消失；另一部分模型停在四肢站立的绑定姿态，既不后空翻，也不倒地。用户要求折中：**50% 概率先播后空翻，随后播原版（旧版）击毁倒地动作；另外 50% 直接播原版倒地；击毁后的模型保留在地面，消失时机与旧版一致**。
+
+**根因**（已定位到 `shared-patrols.js` 的更新循环）：
+
+
+
+* `destroyed()` 先把该 id 从 `rows` 中过滤掉，再给 `unit.flip` 置状态；但 `update()` 只遍历 `rows`。单位已经不在 `rows` 里，`advanceFlip()` 永远不会被调用，模型就停在最后一次步态 / 绑定姿态（视觉上四肢站立），也不会执行翻转结束的 `remove()`。
+
+* 非后空翻分支在 `destroyed()` 里直接 `remove(message.id)`；后空翻分支 `advanceFlip()` 在 0.55s 后也直接 `remove(id)`。两条路径都没有旧版的倒地、滑行、冒烟，也没有残骸保留。
+
+* 盐港（`port`）本地机械狗走引擎 `q()` / `U(T)`，这段与旧版逐字节等价（`flipBegin` → 后空翻 → 原版倒地 → `addWreck`），不在本次问题范围内；本次修复只改远征 / 青云宗服务端共享巡逻单位的客户端表现层。
+
+**修复**：
+
+
+
+* 新增独立 `wrecks` 残骸数组，死亡单位从 `units` 移出后仍由 `updateWrecks()` 每帧推进，不再依赖服务端 `rows`，从根上修复 “翻到一半停住 / 不消失”。
+
+* 机械狗死亡统一走 `startWreck()`：`Math.random() < flipChance()` 时先播 0.55s 后空翻（整机 `rotation.x = -2π`、抬高 0.85、四腿收拢），结束后接 0.38s 原版倒地（侧倾 ±1.25 rad、俯仰微调、四腿展开、下沉贴地）；未抽中后空翻的 50% 直接进入倒地。无人机仍维持原版 “火花 + 立即移除”，不进入残骸队列。
+
+* 倒地完成后模型保留在地面，前 2.2s 断续冒烟；残骸上限与引擎 `Ui.maxWrecks=5` 一致，第 6 具出现时最旧一具开始下沉，下沉速度 0.22/s，超过 3.2s 后移除 —— 与旧版 `U(T)` 的 `sink` 时序一致。切换地图 / 断线时统一清空，避免残骸跨图残留。
+
+
+
+| 编号  | 文件                            | 位置（修改后）                                                                                                                                                                      | 作用                                                                                      | 回退                                                                                                |
+| --- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| D01 | `public/js/shared-patrols.js` | 300 行 / 10,719 B；`WRECK_LIMIT` L13、`removeWreck` L41、`clearAll` L49、`startWreck` L105、`advanceWreck` L138、`updateWrecks` L200、`snapshot` L212、`update` L222、`destroyed` L267 | 修复共享巡逻机械狗 “直接消失 / 站立不动”：独立残骸队列、50% 后空翻 + 原版倒地、残骸保留、5 具上限 + 3.2s 下沉；无人机行为不变              | `_backup-round4-20261120\public\js\shared-patrols.before-wreck-fix.js`（4,838 B，修复前含错误 flip 逻辑的版本） |
+| D02 | `package.json`                | L3                                                                                                                                                                           | 版本 1.34.3 → **1.34.4**，触发客户端资源缓存刷新                                                      | 改回 1.34.3                                                                                         |
+| D03 | `package-lock.json`           | L3、L9                                                                                                                                                                        | 同步 1.34.4                                                                               | 改回 1.34.3                                                                                         |
+| D04 | `index.js`                    | L25                                                                                                                                                                          | `ASSET_VERSION` 前缀改为 `20261120-merge-flip-gfx-roster-wreck-v`，`/version` 变为 `…-v1.34.4` | 改回原前缀                                                                                             |
+| D05 | `API.md`                      | L16                                                                                                                                                                          | 当前版本 1.34.4                                                                             | 改回 1.34.3                                                                                         |
+| D06 | `CHANGELOG.md`                | 本节                                                                                                                                                                           | 记录第 4 次修改、根因、时序与回退                                                                      | 删除本节                                                                                              |
+
+**验证**：
+
+
+
+* `node --check public/js/shared-patrols.js`：exit 0。
+
+* 新增本地 VM 行为测试（不依赖浏览器）：0% 翻率时模型倒地且不消失；100% 翻率时先抬高 / 旋转、翻完后倒地且不消失；连续 6 具残骸时最旧一具在 3.3s 后下沉退休，其余保留。全部 PASS。
+
+* 未做浏览器渲染级验收；后空翻的视觉高度、倒地角度、残骸冒烟密度需在真实浏览器按 “远征 / 青云宗击杀机械狗 → 观察 0.55s 翻转 → 观察倒地与残骸 → 连续击杀 6 只观察最旧残骸下沉” 点验。
+
+**回退**：
+
+
+
+* 只回退第 4 次：`_backup-round4-20261120\public\js\shared-patrols.before-wreck-fix.js` → `public/js/shared-patrols.js`；再把 `package.json` / `package-lock.json` / `API.md` / `index.js` 的版本串按 D02–D04 改回 1.34.3。回退后恢复 “50% 0.55s 翻转后立即移除、50% 立即移除” 的旧行为，即用户报告的问题状态。
+
+* 不回退版本号、只回退 `shared-patrols.js` 也可以验证问题是否来自该文件；`game.bundle.js.bak` 仍保留，未删除、未改动。
+
+## v1.34.3 — 2026-11-20（本地合并，基于上游 v1.33.12）
+
+版本说明：`v1.34.3` 是本地发布编号，用于资产缓存、`/version` 与回退标识，不代表上游已发布该版本；上游基线仍为 v1.33.12（2026-11-19）。
+
+版本号选择：**不取 v1.33.13，也不取 v1.34.0**。旧版最终 `package.json` 已是 **1.34.2**，且 `v1.34.0`（TAB 实时名单）、`v1.34.1`（状态浮层滚动保护）、`v1.34.2`（排行榜 / 金币滚动条白边）三次发布已被占用；本次合并包含这三项并新增 9 条画质引擎钩子与设置 UI 修正，若叫 `v1.34.0` 会重号、且比旧版最终号还小，回退比对会歧义；`v1.33.13` 是补丁号，语义更低估。故在旧版最终号上顺延一个补丁号，取 **v1.34.3**。
+
+合并基线：`_backup-before-merge-20261120/`（298 个文件，第 1 次前快照）；第 2 次前快照 `_backup-round2-20261120/`；第 3 次前快照 `_backup-round3-20261120/`（本轮 3 个文件）。
+
+逐条依据、冲突分析与测试记录见 `合并说明-20261120.md`；本节先给「新增 / 修复 / 变更」摘要（每条标注第几次合并），再给「文件 / 行 / 作用 / 回退」明细。
+
+本轮修改顺序（2026-11-20，按实际落盘先后）：
+
+
+
+1. **第 1 次（上午）**：把旧版自研五项移植进新版 —— 画质设置体系（档位 + 高级面板 + 跑分）、TAB 战场名单 / 排行榜 / 金币、公屏字号与透明度、机械狗模型姿态修复、死亡重生内嵌广告语音删除；同时保留新版 4 张地图、赛车模式、机械狗 / 无人机攻击与出生频率。新增 4 个代码文件 + 1 个补丁备份，修改 20 个文件。
+
+2. **第 2 次（下午）**：补 9 条画质引擎钩子（帧率上限、雨量、各向异性、动态分辨率、运行期 API），补齐 TAB 实时名单漏项（`__SALT_ROSTER_OPEN__`、回锁、浮层、行复用），逐条核对公屏 / 机械狗模型 / 死亡重生内嵌广告语音；实测旧版 bundle 同样没有画质钩子，钩子是按 `client-options.js` 的消费点在新包实现。
+
+3. **第 3 次（傍晚）**：对齐旧版最终 UI——TAB 名单去掉白色 / 黄色焦点边框；设置面板按标题页语言分流（中文主标签 + 英文小字 / 英文主标签 + 中文小字），`i18n.js` 增加 `data-i18n-skip` 跳过与切语言后重开设置。
+
+### 新增
+
+
+
+* 【第 1 次】**机械狗死亡后空翻**：引擎 10 个锚点接入 `flipTmp` / `flipDieChance`，默认概率 **50%（0.5）**；远征 / 青云宗的共享巡逻单位只对 `kind === 'hound'` 掷骰补客户端翻转，无人机保持原火花消失；后台可调概率并即时广播。
+
+* 【第 1 次】画质设置体系：五档档位 + 高级面板（纹理、各向异性、雨量、帧率上限、动态分辨率）+ 跑分与公屏外观；`graphics-boot.js` 在引擎启动前写入 `?tex/?aniso/?dynres` 与预启动全局。
+
+* 【第 2 次】画质引擎钩子真正落地（9 条）：`setRainDensity` / `setDynamicResolution` / `setFrameCap` 可运行期调用；引擎读取 `__SALT_FRAME_CAP__`、`__SALT_GRAPHICS_PREBOOT_QUALITY__.rain`、`params.aniso`。
+
+* 【第 1 次】战场名单 / 排行榜 / 金币：名单四列、状态徽章与浮层、金币活动公示；排行榜保留离线玩家 `lastCoins` 并新增在线状态与金币列。
+
+* 【第 1 次】后台 `/admin/tuning`：后空翻概率百分比校验、落盘并广播，新老地图即时生效。
+
+### 修复
+
+
+
+* 【第 1 次】人物与出生朝向：盐港统一 `PORT_SPAWN_YAW=-π/2`（面朝东），各入口按服务端 / 地图 `yaw` 兜底；远端机器狗模型翻转 π。
+
+* 【第 1 次】无人机探照灯：改为 `-sin/-cos`，照向模型正面，不再照反。
+
+* 【第 1 次】金币显示：未同步时 HUD 显示 `—`，不再误报 0；服务端提供只读 `balanceFor()`。
+
+* 【第 1 次】排行榜：离线玩家保留最后一次在线金币，重启后不再归零。
+
+* 【第 1 次】远端机械狗模型：`scheduleMachineFallbackUpgrade` 等三级重试与旧版逐行等价（上游已有，本次核对不重复合并）。
+
+* 【第 1 次】单位选择 / 模型姿态：设置入口复用与异常回退；模型三级来源挑选 + `resetBindPose()`。
+
+* 【第 2 次】取消死亡重生内嵌 base64 广告语音：`respawnAudio` / `stopRespawnAudio` / `data:audio/wav` 计数归零，`multiplayer.js` 453,751 → 175,226 B。
+
+* 【第 2 次】TAB 名单漏项：`__SALT_ROSTER_OPEN__` 置位 / 清位、关闭后 `requestLock()` 回锁、`syncBoardLimit()`、状态浮层只取自己并 `scrollIntoView()`、`refreshStatusPeek()` 自动刷新、行复用比较 `status`。
+
+* 【第 3 次】TAB 名单白色 / 黄色边框：给 `.mp-roster-card`、`.mp-board-scroll`、`.mp-gold-activity-scroll` 及其 `:focus` / `:focus-visible` 补 `outline: 0`，拖动滚动条不再出现 Chrome 默认焦点环。
+
+### 变更
+
+
+
+* 【第 2 次】TAB 战场名单改为**实时 HUD**：打开时释放鼠标但游戏继续跑，关闭时自动回锁，不再因失焦暂停。
+
+* 【第 3 次】设置界面中英文分流：按标题页语言（`__SALT_I18N__.lang`）决定主标签；中文界面显示 “中文主标签 + 英文小字”，英文界面反过来。`i18n.js` 新增 `data-i18n-skip` 跳过区，避免英文模式把中文小字再翻译一遍；语言切换后自动重开设置 / 画质页。
+
+* 【第 1 次】公屏文字：字号 `--salt-banner-font-scale` 与透明度 `--salt-banner-text-alpha` 可调；**位置保留新版**（旧版上移基于更小字号，新版字号更大，上移会压 HUD）。
+
+* 【本次】本地发布号定为 **v1.34.3**（`package.json` / `package-lock.json` / `API.md` / `CHANGELOG.md` 同步），`/version` 与资源缓存键随之为 `20261120-merge-flip-gfx-roster-v1.34.3`。
+
+### 第 1 次合并 — 2026-11-20（旧版自研功能移植）
+
+来源 `E:\0_Projecs\WorkBuddyAIProject\fable5-2-salt-online-main`；新增 4 个代码文件 + 1 个补丁备份，修改 20 个文件，删除 0。行号均为**本次合并后**的行号。
+
+
+
+| 编号  | 文件                               | 位置（合并后）                                                                                                                                        | 作用                                                                 | 回退                                                            |
+| --- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------- |
+| A01 | `public/js/client-options.js`    | 新文件，2414 行；公屏变量写入 L239/L255；帧率上限 L590–592；雨量 / 动态分辨率调用 L554–570、L601–603                                                                       | 画质档位 + 高级面板 + 跑分 + 公屏外观 + 设置分组                                     | 删除该文件即回到上游无面板状态                                               |
+| A02 | `public/js/graphics-boot.js`     | 新文件，136 行；`__SALT_GRAPHICS_PREBOOT__` L98，`?tex/?aniso/?dynres` L109–119，雨量 / 帧率全局 L125–135                                                    | 在引擎启动前把纹理、各向异性、雨量、帧率上限写进 URL 与全局                                   | 删除该文件                                                         |
+| A03 | `public/js/hound-flip-tuning.js` | 新文件，52 行                                                                                                                                       | 接收后台 `houndFlip` 广播并校验 `__SALT_FLIP__`                             | 删除该文件                                                         |
+| A04 | `services/houndTuning.js`        | 新文件，63 行；`DEFAULT_CHANCE` L9                                                                                                                   | 后空翻概率三级读取（环境变量 / `data/hound-tuning.json` / 默认 0.5）与写入             | 删除该文件、删除 `data/hound-tuning.json`                             |
+| A05 | `public/js/game.bundle.js.bak`   | 1,396,995 B                                                                                                                                    | 补丁脚本自动备份；**用户要求保留，不删除**                                            | 可直接作为引擎回退源                                                    |
+| M01 | `index.js`                       | L15 引入 `houndTuning`；L25 `ASSET_VERSION`；L153–155 `/version`；L180 下发 `houndFlipChance`                                                         | 版本标识、后空翻概率下发、静态缓存策略                                                | 从备份目录取回                                                       |
+| M02 | `views/index.ejs`                | L22/L28 样式；L85 `__SALT_FLIP__`；L98 `graphics-boot.js`；L102 `client-options.js`                                                                 | 脚本顺序与启动前画质注入                                                       | 从备份目录取回                                                       |
+| M03 | `public/js/boot-gate.js`         | L47 `graphics-boot.js`、L56 `hound-flip-tuning.js`、L63 `client-options.js`                                                                      | 核心脚本按序加载                                                           | 从备份目录取回                                                       |
+| M04 | `public/js/game.bundle.js`       | 10 个字符级锚点（后空翻模块：`flipDieChance:.5` L5844、L5859、L5918；`flipBegin` 定义 L5922、机械狗死亡 `q()` 调用 L5930；`flipTmp` 16 处引用）；锚点原文见《合并说明》§3.2               | 仅机械狗死亡后空翻的引擎侧触发与状态机；无人机不翻转（走 `lostRotor`）                          | 用 `_backup-before-merge-20261120\public\js\game.bundle.js` 覆盖 |
+| M05 | `public/js/shared-patrols.js`    | 修改后 133 行；新增 `flipChance` L26、`startFlip` L31、`destroyed` L114–122                                                                             | 共享巡逻单位的后空翻掷骰与延迟销毁                                                  | 从备份目录取回                                                       |
+| M06 | `realtime/multiplayer.js`        | `lastCoins` L439/L462–473；`spawnYawFor` L511–515；`coins: playerCoins` L540；join 即时 `goldList` L1254；`getLeaderboard` 增 `online/coins`          | 排行榜离线金币回显、开局金币同步、出生朝向                                              | 从备份目录取回                                                       |
+| M07 | `public/js/multiplayer.js`       | `renderRoster` L841–953；`setRoster` L1183–1217；`updateAvatarDroneLight` L2023–2045；`fallbackSpawnYaw` L1588–1591；`window.__mp` 金币门面 L4397–4405 | 榜单四列 / 滑条 / 状态徽章、金币显示、人物朝向、`__mp.coinsKnown`                       | 从备份目录取回                                                       |
+| M08 | `public/js/gold.js`              | `carriedKnown` L136/L433/L461/L474/L559/L582–587；HUD 文案 L639                                                                                   | 未同步时金币显示 `—`，避免误报 0                                                | 从备份目录取回                                                       |
+| M09 | `services/gold.js`               | `balanceFor(player)` L468                                                                                                                      | 服务端只读当前随身金币，不写盘                                                    | 从备份目录取回                                                       |
+| M10 | `public/css/multiplayer.css`     | 状态徽章 §L885–948、榜单 L1102–1155、tooltip L1261–1412                                                                                                | 榜单四列、状态浮层、手机断点                                                     | 从备份目录取回                                                       |
+| M11 | `public/css/comms.css`           | L261 顶部偏移；L275–286 内边距 / 背景；L351–360 字号与透明度；L792–859 断点                                                                                        | 公屏字号缩放 `--salt-banner-font-scale`、文字透明度 `--salt-banner-text-alpha` | 从备份目录取回                                                       |
+| M12 | `public/css/mobile.css`          | L108–113                                                                                                                                       | 手机端字号 /padding 套同一缩放变量                                             | 从备份目录取回                                                       |
+| M13 | `public/js/flight-collision.js`  | `PORT_SPAWN_YAW` L12–13、使用点 L231                                                                                                               | 盐港出生朝向统一为 `-π/2`（面朝东）                                              | 从备份目录取回                                                       |
+| M14 | `public/js/unit-models.js`       | 来源挑选 L16–40、`useSource` L262–264                                                                                                               | 三级模型来源挑选 + `resetBindPose()`，修复模型残留姿态                              | 从备份目录取回                                                       |
+| M15 | `public/js/soldier-select.js`    | L21/L38/L61/L199/L399 附近                                                                                                                       | 设置入口复用、首行插入、异常兜底                                                   | 从备份目录取回                                                       |
+| M16 | `routes/admin.js`                | `tuningPage()` L250–256；`GET /tuning` L259–263；`POST /tuning` L267–280                                                                         | 后台调后空翻概率，保存后广播                                                     | 从备份目录取回                                                       |
+| M17 | `views/admin.ejs`                | L29–75                                                                                                                                         | 后台滑条 UI 与导航入口                                                      | 从备份目录取回                                                       |
+| M18 | `locales/zh-CN.json`             | `houndTitle` L261、`rosterHint` L335 等                                                                                                          | 榜单 / 金币 / 后空翻 / 后台调参中文键                                            | 从备份目录取回                                                       |
+| M19 | `locales/en-US.json`             | 对应英文键                                                                                                                                          | 同上                                                                 | 从备份目录取回                                                       |
+| M20 | `package.json`                   | `version` L3、`check` 脚本                                                                                                                        | 版本标识与 `node --check` 覆盖新增文件                                        | 从备份目录取回                                                       |
+
+### 第 2 次合并 — 2026-11-20（补引擎钩子 + 四项点名核对）
+
+本轮只改两个文件：`public/js/game.bundle.js`、`public/js/multiplayer.js`。引擎 1,402,321 → 1,403,514 B（+1,193）；`multiplayer.js` 453,751 → 175,226 B（删除内嵌广告语音后）。
+
+
+
+| 编号  | 文件                         | 位置（合并后）                                                                                                                                                                                                                                | 作用                                                                                                                                                                         | 回退                                                           |
+| --- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| B01 | `public/js/multiplayer.js` | `showRespawnOverlay` L2258–2284、`hideRespawnOverlay` L2286–2290；全文 `respawnAudio` / `stopRespawnAudio` / `data:audio/wav` 计数为 0                                                                                                        | 取消死亡重生时播放的内嵌 base64 广告语音（旧版 `分析报告/05`）                                                                                                                                     | `_backup-round2-20261120\multiplayer.before-round2-edits.js` |
+| B02 | `public/js/multiplayer.js` | 开启置位 L1188；`syncBoardLimit()` L1192；关闭清位 L1205；恢复鼠标锁 L1212–1214；`renderRoster` 末尾刷新浮层 L952；行复用比较 `row.status` L856；`showRosterStatusPeek` L1264–1288、`refreshStatusPeek` L1289–1301                                                    | TAB 名单改为「实时 HUD、不暂停」：开名单放开鼠标但游戏继续跑，关名单自动 `requestLock()`；浮层只取自己并 `scrollIntoView`；自动滚动不误清浮层                                                                                | 同上                                                           |
+| B03 | `public/js/multiplayer.js` | `updateAvatarDroneLight` L2023–2045（`aim.set` 用 `-sin/-cos`）                                                                                                                                                                           | 无人机探照灯方向与模型正面一致（模型已在 `mountMachineAvatar` 翻转 π）                                                                                                                            | 同上                                                           |
+| B04 | `public/js/multiplayer.js` | 起飞点 `yaw` 兜底 L1575–1578；`fallbackSpawnYaw` L1588–1591                                                                                                                                                                                  | 服务端未给 `yaw` 时盐港面朝东，其他地图保持随机                                                                                                                                                | 同上                                                           |
+| B05 | `public/js/game.bundle.js` | 行号 / 字符：Q1 `__SALT_ROSTER_OPEN__` L6071 @char 1,380,921；Q2 帧率上限 L41 @379,308；Q3 雨量读取 L5555 @1,107,312；Q3b/Q3c/Q3d 实例数与 API L4443 @765,528–765,669；Q4 `Gg` 各向异性 L5183 @841,620；Q4b `O1` 各向异性 L5555 @1,109,653；Q5 三个运行期方法 L4443 @765,453 | 画质钩子真正落地：`setRainDensity` / `setDynamicResolution` / `setFrameCap` 可运行期调用；引擎读 `__SALT_FRAME_CAP__`、`__SALT_GRAPHICS_PREBOOT_QUALITY__.rain`、`params.aniso`；TAB 打开时引擎不因失焦暂停 | `_backup-round2-20261120\game.bundle.before-engine-hooks.js` |
+| B06 | `public/css/comms.css`     | 保持新版 `top`：L261（22%）、L792（18%）、L848（20%）、L858（15%）                                                                                                                                                                                     | 公屏字号 / 透明度滑条已生效；**位置不回灌旧版**（旧版 20/16.5/18.5/13.5 是在更小字号下上移，新版字号更大，上移会压 HUD）                                                                                                | 如需旧位置，仅改这 4 个 `top` 值                                        |
+| B07 | —                          | 核对结论，无代码改动                                                                                                                                                                                                                             | 机械狗远端真实模型修复：`scheduleMachineFallbackUpgrade` / `requestMachineAvatar` / `mountMachineAvatar` 新旧**逐行等价**（20 次上限、1200ms 间隔），属上游已有；M14 另补模型来源与姿态复位                            | 无需回退                                                         |
+
+### 第 3 次合并 — 2026-11-20（旧版最终 UI / 语言修正）
+
+本轮只改 3 个文件；三者都来自旧版 03:38–04:47 的最新保存（新版此前是 02:42 的旧拷贝）。本轮未再起新号，仍并入 **v1.34.3**。
+
+
+
+| 编号  | 文件                            | 位置（合并后）                                                                                                                          | 作用                                                                                                                                                                                               | 回退                                                           |
+| --- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| C01 | `public/js/client-options.js` | 整文件替换，2,779 行 / 131,951 B；`UI_LANG` L137、`pick`/`pair` L139–147、`applyGraphicsLanguage()` L1715、`BANNER_DEFAULT_OPACITY` L39（80） | 设置面板按语言分流：中文主标签 + 英文小字，英文反之；同时带入设置面板 UI 优化（画质档位、标签大小写、面板间距、默认公屏透明度 80%）                                                                                                                          | `_backup-round3-20261120\client-options.before-ui-lang.js`   |
+| C02 | `public/js/i18n.js`           | 314 行 / 10,367 B；`rememberOpenSettings()` L36–50、`isSkipped()` L183、翻译遍历与 MutationObserver 跳过                                    | 英文模式不再翻译带 `data-i18n-skip` 的中文小字；切换语言后记住并重开设置 / 画质页，不再整页丢失状态                                                                                                                                     | `_backup-round3-20261120\i18n.before-lang-skip.js`           |
+| C03 | `public/css/multiplayer.css`  | L1265–1276：`.mp-roster-card` / `.mp-board-scroll` / `.mp-gold-activity-scroll` 及 `:focus` / `:focus-visible`                     | 去掉 TAB 名单与金币活动列表在拖动滚动条时的白色 / 黄色焦点边框；旧版 `分析报告/11-排行榜滚动条白边修复.md` 已确认白色边框是 Chrome `:focus-visible` 的 `outline`，不是 CSS `border`。旧版只覆盖两个内层滚动区，本轮额外覆盖 `.mp-roster-card`（它同样 `overflow-y:auto`，可能整面板出环） | `_backup-round3-20261120\multiplayer.before-outline-fix.css` |
+
+### 回退索引
+
+
+
+1. **整包回退**：用 `_backup-before-merge-20261120/` 覆盖项目根（会同时丢失第 1、2 次全部合并）。
+
+2. **单文件回退（第 1 次）**：从 `_backup-before-merge-20261120/<相对路径>` 取回对应文件；`A05` 的 `game.bundle.js.bak` 可直接覆盖 `public/js/game.bundle.js`。
+
+3. **只回退第 2 次**：`_backup-round2-20261120\game.bundle.before-engine-hooks.js` → `public\js\game.bundle.js`；`multiplayer.before-round2-edits.js` → `public\js\multiplayer.js`（同时撤销 B01–B04）。
+
+4. **只回退第 3 次**：把 `_backup-round3-20261120\` 下三个文件按原名复制回去 ——`client-options.before-ui-lang.js` → `public\js\client-options.js`、`i18n.before-lang-skip.js` → `public\js\i18n.js`、`multiplayer.before-outline-fix.css` → `public\css\multiplayer.css`；CSS 回退后 TAB 名单焦点边框会重新出现，JS 回退后设置面板回到中英并排。
+
+5. **只撤销某一条引擎钩子**：按 B05 的字符偏移定位，删除对应插入片段；改完必须 `node --check public/js/game.bundle.js`。
+
+### 本次合并的验证（2026-11-20）
+
+
+
+* `npm run check`：99 个 `node --check` 全部 exit 0（含 `game.bundle.js`、`multiplayer.js`、`client-options.js`）。
+
+* HTTP（127.0.0.1:3123，临时 `DATA_DIR`）：`/`、`/js/game.bundle.js`（1,403,514 B）、`/js/client-options.js`（131,951 B）、`/js/i18n.js`（10,367 B）、`/js/graphics-boot.js`、`/css/multiplayer.css`（35,095 B）、`/race/plaza`、`/admin` 均 200；`/version` 为 `20261120-merge-flip-gfx-roster-v1.34.3`。
+
+* 第三轮额外验证：`node --check client-options.js` / `i18n.js` 均 exit 0；CSS 花括号平衡 0；`/` 注入 `zh-CN`、`/?lang=en-US` 注入 `en-US`，且 `client-options.js` 在 `__SALT_I18N__` 之后加载。
+
+* WS 探针：重生后 `yaw=-π/2` PASS；`joined` 带整数 `coins`，`goldList` 于 joined 后 7 ms 到达 PASS；项目自测 5/5 exit 0。
+
+* **未做**浏览器渲染级验收（需授权启动无头浏览器）；画质钩子的视觉效果需在真实浏览器按《合并说明》§7.3 清单点验。
+
+### 已知边界
+
+
+
+* 雨几何改为固定 9,000 / 900 实例预分配，运行期调密度只改 `instanceCount`；比 minimal 档原 1,800 略增显存（约 0.1–0.2 MB 级）。
+
+* 引擎构建期雨量沿用上游下限 `Math.max(.15, …)`：滑条设 0 时，页面加载瞬间仍会建 15% 雨，`client-options` 在 `__G` 就绪后调用 `setRainDensity(0)` 归零。
+
+* 帧率上限只作用于引擎 `Ty()` 的 rAF 循环；浏览器 / 显示器刷新率仍是硬上限。
+
+* 高级画质项（纹理 / 各向异性）在材质图集构建前生效，改动后需重载页面；雨量 / 帧率 / 动态分辨率可即时生效。
+
+* `.env` 与 `node_modules` 本项目目录仍没有；测试时通过 `NODE_PATH` 借用旧项目依赖，部署前需补 `.env` 并安装依赖。
+
+* `kill-streak.js` 的连杀播报音（`/audio/killstreak/*.webm|mp3`）**未改**，新旧哈希一致；旧版 `分析报告/05` 删的是死亡重生内嵌 base64 广告语音，不是连杀播报。若需要连杀播报也静音，另开一项处理（可加设置开关，或在 `boot-gate.js` 停止加载 `kill-streak.js`）。
+
+## v1.33.14 — 2026-11-20
+
+- 赛道无人机支持持续升降、地速 HUD、障碍扫掠碰撞与最高 600 km/h 飞行。
+- 赛道广场复用战场枪械、背包装备换枪、触屏升降及第一人称和肩后镜头。
+
+## v1.33.13 — 2026-11-20
+
+- 手机新增「流畅」画质，优先关闭昂贵特效并提高极低档分辨率。
+- 手机血条回到左下角，拍照和回放保持在上方，缩小战斗控件。
+- 重生倒计时缩短至 2.8 秒，重生后提供 4 秒 PvP 保护。
+
 ## v1.33.12 — 2026-11-19
 
-- 修正赛车步行角色的第三人称朝向，支持步行时开火、换弹，并同步枪口效果。
-- 终点和赛道自由活动模式支持切换单位，玩家可沿赛道步行，领奖台优先显示游戏昵称。
-- 赛车出口的传送门通过目标地图入口直接部署，加载期间显示传送过渡和目标地图名。
+
+
+* 修正赛车步行角色的第三人称朝向，支持步行时开火、换弹，并同步枪口效果。
+
+* 终点和赛道自由活动模式支持切换单位，玩家可沿赛道步行，领奖台优先显示游戏昵称。
+
+* 赛车出口的传送门通过目标地图入口直接部署，加载期间显示传送过渡和目标地图名。
 
 ## v1.33.11 — 2026-11-19
 
-- 传送到终点和完赛下车的玩家进入同一广场，实时同步角色、昵称和动作；广场能看到接近终点的参赛车，也能展开查看全赛道挑战者及剩余距离。
+
+
+* 传送到终点和完赛下车的玩家进入同一广场，实时同步角色、昵称和动作；广场能看到接近终点的参赛车，也能展开查看全赛道挑战者及剩余距离。
 
 ## v1.33.10 — 2026-11-19
 
-- 赛车终点和完赛下车后沿用战场的鼠标、键盘、手柄和触屏移动输入。
+
+
+* 赛车终点和完赛下车后沿用战场的鼠标、键盘、手柄和触屏移动输入。
 
 ## v1.33.9 — 2026-11-19
 
-- 首次进入游戏或赛车终点时默认使用男士兵，继续读取此前保存的操作单位。
+
+
+* 首次进入游戏或赛车终点时默认使用男士兵，继续读取此前保存的操作单位。
 
 ## v1.33.8 — 2026-11-19
 
-- 战场的赛车传送门直接进入终点广场，可自由步行、看领奖台和返回其他地图。计时比赛由首页报名进入。
-- 接近赛车终点时提前缓存青云宗地图资源，从终点传送时在首页启动阶段便开始读取所需资源，加载动画期间暂停港口背景渲染。修复青云宗阴影绘制时的 WebGL 反馈循环。
+
+
+* 战场的赛车传送门直接进入终点广场，可自由步行、看领奖台和返回其他地图。计时比赛由首页报名进入。
+
+* 接近赛车终点时提前缓存青云宗地图资源，从终点传送时在首页启动阶段便开始读取所需资源，加载动画期间暂停港口背景渲染。修复青云宗阴影绘制时的 WebGL 反馈循环。
 
 ## v1.33.7 — 2026-11-19
 
-- 盐港之外的普通机器狗和无人机由服务器按地图统一派发，地图内玩家共享单位、血量、击毁和补充状态。
+
+
+* 盐港之外的普通机器狗和无人机由服务器按地图统一派发，地图内玩家共享单位、血量、击毁和补充状态。
 
 ## v1.33.6 — 2026-11-19
 
-- 新服和归零的旧奖池立即补入赛车 Boss 赏金，破纪录结算时在同一事务中生成下一轮奖池。
+
+
+* 新服和归零的旧奖池立即补入赛车 Boss 赏金，破纪录结算时在同一事务中生成下一轮奖池。
 
 ## v1.33.5 — 2026-11-19
 
-- 盐港赛车与六张地图使用统一的地面时空隧道；站稳后进入，赛车报名继续显示支付确认。
-- 赛车下车和领奖使用玩家所选的操作单位，步行时沿用对应骨骼动作。
+
+
+* 盐港赛车与六张地图使用统一的地面时空隧道；站稳后进入，赛车报名继续显示支付确认。
+
+* 赛车下车和领奖使用玩家所选的操作单位，步行时沿用对应骨骼动作。
 
 ## v1.33.4 — 2026-11-19
 
 ### 修复
 
-- 修复玩家连接普通联机时，读取已保存的赛车昵称使用未定义变量，导致 Node.js 进程退出。联机初始化出错时，关闭受影响的连接并记录错误。
-- 发布包补齐空的运行数据目录，并同步 API 文档的版本号。
+
+
+* 修复玩家连接普通联机时，读取已保存的赛车昵称使用未定义变量，导致 Node.js 进程退出。联机初始化出错时，关闭受影响的连接并记录错误。
+
+* 发布包补齐空的运行数据目录，并同步 API 文档的版本号。
 
 ## v1.33.3 — 2026-11-19
 
 ### 修复
 
-- 修复托管后访问返回 502 的问题：`HOST` 默认值和 `.env` 示例改为 `0.0.0.0`，应用不再只绑定容器回环地址，反向代理可正常连接；平台预览网关显式注入 `127.0.0.1` 时仍兼容。监听失败时现在会输出明确错误日志并以非零码退出，便于托管日志定位端口占用等问题。
+
+
+* 修复托管后访问返回 502 的问题：`HOST` 默认值和 `.env` 示例改为 `0.0.0.0`，应用不再只绑定容器回环地址，反向代理可正常连接；平台预览网关显式注入 `127.0.0.1` 时仍兼容。监听失败时现在会输出明确错误日志并以非零码退出，便于托管日志定位端口占用等问题。
 
 ### 新增
 
-- 赛车实时榜单、终点领奖台和历史参赛名单改为展示玩家在联机设置中可修改的玩家名称；改名后历史行同步显示新名称，未设置名称时回退到稳定脱敏 ID。
-- 联机加入、联机改名、赛车接口和赛车 WebSocket 都会同步保存名称；名称经长度限制与内容安全检查，按赛车身份持久化在 `data/race-names.json`。
-- 赛车奖池归零后刷新赏金 BOSS，向新奖池注入大额赏金；下一次破纪录者领取赏金并触发下一轮刷新，首页卡片、赛道大厅、结算卡片与历史统计同步展示。
+
+
+* 赛车实时榜单、终点领奖台和历史参赛名单改为展示玩家在联机设置中可修改的玩家名称；改名后历史行同步显示新名称，未设置名称时回退到稳定脱敏 ID。
+
+* 联机加入、联机改名、赛车接口和赛车 WebSocket 都会同步保存名称；名称经长度限制与内容安全检查，按赛车身份持久化在 `data/race-names.json`。
+
+* 赛车奖池归零后刷新赏金 BOSS，向新奖池注入大额赏金；下一次破纪录者领取赏金并触发下一轮刷新，首页卡片、赛道大厅、结算卡片与历史统计同步展示。
 
 ## v1.33.2 — 2026-11-19
 
 ### 新增
 
-- 赛车支付前提供历史查看入口：首页赛车地图卡片可直接打开历史档案，支付确认框新增「查看历史」按钮，付款前即可查看历史前 5 排行榜、参赛名单、最佳成绩和累计奖金。
-- 自定义确认框支持可选的第三方操作按钮；查看历史时保留支付确认状态，关闭历史弹窗后可继续选择支付或取消。
+
+
+* 赛车支付前提供历史查看入口：首页赛车地图卡片可直接打开历史档案，支付确认框新增「查看历史」按钮，付款前即可查看历史前 5 排行榜、参赛名单、最佳成绩和累计奖金。
+
+* 自定义确认框支持可选的第三方操作按钮；查看历史时保留支付确认状态，关闭历史弹窗后可继续选择支付或取消。
 
 ## v1.33.1 — 2026-11-19
 
 ### 新增
 
-- 盐港赛车终点结算卡片显示本次结算后的新奖池金额，并按本房完赛顺序显示已经产生的第二名和第三名；名次不存在时不显示占位。
-- 结算回执统一返回最多三条本房领奖台记录，离线单人结算也会补一条自己的记录；`npm run test:race-finish` 覆盖奖池更新与二三名回执。
+
+
+* 盐港赛车终点结算卡片显示本次结算后的新奖池金额，并按本房完赛顺序显示已经产生的第二名和第三名；名次不存在时不显示占位。
+
+* 结算回执统一返回最多三条本房领奖台记录，离线单人结算也会补一条自己的记录；`npm run test:race-finish` 覆盖奖池更新与二三名回执。
 
 ## v1.33.0 — 2026-11-17
 
 ### 新增
 
-- 金币 HUD 新增全服「系统今日剩余派发金币」实时面板：显示剩余待派发金币额度、今日总额度、剩余目标数、单台奖励和额度进度条；服务端通过 `goldList` 同步 `remainingGold`、`totalGold`、`remainingTargets`，击毁目标与每日轮换后自动更新，中英文案同步补齐。
-- 新增 `npm run test:gold-dispatch`，覆盖金币额度初始化、总额度、剩余目标数与击毁后剩余额度递减。
+
+
+* 金币 HUD 新增全服「系统今日剩余派发金币」实时面板：显示剩余待派发金币额度、今日总额度、剩余目标数、单台奖励和额度进度条；服务端通过 `goldList` 同步 `remainingGold`、`totalGold`、`remainingTargets`，击毁目标与每日轮换后自动更新，中英文案同步补齐。
+
+* 新增 `npm run test:gold-dispatch`，覆盖金币额度初始化、总额度、剩余目标数与击毁后剩余额度递减。
 
 ### 修复
 
-- 西部荒原环境时间固定在正午，不再随时间推进进入黑夜；场景天空、太阳方向、环境光与雾效持续保持白昼状态。
-- 修复好友跟随进入坡地后穿到地面下方的问题：服务端落点改用好友当前海拔，客户端再按西部荒原、湾城、青云宗等地图的真实地形采样并贴地校正，同时立即同步第一人称视线高度。
+
+
+* 西部荒原环境时间固定在正午，不再随时间推进进入黑夜；场景天空、太阳方向、环境光与雾效持续保持白昼状态。
+
+* 修复好友跟随进入坡地后穿到地面下方的问题：服务端落点改用好友当前海拔，客户端再按西部荒原、湾城、青云宗等地图的真实地形采样并贴地校正，同时立即同步第一人称视线高度。
 
 ## v1.32.1 — 2026-11-17
 
 ### 修复
 
-- 修复驾驶员在「正在自动驻车…」状态下无法下车：下车请求现在携带明确驻车意图，服务端直接归零车速并开门，不再依赖可能被 45 ms 节流丢弃的零速姿态采样。
-- 驾驶员下车时同时清零车辆速度并保留乘客座位；乘客仍不能在高速行驶时自行开门，车辆停稳后可正常下车。
-- 修复好友在西部荒原等传送门地图无法跟随或上车的两个问题：跟随落点改为按所在地图边界钳制，不再被港口 `±900` 坐标限制拉到 15 公里外；被跟随好友在轿车内时也允许发起跟随，好友会落到车尾侧门附近并能直接上车。
-- 上车距离不足时返回明确的 `range` 结果并显示「请靠近车门再上车」，不再静默失败。
-- 新增 `npm run test:sedan-friend`，覆盖队内好友在车内时发起跟随、跟随落点、好友上副驾驶、驾驶员自动驻车下车、乘客高速禁开门与停车后下车。
+
+
+* 修复驾驶员在「正在自动驻车…」状态下无法下车：下车请求现在携带明确驻车意图，服务端直接归零车速并开门，不再依赖可能被 45 ms 节流丢弃的零速姿态采样。
+
+* 驾驶员下车时同时清零车辆速度并保留乘客座位；乘客仍不能在高速行驶时自行开门，车辆停稳后可正常下车。
+
+* 修复好友在西部荒原等传送门地图无法跟随或上车的两个问题：跟随落点改为按所在地图边界钳制，不再被港口 `±900` 坐标限制拉到 15 公里外；被跟随好友在轿车内时也允许发起跟随，好友会落到车尾侧门附近并能直接上车。
+
+* 上车距离不足时返回明确的 `range` 结果并显示「请靠近车门再上车」，不再静默失败。
+
+* 新增 `npm run test:sedan-friend`，覆盖队内好友在车内时发起跟随、跟随落点、好友上副驾驶、驾驶员自动驻车下车、乘客高速禁开门与停车后下车。
 
 ## v1.32.0 — 2026-11-17
 
 ### 新增
 
-- 战场名单新增好友与跟随操作：每位其他玩家旁可直接发送好友请求，接收方会看到带接受 / 拒绝按钮的好友邀请卡片。
-- 好友请求接受后，请求方自动跟随对方；服务端每 100 ms 计算好友身后落点，客户端平滑贴合，并持续显示「跟随中」状态条与一键取消按钮。
-- 已是好友时再次点击「跟随」会立即生效；被跟随方可一键停止所有好友跟随，双方都会收到实时提示。
-- 跟随会在取消、倒下、专注、跨地图、载具、离线或好友退出时自动终止，好友关系仍保留；请求带 20 秒有效期、冷却与人数上限。
-- 新增 `npm run test:follow-friend` WebSocket 回归测试，覆盖请求送达、接受后自动跟随、落点同步、取消、好友保留与好友直跟。
+
+
+* 战场名单新增好友与跟随操作：每位其他玩家旁可直接发送好友请求，接收方会看到带接受 / 拒绝按钮的好友邀请卡片。
+
+* 好友请求接受后，请求方自动跟随对方；服务端每 100 ms 计算好友身后落点，客户端平滑贴合，并持续显示「跟随中」状态条与一键取消按钮。
+
+* 已是好友时再次点击「跟随」会立即生效；被跟随方可一键停止所有好友跟随，双方都会收到实时提示。
+
+* 跟随会在取消、倒下、专注、跨地图、载具、离线或好友退出时自动终止，好友关系仍保留；请求带 20 秒有效期、冷却与人数上限。
+
+* 新增 `npm run test:follow-friend` WebSocket 回归测试，覆盖请求送达、接受后自动跟随、落点同步、取消、好友保留与好友直跟。
 
 ## v1.31.0 — 2026-11-17
 
 ### 新增
 
-- 战斗中滚动鼠标滚轮可循环切换当前已拥有的武器；只有一把武器时不会拦截滚轮，也不会改变装备。
-- 切换顺序固定为默认步枪、已拾取枪械与近战武器，支持向上 / 向下双向循环；快速滚动会串行加载并合并目标，避免模型重复加载或切错武器。
-- 开镜时滚轮继续用于调整瞄准镜倍率；驾驶、乘船、跳伞、背包、专注模式和菜单打开时不会触发切枪。
-- HUD 在拥有多把武器时显示「滚轮切换武器」提示，中英文案、版本号、文档与新增 `npm run test:weapon-wheel` 回归脚本同步更新。
+
+
+* 战斗中滚动鼠标滚轮可循环切换当前已拥有的武器；只有一把武器时不会拦截滚轮，也不会改变装备。
+
+* 切换顺序固定为默认步枪、已拾取枪械与近战武器，支持向上 / 向下双向循环；快速滚动会串行加载并合并目标，避免模型重复加载或切错武器。
+
+* 开镜时滚轮继续用于调整瞄准镜倍率；驾驶、乘船、跳伞、背包、专注模式和菜单打开时不会触发切枪。
+
+* HUD 在拥有多把武器时显示「滚轮切换武器」提示，中英文案、版本号、文档与新增 `npm run test:weapon-wheel` 回归脚本同步更新。
 
 ## v1.30.0 — 2026-11-17
 
 ### 修复
 
-- 手机横屏改为由页面自身强制旋转布局，不再依赖 `Screen Orientation API` 或浏览器全屏权限；即使浏览器拒绝系统方向锁定，也能进入稳定的 16:9 左右横屏视野。
-- 强制横屏同步交换页面逻辑宽高，并接管游戏读取的 `innerWidth` / `innerHeight` 与触控坐标映射，摇杆、拖动转向、准星和世界目标标记不会因旋转而错位；金币 HUD、赠币弹窗、路牌工具与通用模态框等 `body` 浮层也随页面一起旋转。
-- 横屏状态左侧边缘保留明确的「竖屏」按钮，可随时恢复设备原生竖屏；设置面板的「跟随设备 / 横屏 / 竖屏」继续持久化在当前浏览器。
-- 补充强制横屏下的标题页、HUD、瞄准镜与安全区适配，中英文案、资源版本、发布检查与文档同步更新。
+
+
+* 手机横屏改为由页面自身强制旋转布局，不再依赖 `Screen Orientation API` 或浏览器全屏权限；即使浏览器拒绝系统方向锁定，也能进入稳定的 16:9 左右横屏视野。
+
+* 强制横屏同步交换页面逻辑宽高，并接管游戏读取的 `innerWidth` / `innerHeight` 与触控坐标映射，摇杆、拖动转向、准星和世界目标标记不会因旋转而错位；金币 HUD、赠币弹窗、路牌工具与通用模态框等 `body` 浮层也随页面一起旋转。
+
+* 横屏状态左侧边缘保留明确的「竖屏」按钮，可随时恢复设备原生竖屏；设置面板的「跟随设备 / 横屏 / 竖屏」继续持久化在当前浏览器。
+
+* 补充强制横屏下的标题页、HUD、瞄准镜与安全区适配，中英文案、资源版本、发布检查与文档同步更新。
 
 ## v1.29.0 — 2026-11-17
 
 ### 新增
 
-- 手机竖屏触控对局新增四向手动转向键，按住即可左右旋转视角、上下调整俯仰，不依赖陀螺仪或设备方向传感器；设置面板可开关控件、调整转向速度并一键回正视角。
-- 设置面板新增屏幕方向选择：跟随设备、横屏、竖屏。支持的浏览器会在用户点击后进入全屏并调用 Screen Orientation API 锁定方向；不支持的浏览器会给出明确提示，手动转向键仍可正常使用。
-- 竖屏对局左侧边缘新增一键切换横屏入口，设置保存在浏览器本地；中英文案、移动端样式、文档与资源版本同步更新。
+
+
+* 手机竖屏触控对局新增四向手动转向键，按住即可左右旋转视角、上下调整俯仰，不依赖陀螺仪或设备方向传感器；设置面板可开关控件、调整转向速度并一键回正视角。
+
+* 设置面板新增屏幕方向选择：跟随设备、横屏、竖屏。支持的浏览器会在用户点击后进入全屏并调用 Screen Orientation API 锁定方向；不支持的浏览器会给出明确提示，手动转向键仍可正常使用。
+
+* 竖屏对局左侧边缘新增一键切换横屏入口，设置保存在浏览器本地；中英文案、移动端样式、文档与资源版本同步更新。
 
 ## v1.28.9 — 2026-11-17
 
 ### 修复
 
-- 集装箱的蓝色自定义牌与金色余额牌沿用原有造型，牌面改为位于立柱前表面的正反两面；从任意一侧靠近时，盐线币余额都不会再被立柱遮住，背面文字也不再镜像。
-- `npm run test:container-coin-sign` 增加前置偏移与双面牌面的回归断言。
+
+
+* 集装箱的蓝色自定义牌与金色余额牌沿用原有造型，牌面改为位于立柱前表面的正反两面；从任意一侧靠近时，盐线币余额都不会再被立柱遮住，背面文字也不再镜像。
+
+* `npm run test:container-coin-sign` 增加前置偏移与双面牌面的回归断言。
 
 ## v1.28.8 — 2026-11-17
 
 ### 新增
 
-- 集装箱旁现在固定显示一块系统立牌，实时标注箱内盐线币余额；玩家自定义牌保留在旁侧，系统牌无法被编辑或移除。
-- `containerList` 新增 `gold` 字段，存取金币后会立即向附近玩家广播新余额，双语牌面随语言切换显示对应标题。
-- 新增 `npm run test:container-coin-sign`，覆盖余额下发、附近玩家同步更新与客户端强制牌渲染逻辑。
+
+
+* 集装箱旁现在固定显示一块系统立牌，实时标注箱内盐线币余额；玩家自定义牌保留在旁侧，系统牌无法被编辑或移除。
+
+* `containerList` 新增 `gold` 字段，存取金币后会立即向附近玩家广播新余额，双语牌面随语言切换显示对应标题。
+
+* 新增 `npm run test:container-coin-sign`，覆盖余额下发、附近玩家同步更新与客户端强制牌渲染逻辑。
 
 ### 修复
 
-- 全屏模式改为以 `document.documentElement` 为全屏元素，金币 HUD、赠币面板、集装箱工具栏与立牌工具栏这些挂在 `body` 的浮层不再被浏览器排除在全屏画面之外。
-- 新增 `npm run test:fullscreen-overlay`，在浏览器中验证进入全屏后三类操作浮层仍可被命中与使用。
+
+
+* 全屏模式改为以 `document.documentElement` 为全屏元素，金币 HUD、赠币面板、集装箱工具栏与立牌工具栏这些挂在 `body` 的浮层不再被浏览器排除在全屏画面之外。
+
+* 新增 `npm run test:fullscreen-overlay`，在浏览器中验证进入全屏后三类操作浮层仍可被命中与使用。
 
 ## v1.28.7 — 2026-11-17
 
 ### 修复
 
-- 按 `Y` 打开赠币面板或收到赠币请求时不再触发「已暂停」：赠币弹窗现在与背包、路牌、集装箱面板一样，主动退出鼠标锁定不会误判为玩家主动暂停。
-- 赠币面板、二次确认框和收款确认框打开期间，按键不再穿透到游戏；按 `Esc` 只关闭当前赠币弹窗并恢复输入，不会暂停战局。
-- 新增 `npm run test:gold-gift-pause`，在浏览器中覆盖赠币面板与收款弹窗的锁定/暂停/关闭流程。
+
+
+* 按 `Y` 打开赠币面板或收到赠币请求时不再触发「已暂停」：赠币弹窗现在与背包、路牌、集装箱面板一样，主动退出鼠标锁定不会误判为玩家主动暂停。
+
+* 赠币面板、二次确认框和收款确认框打开期间，按键不再穿透到游戏；按 `Esc` 只关闭当前赠币弹窗并恢复输入，不会暂停战局。
+
+* 新增 `npm run test:gold-gift-pause`，在浏览器中覆盖赠币面板与收款弹窗的锁定 / 暂停 / 关闭流程。
 
 ## v1.28.6 — 2026-11-17
 
 ### 新增
 
-- 集装箱存取面板新增数量输入：金币与每种物品都可指定正数数量存入或取出，留空时仍使用原来的快捷数量，兼容既有操作习惯。
-- 背包容量、物品上限、箱内库存、随身余额与安全整数范围全部在服务端同一份 JSON 原子事务中校验；无效数量返回明确提示，不会产生部分写入。
-- `containerResult` 新增 `moved` 字段，客户端据此显示本次实际搬运数量；中英文案、接口文档、发布检查与新回归脚本同步更新。
+
+
+* 集装箱存取面板新增数量输入：金币与每种物品都可指定正数数量存入或取出，留空时仍使用原来的快捷数量，兼容既有操作习惯。
+
+* 背包容量、物品上限、箱内库存、随身余额与安全整数范围全部在服务端同一份 JSON 原子事务中校验；无效数量返回明确提示，不会产生部分写入。
+
+* `containerResult` 新增 `moved` 字段，客户端据此显示本次实际搬运数量；中英文案、接口文档、发布检查与新回归脚本同步更新。
 
 ### 验证
 
-- 新增 `npm run test:container-quantity`，覆盖金币指定存/取、物品指定存/取、库存与背包容量拒绝、旧版留空快捷行为及磁盘持久化。
+
+
+* 新增 `npm run test:container-quantity`，覆盖金币指定存 / 取、物品指定存 / 取、库存与背包容量拒绝、旧版留空快捷行为及磁盘持久化。
 
 ## v1.28.5 — 2026-11-17
 
 ### 新增
 
-- 桌面端附近有可赠送玩家时，金币 HUD 的赠币按钮现在显示 `Y` 键提示，直接按 `Y` 也可打开赠币面板。
-- 设置 → 操作说明新增赠币快捷键条目，桌面端可随时查看 `Y` 键；接收方确认框在赠送过期后会自动关闭，不会残留卡片。
-- 赠币改为待确认交易：赠送方选定接收方与数量后需再次弹窗确认，接收方收到弹窗并可接受或拒绝；只有接受后才原子转账并写入公示，双方都会收到最终结果。
-- 金币公示不再只展示最近 8 条：拾取与互赠全部追加保存到 `data/gold-ledger.jsonl`，无历史条数上限，并兼容读取旧版 `data/gold-pickups.json`。
-- 近距离互赠金币现在会公示赠送方、接收方、数量、地图与服务端时间；战场名单把拾取和互赠记录按时间合并展示。
-- 金币公示支持游标分页，滚动到记录区或名单底部会自动加载更早记录，顶部停留时每 15 秒刷新最新一页。
-- 新增 `GET /api/game/gold/activity`，并让原拾取接口支持 `before` 游标；中英文案、接口文档与回归自测同步更新。
+
+
+* 桌面端附近有可赠送玩家时，金币 HUD 的赠币按钮现在显示 `Y` 键提示，直接按 `Y` 也可打开赠币面板。
+
+* 设置 → 操作说明新增赠币快捷键条目，桌面端可随时查看 `Y` 键；接收方确认框在赠送过期后会自动关闭，不会残留卡片。
+
+* 赠币改为待确认交易：赠送方选定接收方与数量后需再次弹窗确认，接收方收到弹窗并可接受或拒绝；只有接受后才原子转账并写入公示，双方都会收到最终结果。
+
+* 金币公示不再只展示最近 8 条：拾取与互赠全部追加保存到 `data/gold-ledger.jsonl`，无历史条数上限，并兼容读取旧版 `data/gold-pickups.json`。
+
+* 近距离互赠金币现在会公示赠送方、接收方、数量、地图与服务端时间；战场名单把拾取和互赠记录按时间合并展示。
+
+* 金币公示支持游标分页，滚动到记录区或名单底部会自动加载更早记录，顶部停留时每 15 秒刷新最新一页。
+
+* 新增 `GET /api/game/gold/activity`，并让原拾取接口支持 `before` 游标；中英文案、接口文档与回归自测同步更新。
 
 ## v1.28.4 — 2026-11-17
 
 ### 新增
 
-- 金标机器狗与无人机不再是静态道具：进入索敌范围后会转向玩家，经过金色/红色警示环预警再开火，复用游戏原有命中判定、曳光、枪口火焰与受击音效。
-- 交战时目标模型切换到运动姿态，全局射击间隔避免多个目标同时集火；首次发现目标时通过双语提示告知玩家利用掩体。
+
+
+* 金标机器狗与无人机不再是静态道具：进入索敌范围后会转向玩家，经过金色 / 红色警示环预警再开火，复用游戏原有命中判定、曳光、枪口火焰与受击音效。
+
+* 交战时目标模型切换到运动姿态，全局射击间隔避免多个目标同时集火；首次发现目标时通过双语提示告知玩家利用掩体。
 
 ## v1.28.3 — 2026-11-17
 
 ### 新增
 
-- 玩家靠近 8 米内的队友时可在金币 HUD 打开赠币面板，输入数量后由服务端原子扣除与入账；跨地图、超距、死亡、载具内、失焦和余额不足都会被拒绝，双方余额即时同步并弹出提示。
-- 集装箱面板支持把箱内金币部分或全部取出到随身余额，与存入共用同一 JSON 原子事务；取出需要走进已打开的箱子，数量非法或超过库存时给出明确提示。
-- `goldGift` / `goldGiftResult` / `goldGifted` 与 `withdrawGold` 已写入 API 文档；新增中英文文案和 `npm run test:gold-transfer` 回归自测。
+
+
+* 玩家靠近 8 米内的队友时可在金币 HUD 打开赠币面板，输入数量后由服务端原子扣除与入账；跨地图、超距、死亡、载具内、失焦和余额不足都会被拒绝，双方余额即时同步并弹出提示。
+
+* 集装箱面板支持把箱内金币部分或全部取出到随身余额，与存入共用同一 JSON 原子事务；取出需要走进已打开的箱子，数量非法或超过库存时给出明确提示。
+
+* `goldGift` / `goldGiftResult` / `goldGifted` 与 `withdrawGold` 已写入 API 文档；新增中英文文案和 `npm run test:gold-transfer` 回归自测。
 
 ## v1.28.2 — 2026-11-17
 
 ### 新增
 
-- 战场名单新增「金币拾取公示」：每次服务端确认拾取后记录拾取者代号、地图、拾取坐标、金币数量与服务端时间，名单打开时展示最近 8 条并每 5 秒自动刷新。
-- 拾取台账写入 `data/gold-pickups.json`，由 `config/storage.js` 加锁并原子替换，最多保留最近 500 条；新增 `GET /api/game/gold/pickups` 查询接口，地图名称与提示文案完整支持中英文。
-- 新增 `npm run test:gold-pickups`，覆盖非法记录过滤、按时间倒序读取、磁盘文件落盘与模块重新加载后的持久化恢复。
+
+
+* 战场名单新增「金币拾取公示」：每次服务端确认拾取后记录拾取者代号、地图、拾取坐标、金币数量与服务端时间，名单打开时展示最近 8 条并每 5 秒自动刷新。
+
+* 拾取台账写入 `data/gold-pickups.json`，由 `config/storage.js` 加锁并原子替换，最多保留最近 500 条；新增 `GET /api/game/gold/pickups` 查询接口，地图名称与提示文案完整支持中英文。
+
+* 新增 `npm run test:gold-pickups`，覆盖非法记录过滤、按时间倒序读取、磁盘文件落盘与模块重新加载后的持久化恢复。
 
 ## v1.28.1 — 2026-11-17
 
 ### 修复
 
-- 集装箱开门成功后自动退出模态面板并恢复移动，不再因弹窗遮挡而无法走进箱内。
-- 新增非遮挡式存金币 HUD：靠近已打开的箱子时显示状态，进入箱体后可直接存入全部金币；按 `K` 或点「集装箱」仍可重新打开完整存取面板。
-- 弹窗关闭期间也能正确处理 `containerResult`，并把新提示文案同步到中英文语言包。
+
+
+* 集装箱开门成功后自动退出模态面板并恢复移动，不再因弹窗遮挡而无法走进箱内。
+
+* 新增非遮挡式存金币 HUD：靠近已打开的箱子时显示状态，进入箱体后可直接存入全部金币；按 `K` 或点「集装箱」仍可重新打开完整存取面板。
+
+* 弹窗关闭期间也能正确处理 `containerResult`，并把新提示文案同步到中英文语言包。
 
 ## v1.28.0 — 2026-11-17
 
@@ -218,17 +871,27 @@
 
 ### 新增与修复
 
-- 下车不再依赖客户端与服务端同时判断一个瞬时速度值：按 `H` 后车辆会先自动驻车，客户端补发零速姿态，再向服务端请求开门；服务端允许 1.8 米/秒以内的低速下车，并把车辆速度归零。
-- 扩展左右车门、车头、车尾与斜向共 12 个下车落点，并优先选择无遮挡、地面高差最小的位置；非法落点序号自动回退，未乘车状态也会返回 `not-riding`，避免客户端无响应。
-- 驾驶物理改为共享纯函数：前进最高 22 米/秒、倒车最高 9 米/秒，全油门约 1 秒达到 12 米/秒；松开油门自动驻车，刹车 0.7 秒内停稳，倒车转向方向随车速反向。
-- 转向采用速度敏感转角：低速最大 0.56 弧度、高速收敛到 0.27 弧度，倒车与低速挪车更灵敏，高速更稳定。
-- HUD 增加 `D/R/N` 挡位、实时 km/h、可长按的刹车按钮和“停稳后自动下车”状态；所有新增文案均进入中英文 `car` 文案分区。
-- 背包详情改用 `O` 打开，`Tab` 只负责战场名单；两个弹窗现在会互斥，原生弹窗或确认框打开时名单快捷键不再穿透。
+
+
+* 下车不再依赖客户端与服务端同时判断一个瞬时速度值：按 `H` 后车辆会先自动驻车，客户端补发零速姿态，再向服务端请求开门；服务端允许 1.8 米 / 秒以内的低速下车，并把车辆速度归零。
+
+* 扩展左右车门、车头、车尾与斜向共 12 个下车落点，并优先选择无遮挡、地面高差最小的位置；非法落点序号自动回退，未乘车状态也会返回 `not-riding`，避免客户端无响应。
+
+* 驾驶物理改为共享纯函数：前进最高 22 米 / 秒、倒车最高 9 米 / 秒，全油门约 1 秒达到 12 米 / 秒；松开油门自动驻车，刹车 0.7 秒内停稳，倒车转向方向随车速反向。
+
+* 转向采用速度敏感转角：低速最大 0.56 弧度、高速收敛到 0.27 弧度，倒车与低速挪车更灵敏，高速更稳定。
+
+* HUD 增加 `D/R/N` 挡位、实时 km/h、可长按的刹车按钮和 “停稳后自动下车” 状态；所有新增文案均进入中英文 `car` 文案分区。
+
+* 背包详情改用 `O` 打开，`Tab` 只负责战场名单；两个弹窗现在会互斥，原生弹窗或确认框打开时名单快捷键不再穿透。
 
 ### 验证
 
-- 新增 `npm run test:sedan-drive`：覆盖加速、倒车、松油门驻车、刹车、正反向转向、停稳下车、非法落点回退与 `not-riding`。
-- `npm run test:sedan-respawn`、`npm run check`、`npm run release:check` 通过，并完成首页与核心 API 的 HTTP 冒烟。
+
+
+* 新增 `npm run test:sedan-drive`：覆盖加速、倒车、松油门驻车、刹车、正反向转向、停稳下车、非法落点回退与 `not-riding`。
+
+* `npm run test:sedan-respawn`、`npm run check`、`npm run release:check` 通过，并完成首页与核心 API 的 HTTP 冒烟。
 
 ## v1.27.0 — 2026-11-17
 
@@ -238,14 +901,21 @@
 
 ### 新增与修复
 
-- 服务端轿车改为带唯一 ID 的多车管理，同时仍保证每张地图最多只有一辆可用车；同一张地图内的玩家通过车辆 ID 准确登车。
-- 原车驶离西部荒原时可以继续载着车内玩家前往目标地图，同时服务端在荒原出生点生成一辆空车，其他玩家无需等待原车返回。
-- 跨图快照、登车请求、玩家车辆状态与接口文档同步增加 `carId`，并保持对未携带该字段的旧客户端兼容。
+
+
+* 服务端轿车改为带唯一 ID 的多车管理，同时仍保证每张地图最多只有一辆可用车；同一张地图内的玩家通过车辆 ID 准确登车。
+
+* 原车驶离西部荒原时可以继续载着车内玩家前往目标地图，同时服务端在荒原出生点生成一辆空车，其他玩家无需等待原车返回。
+
+* 跨图快照、登车请求、玩家车辆状态与接口文档同步增加 `carId`，并保持对未携带该字段的旧客户端兼容。
 
 ### 验证
 
-- 新增 `npm run test:sedan-respawn`：模拟原车驶离荒原，验证原车进入青云宗、车内驾驶席保持、荒原新车生成且可被其他玩家驾驶。
-- `npm run check`、`npm run test:sedan-respawn` 与 HTTP 冒烟测试通过。
+
+
+* 新增 `npm run test:sedan-respawn`：模拟原车驶离荒原，验证原车进入青云宗、车内驾驶席保持、荒原新车生成且可被其他玩家驾驶。
+
+* `npm run check`、`npm run test:sedan-respawn` 与 HTTP 冒烟测试通过。
 
 ## v1.26.9 — 2026-11-16
 
@@ -255,14 +925,21 @@
 
 ### 新增
 
-- 后台「群聊二维码管理」页面：支持上传 PNG / JPG / WebP / GIF 图片（按文件头校验，最大 4 MB）、预览当前二维码、查看来源与更新时间，并可一键恢复内置默认二维码。
-- 新增 `GET /api/community/qr` 与 `GET /api/community/qr/image`，首页把当前二维码信息注入页面，游戏标题页、暂停菜单和士兵选择页的入口及弹窗统一使用当前图片；版本参数确保替换后不再命中旧缓存。
-- 上传的图片以 base64 存入 `data/group-qr.json`，由 `config/storage.js` 原子写入并加锁，随托管平台固定的 `data/` 一起持久保存，重启和升级源码都不会丢失。
-- 补充中英文管理文案、后台预览交互与响应式样式，并同步更新 API 文档。
+
+
+* 后台「群聊二维码管理」页面：支持上传 PNG / JPG / WebP / GIF 图片（按文件头校验，最大 4 MB）、预览当前二维码、查看来源与更新时间，并可一键恢复内置默认二维码。
+
+* 新增 `GET /api/community/qr` 与 `GET /api/community/qr/image`，首页把当前二维码信息注入页面，游戏标题页、暂停菜单和士兵选择页的入口及弹窗统一使用当前图片；版本参数确保替换后不再命中旧缓存。
+
+* 上传的图片以 base64 存入 `data/group-qr.json`，由 `config/storage.js` 原子写入并加锁，随托管平台固定的 `data/` 一起持久保存，重启和升级源码都不会丢失。
+
+* 补充中英文管理文案、后台预览交互与响应式样式，并同步更新 API 文档。
 
 ### 验证
 
-- `npm run check`、`npm run release:check`、后台上传/替换/恢复流程与首页、API 的运行时自测。
+
+
+* `npm run check`、`npm run release:check`、后台上传 / 替换 / 恢复流程与首页、API 的运行时自测。
 
 ## v1.26.8 — 2026-11-16
 
@@ -272,16 +949,25 @@
 
 ### 修复
 
-- 客户端确认拔除时先本地移除牌面、碰撞体和交互标记，服务端成功响应后保持消失；若服务端拒绝则自动恢复并重新同步。
-- `signResult` 增加 `action` 与路牌 `id`，拔除结果不再依赖后续 `signChange` 才能定位本地模型。
-- 服务端向发起拔除的玩家强制补发 `signChange`，即使位置快照或地图状态在异步删档期间发生变化也不会漏掉消失通知。
-- 客户端记录近期已拔除的路牌 ID，迟到的旧 `signList` 响应不会把牌面重新加回画面；断线或超时会主动重新拉取列表校正状态。
-- 路牌删档时容忍记录文件已不存在或空间索引已清理的情况，避免磁盘删除成功但内存清理异常导致客户端收不到成功结果。
+
+
+* 客户端确认拔除时先本地移除牌面、碰撞体和交互标记，服务端成功响应后保持消失；若服务端拒绝则自动恢复并重新同步。
+
+* `signResult` 增加 `action` 与路牌 `id`，拔除结果不再依赖后续 `signChange` 才能定位本地模型。
+
+* 服务端向发起拔除的玩家强制补发 `signChange`，即使位置快照或地图状态在异步删档期间发生变化也不会漏掉消失通知。
+
+* 客户端记录近期已拔除的路牌 ID，迟到的旧 `signList` 响应不会把牌面重新加回画面；断线或超时会主动重新拉取列表校正状态。
+
+* 路牌删档时容忍记录文件已不存在或空间索引已清理的情况，避免磁盘删除成功但内存清理异常导致客户端收不到成功结果。
 
 ### 验证
 
-- `npm run test:road-signs`：新增拔除后重新拉取列表为空的回归检查。
-- `npm run test:road-sign-remove`：Chromium 验证点击拔除即时消失、成功确认、旧列表防回填和失败恢复。
+
+
+* `npm run test:road-signs`：新增拔除后重新拉取列表为空的回归检查。
+
+* `npm run test:road-sign-remove`：Chromium 验证点击拔除即时消失、成功确认、旧列表防回填和失败恢复。
 
 ## v1.26.7 — 2026-11-16
 
@@ -291,15 +977,23 @@
 
 ### 修复
 
-- 客户端会记住进入专注前的战局状态；专注结束时若原本处于暂停菜单，会自动继续行动，并恢复 HUD、输入与玩家控制。
-- 专注结束后强制同步一次第一人称镜头到玩家视点，避免摄像机停留在自动轮播的观战位置。
-- 服务端结束消息迟到时，客户端仍会接收复活点并完成本地部署，防止超时兜底后状态继续漂移。
-- 静态资源版本号更新，确保浏览器不会继续使用旧的 `focus-mode.js` 缓存。
+
+
+* 客户端会记住进入专注前的战局状态；专注结束时若原本处于暂停菜单，会自动继续行动，并恢复 HUD、输入与玩家控制。
+
+* 专注结束后强制同步一次第一人称镜头到玩家视点，避免摄像机停留在自动轮播的观战位置。
+
+* 服务端结束消息迟到时，客户端仍会接收复活点并完成本地部署，防止超时兜底后状态继续漂移。
+
+* 静态资源版本号更新，确保浏览器不会继续使用旧的 `focus-mode.js` 缓存。
 
 ### 验证
 
-- 新增 `npm run test:focus-restore`：用 Chromium 模拟暂停状态下进入专注、超时结束和迟到复活消息，验证战局恢复、镜头归位与复活点应用。
-- `npm run check`、`npm run release:check`、`npm run test:focus`、`npm run test:focus-restore` 通过。
+
+
+* 新增 `npm run test:focus-restore`：用 Chromium 模拟暂停状态下进入专注、超时结束和迟到复活消息，验证战局恢复、镜头归位与复活点应用。
+
+* `npm run check`、`npm run release:check`、`npm run test:focus`、`npm run test:focus-restore` 通过。
 
 ## v1.26.6 — 2026-11-16
 
@@ -309,16 +1003,25 @@
 
 ### 新增与改进
 
-- 专注观战卡片新增上一位 / 下一位按钮、玩家计数与可横向滚动的在线玩家列表，点击任意玩家即可锁定观战目标。
-- 支持键盘 `ArrowLeft` / `ArrowRight` 切换目标；手动锁定后不再随 9 秒轮播切换，点击“恢复自动”可回到自动轮播。
-- 手动观战目标阵亡或离开当前地图时自动回退到自动轮播，并给出即时提示。
-- 目标卡片、切换按钮、玩家列表和中英文案同步完善，兼容手机竖屏与横屏布局。
-- 本轮不新增服务端接口；切换完全基于现有 10 Hz `snapshot.players` 可见存活玩家数据，服务端只读锁定策略不变。
+
+
+* 专注观战卡片新增上一位 / 下一位按钮、玩家计数与可横向滚动的在线玩家列表，点击任意玩家即可锁定观战目标。
+
+* 支持键盘 `ArrowLeft` / `ArrowRight` 切换目标；手动锁定后不再随 9 秒轮播切换，点击 “恢复自动” 可回到自动轮播。
+
+* 手动观战目标阵亡或离开当前地图时自动回退到自动轮播，并给出即时提示。
+
+* 目标卡片、切换按钮、玩家列表和中英文案同步完善，兼容手机竖屏与横屏布局。
+
+* 本轮不新增服务端接口；切换完全基于现有 10 Hz `snapshot.players` 可见存活玩家数据，服务端只读锁定策略不变。
 
 ### 验证
 
-- `npm run check`、`npm run release:check`、`npm run test:focus` 通过。
-- Chromium 实测专注观战层可点选列表、前后切换与键盘方向键切换。
+
+
+* `npm run check`、`npm run release:check`、`npm run test:focus` 通过。
+
+* Chromium 实测专注观战层可点选列表、前后切换与键盘方向键切换。
 
 ## v1.26.5 — 2026-11-15
 
@@ -328,16 +1031,25 @@
 
 ### 新增
 
-- 手动或自动进入专注模式时，服务端向全服广播 `focusStart` 系统公屏消息；专注结束恢复战场时广播 `focusEnd`。
-- 系统播报以结构化事件写入 `data/chat-history.jsonl`，历史分页会保留事件字段，中英文客户端分别使用 `t(key)` 渲染。
-- 战场名单为专注玩家显示“专注”徽章、手动 / 自动专注提示与观战状态。
-- `/api/game/leaderboard` 的在线玩家与 WebSocket `snapshot.roster` 增加 `focused`、`focusUntil`、`focusKind` 和 `focus{active,until,remainingMs,kind,durationMs,trigger}`；`snapshot.you` 同步返回专注类型与时长。
-- 重复提交同一专注记录不会重复播报，专注到期或主动返回战场均只播报一次。
+
+
+* 手动或自动进入专注模式时，服务端向全服广播 `focusStart` 系统公屏消息；专注结束恢复战场时广播 `focusEnd`。
+
+* 系统播报以结构化事件写入 `data/chat-history.jsonl`，历史分页会保留事件字段，中英文客户端分别使用 `t(key)` 渲染。
+
+* 战场名单为专注玩家显示 “专注” 徽章、手动 / 自动专注提示与观战状态。
+
+* `/api/game/leaderboard` 的在线玩家与 WebSocket `snapshot.roster` 增加 `focused`、`focusUntil`、`focusKind` 和 `focus{active,until,remainingMs,kind,durationMs,trigger}`；`snapshot.you` 同步返回专注类型与时长。
+
+* 重复提交同一专注记录不会重复播报，专注到期或主动返回战场均只播报一次。
 
 ### 验证
 
-- 新增 `npm run test:focus`，覆盖公屏系统播报、专注记录落盘、名单与在线接口可见性。
-- `npm run check`、`npm run release:check` 与 `npm run test:focus` 通过。
+
+
+* 新增 `npm run test:focus`，覆盖公屏系统播报、专注记录落盘、名单与在线接口可见性。
+
+* `npm run check`、`npm run release:check` 与 `npm run test:focus` 通过。
 
 ## v1.26.4 — 2026-11-15
 
@@ -347,13 +1059,19 @@
 
 ### 修复
 
-- 复活时若聊天面板打开或输入框聚焦，跳过自动鼠标锁定，保留输入内容、光标位置与面板状态。
-- 指针锁定事件增加聊天输入保护：其他系统请求锁定时优先释放锁定，而不是关闭聊天面板并夺走焦点。
-- 聊天关闭后仍保持原有行为，点击画面即可恢复视角锁定。
+
+
+* 复活时若聊天面板打开或输入框聚焦，跳过自动鼠标锁定，保留输入内容、光标位置与面板状态。
+
+* 指针锁定事件增加聊天输入保护：其他系统请求锁定时优先释放锁定，而不是关闭聊天面板并夺走焦点。
+
+* 聊天关闭后仍保持原有行为，点击画面即可恢复视角锁定。
 
 ### 验证
 
-- `npm run check`、`npm run release:check`、`npm run test:legacy-port` 通过。
+
+
+* `npm run check`、`npm run release:check`、`npm run test:legacy-port` 通过。
 
 ## v1.26.3 — 2026-11-15
 
@@ -363,17 +1081,27 @@
 
 ### 安全与稳定性
 
-- 同一玩家每日最多创建 10 块路牌，额度按北京时间自然日计算；成功创建后向客户端返回今日剩余数量。
-- 同一路牌身份最短每 8 秒创建一块，每 5 分钟最多 3 块；同一网络来源增加独立冷却与突发上限。
-- Cookie 轮换仍受浏览器身份与网络来源的每日上限约束，避免通过反复清除 Cookie 绕过单用户额度。
-- 单张地图最多保存 500 块路牌；12 米网格最多 3 块，24 米区域最多 10 块。
-- 同一玩家在 24 米区域最多 3 块，同一网络来源最多 6 块；活跃路牌总量也设置身份级上限。
-- 客户端补充冷却、每日额度、区域过密、身份上限、网络上限和地图满额提示。
-- 管理后台登录、备份、路牌审核、改密提示与页面文案全部接入中英文 `t(key)`，右上角提供表单式语言切换，并同步补充管理接口文档。
+
+
+* 同一玩家每日最多创建 10 块路牌，额度按北京时间自然日计算；成功创建后向客户端返回今日剩余数量。
+
+* 同一路牌身份最短每 8 秒创建一块，每 5 分钟最多 3 块；同一网络来源增加独立冷却与突发上限。
+
+* Cookie 轮换仍受浏览器身份与网络来源的每日上限约束，避免通过反复清除 Cookie 绕过单用户额度。
+
+* 单张地图最多保存 500 块路牌；12 米网格最多 3 块，24 米区域最多 10 块。
+
+* 同一玩家在 24 米区域最多 3 块，同一网络来源最多 6 块；活跃路牌总量也设置身份级上限。
+
+* 客户端补充冷却、每日额度、区域过密、身份上限、网络上限和地图满额提示。
+
+* 管理后台登录、备份、路牌审核、改密提示与页面文案全部接入中英文 `t(key)`，右上角提供表单式语言切换，并同步补充管理接口文档。
 
 ### 验证
 
-- 新增 `npm run test:road-signs`，覆盖每日第 11 块拦截、Cookie 轮换、短时冷却、突发限流、网络区域密度和单地图容量。
+
+
+* 新增 `npm run test:road-signs`，覆盖每日第 11 块拦截、Cookie 轮换、短时冷却、突发限流、网络区域密度和单地图容量。
 
 ## v1.26.2 — 2026-11-15
 
@@ -383,17 +1111,27 @@
 
 ### 改进
 
-- README、接口控件说明与游戏内操作一览补充 `B` 立路牌、`Delete` 拔路牌及路牌使用规则。
-- 湾城与西部荒原传送门移到入口东西两侧草坡，距落点约 32 米；霓虹雨城传送门放在正前方石阶平台，约 31 米。
-- 三座门仍分处三个方向，彼此不重叠，也不再堆在入口；环体、漩涡、尺寸、配色和悬浮高度保持原样。
-- 从三张传送门地图返回青云宗时，继续落在各自门户旁。
-- 新增传送门方位指引：进入青云宗后显示三张地图的实时距离和相对视角箭头，支持中英文。
-- 更新传送门坐标说明、接口版本记录与发布版本号。
+
+
+* README、接口控件说明与游戏内操作一览补充 `B` 立路牌、`Delete` 拔路牌及路牌使用规则。
+
+* 湾城与西部荒原传送门移到入口东西两侧草坡，距落点约 32 米；霓虹雨城传送门放在正前方石阶平台，约 31 米。
+
+* 三座门仍分处三个方向，彼此不重叠，也不再堆在入口；环体、漩涡、尺寸、配色和悬浮高度保持原样。
+
+* 从三张传送门地图返回青云宗时，继续落在各自门户旁。
+
+* 新增传送门方位指引：进入青云宗后显示三张地图的实时距离和相对视角箭头，支持中英文。
+
+* 更新传送门坐标说明、接口版本记录与发布版本号。
 
 ### 验证
 
-- `npm run check`、`npm run release:check` 通过。
-- 无头 Chromium 实测三座门均在入口周边可见，方位指引正常显示，中英文距离文案正确。
+
+
+* `npm run check`、`npm run release:check` 通过。
+
+* 无头 Chromium 实测三座门均在入口周边可见，方位指引正常显示，中英文距离文案正确。
 
 ## v1.26.1 — 2026-11-15
 
@@ -403,36 +1141,55 @@
 
 ### 改进
 
-- 湾城、西部荒原和霓虹雨城传送门分别移至东岸桃林、西北高坡与南岸草坡，彼此相距约 80–170 米，不再并排堵在主殿入口。
-- 三座传送门保持原有环体、漩涡、尺寸、配色和悬浮高度，仅调整地面坐标与对应地形高度。
-- 从三张传送门地图返回青云宗时，落点改到各自门户旁，避免每次返回都被送回主殿入口。
-- 更新传送门坐标说明、接口版本记录与发布版本号。
+
+
+* 湾城、西部荒原和霓虹雨城传送门分别移至东岸桃林、西北高坡与南岸草坡，彼此相距约 80–170 米，不再并排堵在主殿入口。
+
+* 三座传送门保持原有环体、漩涡、尺寸、配色和悬浮高度，仅调整地面坐标与对应地形高度。
+
+* 从三张传送门地图返回青云宗时，落点改到各自门户旁，避免每次返回都被送回主殿入口。
+
+* 更新传送门坐标说明、接口版本记录与发布版本号。
 
 ### 验证
 
-- `node --check public/js/expedition-zones.js` 通过。
-- 共享坐标在服务端与客户端使用同一份数据，三座门的距离与返程落点已做静态核对。
+
+
+* `node --check public/js/expedition-zones.js` 通过。
+
+* 共享坐标在服务端与客户端使用同一份数据，三座门的距离与返程落点已做静态核对。
 
 ## v1.26.0 — 2026-11-15
 
 ### 一句话总结
 
-新增“极低”画质档，让低配手机可以进一步关闭高开销效果并稳定帧率。
+新增 “极低” 画质档，让低配手机可以进一步关闭高开销效果并稳定帧率。
 
 ### 新增与改进
 
-- 新增 `minimal` 极低画质档：内部渲染比例降至 50%，手机 DPR 上限为 1，并关闭阴影、泛光、体积光、环境光遮蔽与平面反射。
-- 极低档将雨滴实例数量降到低档的四成，同时保留基础光照、天空与武器表现，不影响操作和联机。
-- 动态分辨率继续按帧率自动下调；在极低档下最低可降至 70% 动态比例，并在仍不足时保持极低而不是回弹。
-- 自动画质会识别低内存、少核心或小屏手机，直接选择极低档；软件渲染器同样优先进入极低档。
-- 青云地图新增极低档位：降低内部分辨率、反射与云层尺寸、体积步进和阴影刷新频率。
-- 设置面板新增第五个“极低”按钮与专门说明；中英文文案、静态资源缓存号与版本记录同步更新。
+
+
+* 新增 `minimal` 极低画质档：内部渲染比例降至 50%，手机 DPR 上限为 1，并关闭阴影、泛光、体积光、环境光遮蔽与平面反射。
+
+* 极低档将雨滴实例数量降到低档的四成，同时保留基础光照、天空与武器表现，不影响操作和联机。
+
+* 动态分辨率继续按帧率自动下调；在极低档下最低可降至 70% 动态比例，并在仍不足时保持极低而不是回弹。
+
+* 自动画质会识别低内存、少核心或小屏手机，直接选择极低档；软件渲染器同样优先进入极低档。
+
+* 青云地图新增极低档位：降低内部分辨率、反射与云层尺寸、体积步进和阴影刷新频率。
+
+* 设置面板新增第五个 “极低” 按钮与专门说明；中英文文案、静态资源缓存号与版本记录同步更新。
 
 ### 验证
 
-- `node --check public/js/game.bundle.js`、`node --check public/maps/qingyun-renderer.js` 通过。
-- `npm run check`、`npm run release:check` 通过。
-- 无头 Chromium 实测设置面板显示五档画质，极低档可切换并持久化。
+
+
+* `node --check public/js/game.bundle.js`、`node --check public/maps/qingyun-renderer.js` 通过。
+
+* `npm run check`、`npm run release:check` 通过。
+
+* 无头 Chromium 实测设置面板显示五档画质，极低档可切换并持久化。
 
 ## v1.25.9 — 2026-11-15
 
@@ -442,17 +1199,27 @@
 
 ### 改进
 
-- 新增 `public/js/modal.js` 与 `public/css/modal.css`，提供 Promise 化的 `SaltModal.confirm` / `SaltModal.alert`、焦点陷阱、Esc/遮罩关闭与关闭后焦点恢复。
-- 微信内置浏览器录制提醒改为中文/英文自定义警示弹窗，保留“仍要录制”和“先不录制”两个明确操作。
-- 删除本地回放改为危险操作弹窗，显示待删除文件名并强调不可撤销。
-- 模态框桌面端居中显示，手机端切换为底部抽屉；配色、圆角、阴影与按钮状态沿用现有 Saltline 暗色战术视觉。
-- 弹窗打开时回放面板不再响应 Esc 与 F9，避免误关闭或误触发录制；中英文文案与静态资源缓存号同步更新到 `v1.25.9`。
+
+
+* 新增 `public/js/modal.js` 与 `public/css/modal.css`，提供 Promise 化的 `SaltModal.confirm` / `SaltModal.alert`、焦点陷阱、Esc / 遮罩关闭与关闭后焦点恢复。
+
+* 微信内置浏览器录制提醒改为中文 / 英文自定义警示弹窗，保留 “仍要录制” 和 “先不录制” 两个明确操作。
+
+* 删除本地回放改为危险操作弹窗，显示待删除文件名并强调不可撤销。
+
+* 模态框桌面端居中显示，手机端切换为底部抽屉；配色、圆角、阴影与按钮状态沿用现有 Saltline 暗色战术视觉。
+
+* 弹窗打开时回放面板不再响应 Esc 与 F9，避免误关闭或误触发录制；中英文文案与静态资源缓存号同步更新到 `v1.25.9`。
 
 ### 验证
 
-- `node --check public/js/modal.js`、`node --check public/js/replay.js` 通过。
-- 全项目源码已无原生 `window.confirm` / `alert` / `prompt` 调用。
-- `npm run check`、`npm run release:check` 通过。
+
+
+* `node --check public/js/modal.js`、`node --check public/js/replay.js` 通过。
+
+* 全项目源码已无原生 `window.confirm` / `alert` / `prompt` 调用。
+
+* `npm run check`、`npm run release:check` 通过。
 
 ## v1.25.8 — 2026-11-15
 
@@ -462,18 +1229,29 @@
 
 ### 改进
 
-- `public/js/replay.js` 通过 `MicroMessenger` UA、`WeChat` UA 与 `WeixinJSBridge` 自动识别微信内置浏览器，并暴露 `SaltReplay.wechat` 供其他模块读取。
-- 回放面板在微信内显示醒目的下载限制提示，录制按钮状态同步说明无法下载。
-- 微信内点击开始录制会二次确认；取消后自动打开回放面板并高亮提示，确认后才继续录制。
-- 微信内下载按钮不再触发无效跳转，而是拦截下载并提示通过右上角菜单在系统浏览器打开。
-- 录制保存后的提示会说明文件仅在微信内保存、无法下载，引导玩家改用系统浏览器重新录制。
-- 新增中英文微信提示文案与响应式警示样式，静态资源缓存号更新到 `v1.25.8`。
+
+
+* `public/js/replay.js` 通过 `MicroMessenger` UA、`WeChat` UA 与 `WeixinJSBridge` 自动识别微信内置浏览器，并暴露 `SaltReplay.wechat` 供其他模块读取。
+
+* 回放面板在微信内显示醒目的下载限制提示，录制按钮状态同步说明无法下载。
+
+* 微信内点击开始录制会二次确认；取消后自动打开回放面板并高亮提示，确认后才继续录制。
+
+* 微信内下载按钮不再触发无效跳转，而是拦截下载并提示通过右上角菜单在系统浏览器打开。
+
+* 录制保存后的提示会说明文件仅在微信内保存、无法下载，引导玩家改用系统浏览器重新录制。
+
+* 新增中英文微信提示文案与响应式警示样式，静态资源缓存号更新到 `v1.25.8`。
 
 ### 验证
 
-- `node --check public/js/replay.js` 通过。
-- 中英文 `replay` 分区键一致，新增微信提示键完整。
-- `npm run check`、`npm run release:check` 通过。
+
+
+* `node --check public/js/replay.js` 通过。
+
+* 中英文 `replay` 分区键一致，新增微信提示键完整。
+
+* `npm run check`、`npm run release:check` 通过。
 
 ## v1.25.7 — 2026-11-14
 
@@ -483,17 +1261,27 @@
 
 ### 安全与一致性
 
-- 新增 `services/playerAuthority.js`，服务端对未上船无人机执行 `x=-40…40、z=-30…30` 空气墙夹紧。
-- 服务端为每名玩家维护 30 发弹夹；老客户端连续发送射击时，打空后必须等待 3040ms 才能恢复。
-- 战术换弹或停火达到 2000ms 后，服务端恢复完整弹夹，正常客户端的手动换弹不会误判。
-- 每发被服务器接受的射击只产生一次命中信用，阻止老客户端重复发送命中包刷伤害。
-- 墙外射击起点、过期射击和超过近战距离的伪造命中会被拒绝。
-- 项目版本与静态资源缓存号更新到 `v1.25.7`。
+
+
+* 新增 `services/playerAuthority.js`，服务端对未上船无人机执行 `x=-40…40、z=-30…30` 空气墙夹紧。
+
+* 服务端为每名玩家维护 30 发弹夹；老客户端连续发送射击时，打空后必须等待 3040ms 才能恢复。
+
+* 战术换弹或停火达到 2000ms 后，服务端恢复完整弹夹，正常客户端的手动换弹不会误判。
+
+* 每发被服务器接受的射击只产生一次命中信用，阻止老客户端重复发送命中包刷伤害。
+
+* 墙外射击起点、过期射击和超过近战距离的伪造命中会被拒绝。
+
+* 项目版本与静态资源缓存号更新到 `v1.25.7`。
 
 ### 验证
 
-- 新增 `npm run test:server-authority`，覆盖墙外夹紧、30 发弹夹、空弹等待、战术换弹和重复命中拦截。
-- `npm run test:flight-collision`、`npm run test:infinite-ammo`、`npm run test:legacy-port`、`npm run check` 与 `npm run release:check` 通过。
+
+
+* 新增 `npm run test:server-authority`，覆盖墙外夹紧、30 发弹夹、空弹等待、战术换弹和重复命中拦截。
+
+* `npm run test:flight-collision`、`npm run test:infinite-ammo`、`npm run test:legacy-port`、`npm run check` 与 `npm run release:check` 通过。
 
 ## v1.25.6 — 2026-11-14
 
@@ -503,17 +1291,27 @@
 
 ### 修复
 
-- 恢复旧版空气墙范围 `x=-40…40、z=-30…30`，只限制无人机水平飞行，不改变步兵、撤离船和外海交战区。
-- 聊天或暂停时，客户端继续发送在线可见状态；只有页面切到后台时才隐藏，不再因为打开输入框而让角色消失。
-- 无人机在空中切换操作单位时先保存选择，再立即在随机地面点位复活，避免切换后从高空直接坠落。
-- 无限弹药改为无限补充备弹，不再每帧强制补满弹夹；弹夹打空后仍需等待自动或手动换弹。
-- 无限弹药 HUD 保留弹夹剩余数，并继续显示换弹中与空弹夹提示。
-- 项目版本与静态资源缓存号更新到 `v1.25.6`。
+
+
+* 恢复旧版空气墙范围 `x=-40…40、z=-30…30`，只限制无人机水平飞行，不改变步兵、撤离船和外海交战区。
+
+* 聊天或暂停时，客户端继续发送在线可见状态；只有页面切到后台时才隐藏，不再因为打开输入框而让角色消失。
+
+* 无人机在空中切换操作单位时先保存选择，再立即在随机地面点位复活，避免切换后从高空直接坠落。
+
+* 无限弹药改为无限补充备弹，不再每帧强制补满弹夹；弹夹打空后仍需等待自动或手动换弹。
+
+* 无限弹药 HUD 保留弹夹剩余数，并继续显示换弹中与空弹夹提示。
+
+* 项目版本与静态资源缓存号更新到 `v1.25.6`。
 
 ### 验证
 
-- `npm run test:flight-collision` 覆盖旧版空气墙边界。
-- `npm run check`、`npm run test:legacy-port` 与 `npm run release:check` 通过。
+
+
+* `npm run test:flight-collision` 覆盖旧版空气墙边界。
+
+* `npm run check`、`npm run test:legacy-port` 与 `npm run release:check` 通过。
 
 ## v1.25.5 — 2026-11-14
 
@@ -523,10 +1321,15 @@
 
 ### 修复
 
-- 根据 `KITTIWAKE` 可视模型每个子对象的实际包围盒生成飞行专用碰撞体。
-- 统一合并场景物理碰撞盒与整船可视包络，避免旧四块船体碰撞盒遗漏区域。
-- 新增船首、高处桅杆回归用例，并保留船顶、船楼底面、船壳侧面与净空区域测试。
-- 项目版本与静态资源缓存号更新到 `v1.25.5`。
+
+
+* 根据 `KITTIWAKE` 可视模型每个子对象的实际包围盒生成飞行专用碰撞体。
+
+* 统一合并场景物理碰撞盒与整船可视包络，避免旧四块船体碰撞盒遗漏区域。
+
+* 新增船首、高处桅杆回归用例，并保留船顶、船楼底面、船壳侧面与净空区域测试。
+
+* 项目版本与静态资源缓存号更新到 `v1.25.5`。
 
 ## v1.25.4 — 2026-11-14
 
@@ -536,17 +1339,27 @@
 
 ### 新增与修复
 
-- 新增 `public/js/flight-collision.js`，对飞行单位使用带半径、底部和顶部高度的三维碰撞体。
-- 无人机每帧完成升降后进行碰撞解析，支持船体顶部落地、船楼底面阻挡及船壳侧面阻挡。
-- 大型货船 `KITTIWAKE` 的主船壳、舰桥、上层建筑和艉部碰撞盒全部参与飞行碰撞。
-- 根据大船可视模型的每个子对象动态生成整船飞行包络，补上船首、船尾和高处桅杆等旧碰撞盒未覆盖区域。
-- 飞行碰撞同时覆盖场景集装箱、仓库、吊机和外海交战平台，仅子弹碰撞盒不会阻挡飞行。
-- 项目版本与静态资源缓存号更新到 `v1.25.4`，确保浏览器加载新的碰撞脚本。
+
+
+* 新增 `public/js/flight-collision.js`，对飞行单位使用带半径、底部和顶部高度的三维碰撞体。
+
+* 无人机每帧完成升降后进行碰撞解析，支持船体顶部落地、船楼底面阻挡及船壳侧面阻挡。
+
+* 大型货船 `KITTIWAKE` 的主船壳、舰桥、上层建筑和艉部碰撞盒全部参与飞行碰撞。
+
+* 根据大船可视模型的每个子对象动态生成整船飞行包络，补上船首、船尾和高处桅杆等旧碰撞盒未覆盖区域。
+
+* 飞行碰撞同时覆盖场景集装箱、仓库、吊机和外海交战平台，仅子弹碰撞盒不会阻挡飞行。
+
+* 项目版本与静态资源缓存号更新到 `v1.25.4`，确保浏览器加载新的碰撞脚本。
 
 ### 验证
 
-- 新增 `npm run test:flight-collision`，覆盖船体顶部、船楼底面、船壳侧面、船首、高处桅杆、净空区域和仅子弹碰撞盒。
-- `npm run check`、`npm run test:legacy-port` 与 `npm run release:check` 通过。
+
+
+* 新增 `npm run test:flight-collision`，覆盖船体顶部、船楼底面、船壳侧面、船首、高处桅杆、净空区域和仅子弹碰撞盒。
+
+* `npm run check`、`npm run test:legacy-port` 与 `npm run release:check` 通过。
 
 ## v1.25.3 — 2026-11-14
 
@@ -556,16 +1369,25 @@
 
 ### 新增
 
-- 标题页与暂停菜单加入“安卓应用市场”入口，跳转到 `https://tulingai.com/app-market.html?id=49`。
-- 入口提供中英文文案、键盘焦点样式和无障碍标签，并适配窄屏与低高度窗口。
-- 安卓应用市场入口与 GitHub 仓库入口并列显示，使用统一的深色战术卡片视觉。
-- 手机端收紧主标题、菜单说明、状态与信息文本字号；所有按钮尺寸和位置保持不变。
-- 项目版本与静态资源缓存号更新到 `v1.25.3`，确保用户获取最新界面脚本与样式。
+
+
+* 标题页与暂停菜单加入 “安卓应用市场” 入口，跳转到 `https://tulingai.com/app-market.html?id=49`。
+
+* 入口提供中英文文案、键盘焦点样式和无障碍标签，并适配窄屏与低高度窗口。
+
+* 安卓应用市场入口与 GitHub 仓库入口并列显示，使用统一的深色战术卡片视觉。
+
+* 手机端收紧主标题、菜单说明、状态与信息文本字号；所有按钮尺寸和位置保持不变。
+
+* 项目版本与静态资源缓存号更新到 `v1.25.3`，确保用户获取最新界面脚本与样式。
 
 ### 验证
 
-- `npm run check`、`npm run test:legacy-port` 与 `npm run release:check` 通过。
-- 浏览器验证标题页和暂停菜单均显示应用市场入口，链接地址和中英文文案正确。
+
+
+* `npm run check`、`npm run test:legacy-port` 与 `npm run release:check` 通过。
+
+* 浏览器验证标题页和暂停菜单均显示应用市场入口，链接地址和中英文文案正确。
 
 ## v1.25.2 — 2026-11-14
 
@@ -575,16 +1397,25 @@
 
 ### 新增与修复
 
-- 新增 `public/js/audio-tap.js`：在游戏 WebAudio 主输出接入扬声器的同时，将同一音频链路分流到 `MediaStreamAudioDestinationNode`，供本地回放录制使用。
-- 本地录制流由纯画布视频改为“画布视频 + 游戏音轨”，优先协商带音频的 MP4 编码，不支持时自动回退到带 Opus 音轨的 WebM。
-- 录制使用克隆音轨，停止录制不会中断游戏音乐、枪声或环境音，也不会改变游戏音量。
-- 本地回放列表会标记“含游戏音效”；旧录像仍按原格式显示。
-- 录制仍不调用麦克风、不上传服务器，完整文件只写入当前浏览器的 IndexedDB。
+
+
+* 新增 `public/js/audio-tap.js`：在游戏 WebAudio 主输出接入扬声器的同时，将同一音频链路分流到 `MediaStreamAudioDestinationNode`，供本地回放录制使用。
+
+* 本地录制流由纯画布视频改为 “画布视频 + 游戏音轨”，优先协商带音频的 MP4 编码，不支持时自动回退到带 Opus 音轨的 WebM。
+
+* 录制使用克隆音轨，停止录制不会中断游戏音乐、枪声或环境音，也不会改变游戏音量。
+
+* 本地回放列表会标记 “含游戏音效”；旧录像仍按原格式显示。
+
+* 录制仍不调用麦克风、不上传服务器，完整文件只写入当前浏览器的 IndexedDB。
 
 ### 验证
 
-- `npm run check`、`npm run release:check` 与 JSON 解析通过。
-- Chromium 验证音轨分流节点存在，录制流同时包含视频轨和音频轨。
+
+
+* `npm run check`、`npm run release:check` 与 JSON 解析通过。
+
+* Chromium 验证音轨分流节点存在，录制流同时包含视频轨和音频轨。
 
 ## v1.25.1 — 2026-11-14
 
@@ -594,18 +1425,29 @@
 
 ### 变更
 
-- 核对上传包的全部 83 个文件：当前工作区无缺失文件，核心美术、模型、音频和游戏 bundle 与上传包一致。
-- 保留工作区中晚于上传包的撤离船、外海交战区、服务端死亡回放和临时托管权限修复，不回退既有功能。
-- `package.json` 成为版本号唯一来源，`/api/game/meta` 与静态资源缓存号自动读取当前版本，避免三处版本漂移。
-- 新增 `npm run release:check`：检查必需文件、CommonJS 配置、Node.js 18+ 启动方式、依赖白名单、双语文案分区、API 文档、`data/` 运行数据残留和 `PORT` / `HOST` 监听。
-- 运行数据继续与时序日志分离；发布检查要求 `data/` 只保留 `.gitkeep`，避免临时托管跨版本还原时被旧会话文件阻塞。
-- 修复英文界面在主线程长时间加载期间仍显示中文启动步骤的问题；`#boot-msg` 的动态文案现在在写入时即时翻译，不再依赖被阻塞的 MutationObserver。
+
+
+* 核对上传包的全部 83 个文件：当前工作区无缺失文件，核心美术、模型、音频和游戏 bundle 与上传包一致。
+
+* 保留工作区中晚于上传包的撤离船、外海交战区、服务端死亡回放和临时托管权限修复，不回退既有功能。
+
+* `package.json` 成为版本号唯一来源，`/api/game/meta` 与静态资源缓存号自动读取当前版本，避免三处版本漂移。
+
+* 新增 `npm run release:check`：检查必需文件、CommonJS 配置、Node.js 18+ 启动方式、依赖白名单、双语文案分区、API 文档、`data/` 运行数据残留和 `PORT` / `HOST` 监听。
+
+* 运行数据继续与时序日志分离；发布检查要求 `data/` 只保留 `.gitkeep`，避免临时托管跨版本还原时被旧会话文件阻塞。
+
+* 修复英文界面在主线程长时间加载期间仍显示中文启动步骤的问题；`#boot-msg` 的动态文案现在在写入时即时翻译，不再依赖被阻塞的 MutationObserver。
 
 ### 验证
 
-- `npm install --omit=dev --no-audit --no-fund`、`npm run check`、`npm run release:check` 与 JSON 解析通过。
-- 使用独立临时数据目录后台启动，逐项请求首页、健康检查、游戏元信息、排行榜、大字历史、语言接口和核心静态资源。
-- Chromium WebGL2 实机加载与移动端布局检查通过，页面无未处理运行时异常。
+
+
+* `npm install --omit=dev --no-audit --no-fund`、`npm run check`、`npm run release:check` 与 JSON 解析通过。
+
+* 使用独立临时数据目录后台启动，逐项请求首页、健康检查、游戏元信息、排行榜、大字历史、语言接口和核心静态资源。
+
+* Chromium WebGL2 实机加载与移动端布局检查通过，页面无未处理运行时异常。
 
 ## v1.25.0 — 2026-11-14
 
@@ -615,31 +1457,53 @@
 
 ### 新增
 
-- 撤离码头收到 `E` 即可登船，不再要求任务状态为 `complete`；原“完成撤离后才能出海”门禁移除。
-- 服务端维护一条共享撤离船，包括权威坐标、朝向、速度、舵手和四个座位。
-- 新增 `boatBoard`、`boatLeave`、`boatPose`、`boatInvite` WebSocket 协议，以及对应确认和拒绝消息。
-- 船上支持第一人称瞄准、射击、换弹和加速驾驶；舵手与乘客都保留完整战斗输入。
-- 舵手可发送全服集合邀请，客户端显示发送者、船位距离和方位。
-- 新增外海交战平台，包含实体碰撞、掩体、塔标、登船落点与四个外海复活点。
-- 玩家在外海死亡后优先在外海平台复活；撤离码头和外海平台均可安全下船。
+
+
+* 撤离码头收到 `E` 即可登船，不再要求任务状态为 `complete`；原 “完成撤离后才能出海” 门禁移除。
+
+* 服务端维护一条共享撤离船，包括权威坐标、朝向、速度、舵手和四个座位。
+
+* 新增 `boatBoard`、`boatLeave`、`boatPose`、`boatInvite` WebSocket 协议，以及对应确认和拒绝消息。
+
+* 船上支持第一人称瞄准、射击、换弹和加速驾驶；舵手与乘客都保留完整战斗输入。
+
+* 舵手可发送全服集合邀请，客户端显示发送者、船位距离和方位。
+
+* 新增外海交战平台，包含实体碰撞、掩体、塔标、登船落点与四个外海复活点。
+
+* 玩家在外海死亡后优先在外海平台复活；撤离码头和外海平台均可安全下船。
 
 ### 修复与稳健性
 
-- 撤离点的客户端硬边界由扩大到外海范围的可达区域替代，原有港口和海面碰撞继续生效。
-- 行驶中禁止直接下船；非码头或非外海平台区域禁止下船。
-- 玩家死亡、主动下船、进入专注模式或断线时自动释放座位。
-- 舵手断线后释放控制；船只无人使用 45 秒或全服最后一名玩家离线时回到撤离码头。
-- 服务端校验上船距离、舵位占用、驾驶员身份、船只位移速度与海面半径。
-- 撤离船 HUD、座位状态、集合邀请与操作拒绝提示补齐英文映射，语言切换后不再残留中文文案。
-- 静态资源缓存版本更新至 v1.25.0，避免升级后继续命中 v1.24.5 的旧脚本与样式。
-- 修复临时托管重复测试时 `data/play-sessions.json` 等运行数据无法被平台服务账号清理、导致版本还原失败的问题；项目内 `data/` 统一为 `2777`，数据文件统一为 `0664`。
-- 新增 `npm run test:boat-ws` 双客户端回归测试，覆盖登船、邀请、船位绑定、外海下船、死亡释放和外海复活。
+
+
+* 撤离点的客户端硬边界由扩大到外海范围的可达区域替代，原有港口和海面碰撞继续生效。
+
+* 行驶中禁止直接下船；非码头或非外海平台区域禁止下船。
+
+* 玩家死亡、主动下船、进入专注模式或断线时自动释放座位。
+
+* 舵手断线后释放控制；船只无人使用 45 秒或全服最后一名玩家离线时回到撤离码头。
+
+* 服务端校验上船距离、舵位占用、驾驶员身份、船只位移速度与海面半径。
+
+* 撤离船 HUD、座位状态、集合邀请与操作拒绝提示补齐英文映射，语言切换后不再残留中文文案。
+
+* 静态资源缓存版本更新至 v1.25.0，避免升级后继续命中 v1.24.5 的旧脚本与样式。
+
+* 修复临时托管重复测试时 `data/play-sessions.json` 等运行数据无法被平台服务账号清理、导致版本还原失败的问题；项目内 `data/` 统一为 `2777`，数据文件统一为 `0664`。
+
+* 新增 `npm run test:boat-ws` 双客户端回归测试，覆盖登船、邀请、船位绑定、外海下船、死亡释放和外海复活。
 
 ### 验证
 
-- `npm run check`、`npm run test:legacy-port`、`npm run test:legacy-ws` 与 `npm run test:boat-ws` 全部通过。
-- Chromium WebGL2 实机加载无运行时异常；任务未完成时可登船，游戏保持 `playing`，武器可见且射击会扣除弹药并广播命中流程。
-- 双客户端测试确认舵手、乘客、邀请、随船移动、行驶中禁止下船、外海落点、死亡释放座位与外海复活均正常。
+
+
+* `npm run check`、`npm run test:legacy-port`、`npm run test:legacy-ws` 与 `npm run test:boat-ws` 全部通过。
+
+* Chromium WebGL2 实机加载无运行时异常；任务未完成时可登船，游戏保持 `playing`，武器可见且射击会扣除弹药并广播命中流程。
+
+* 双客户端测试确认舵手、乘客、邀请、随船移动、行驶中禁止下船、外海落点、死亡释放座位与外海复活均正常。
 
 ## v1.24.5 — 2026-11-13
 
@@ -649,10 +1513,15 @@
 
 ### 回退
 
-- 主渲染器、单位选择预览与死亡回放恢复优先请求 `powerPreference: "high-performance"`。
-- 恢复游戏 bundle 原有的画质探测逻辑与临时 WebGL2 探测上下文。
-- 启动提示恢复为渲染器初始化口径，不再描述显卡型号判断。
-- `/api/game/meta` 移除 `singleBootContext` 与 `auxiliaryProbeContext` 字段。
+
+
+* 主渲染器、单位选择预览与死亡回放恢复优先请求 `powerPreference: "high-performance"`。
+
+* 恢复游戏 bundle 原有的画质探测逻辑与临时 WebGL2 探测上下文。
+
+* 启动提示恢复为渲染器初始化口径，不再描述显卡型号判断。
+
+* `/api/game/meta` 移除 `singleBootContext` 与 `auxiliaryProbeContext` 字段。
 
 ## v1.24.4 — 2026-11-13
 
@@ -662,34 +1531,51 @@
 
 ### 修复
 
-- 下载控件由原生 `<a download>` 改为 `button`，移除点击处理器与链接默认行为叠加造成的双重下载。
-- 每次下载都会创建新的 Blob URL，而不是重复使用回放预览地址，避免浏览器复用已消费的下载地址。
-- Blob URL 的释放时间从 3 秒延长到 30 秒，为移动端浏览器写入文件留出缓冲。
-- 增加 600 ms 点击保护，避免连续点击被浏览器识别为批量自动下载。
+
+
+* 下载控件由原生 `<a download>` 改为 `button`，移除点击处理器与链接默认行为叠加造成的双重下载。
+
+* 每次下载都会创建新的 Blob URL，而不是重复使用回放预览地址，避免浏览器复用已消费的下载地址。
+
+* Blob URL 的释放时间从 3 秒延长到 30 秒，为移动端浏览器写入文件留出缓冲。
+
+* 增加 600 ms 点击保护，避免连续点击被浏览器识别为批量自动下载。
 
 ### 验证
 
-- `npm run check`、JSON 解析与运行时接口检查通过。
-- Chromium 中注入本地回放后连续点击两次下载，两次均触发独立下载事件。
+
+
+* `npm run check`、JSON 解析与运行时接口检查通过。
+
+* Chromium 中注入本地回放后连续点击两次下载，两次均触发独立下载事件。
 
 ## v1.24.3 — 2026-11-13（已由 v1.24.5 撤销）
 
 ### 一句话总结
 
-纠正“显卡有问题”的误判：首屏偶发失败来自浏览器图形服务初始化时序与 WebGL 上下文配额，现已收敛为单上下文启动。
+纠正 “显卡有问题” 的误判：首屏偶发失败来自浏览器图形服务初始化时序与 WebGL 上下文配额，现已收敛为单上下文启动。
 
 ### 修复
 
-- 移除游戏 bundle 中创建临时画布并立即销毁 WebGL2 上下文的显卡探测逻辑，画质档位直接复用主上下文读取到的渲染器信息。
-- 主渲染器优先请求 `powerPreference: "default"`，由浏览器选择核显、独显或软件回退；只有默认选择失败时才尝试 `high-performance`。
-- 启动门控、单位选择预览与死亡回放的显卡偏好同步调整为默认策略，避免双显卡/核显设备被强制拉起不可用的独显。
-- 中英文启动提示改为“浏览器图形服务初始化”，明确与独显/核显型号无关，并移除“开启硬件加速”式误导。
-- `/api/game/meta` 新增 `singleBootContext: true` 与 `auxiliaryProbeContext: false`。
+
+
+* 移除游戏 bundle 中创建临时画布并立即销毁 WebGL2 上下文的显卡探测逻辑，画质档位直接复用主上下文读取到的渲染器信息。
+
+* 主渲染器优先请求 `powerPreference: "default"`，由浏览器选择核显、独显或软件回退；只有默认选择失败时才尝试 `high-performance`。
+
+* 启动门控、单位选择预览与死亡回放的显卡偏好同步调整为默认策略，避免双显卡 / 核显设备被强制拉起不可用的独显。
+
+* 中英文启动提示改为 “浏览器图形服务初始化”，明确与独显 / 核显型号无关，并移除 “开启硬件加速” 式误导。
+
+* `/api/game/meta` 新增 `singleBootContext: true` 与 `auxiliaryProbeContext: false`。
 
 ### 验证
 
-- `npm run check` 与 JSON 解析通过。
-- 浏览器冷启动验证：仅 `#view` 持有主 WebGL2 上下文，bundle 不再创建额外探测上下文。
+
+
+* `npm run check` 与 JSON 解析通过。
+
+* 浏览器冷启动验证：仅 `#view` 持有主 WebGL2 上下文，bundle 不再创建额外探测上下文。
 
 ## v1.24.2 — 2026-11-13
 
@@ -699,17 +1585,27 @@
 
 ### 修复
 
-- 新增启动门控 `public/js/boot-gate.js`：在加载游戏 bundle 前，先在真实 `#view` 画布上异步唤醒 WebGL2。
-- 上下文创建改为 8 轮递增等待重试，覆盖浏览器刚启动时 GPU 进程尚未就绪的冷启动窗口。
-- 预热成功的 WebGL2 上下文由游戏主渲染器直接复用，避免质量探测与渲染器连续创建上下文导致第二次创建失败。
-- `webgl-guard.js` 保留多组兼容属性回退，并暴露 `window.__SALT_WEBGL__.ensure()` 供启动门控使用。
-- 游戏脚本改为在上下文就绪后按原依赖顺序加载；渲染器仍失败时自动恢复（最多两次），再次失败则显示可重试的中英文错误卡片，不再暴露原始堆栈。
-- 错误卡片沿用截图测量主色：背景 `#0C0D0F`、标题 `#FFFFFF`、强调色 `#FFAEBD`。
+
+
+* 新增启动门控 `public/js/boot-gate.js`：在加载游戏 bundle 前，先在真实 `#view` 画布上异步唤醒 WebGL2。
+
+* 上下文创建改为 8 轮递增等待重试，覆盖浏览器刚启动时 GPU 进程尚未就绪的冷启动窗口。
+
+* 预热成功的 WebGL2 上下文由游戏主渲染器直接复用，避免质量探测与渲染器连续创建上下文导致第二次创建失败。
+
+* `webgl-guard.js` 保留多组兼容属性回退，并暴露 `window.__SALT_WEBGL__.ensure()` 供启动门控使用。
+
+* 游戏脚本改为在上下文就绪后按原依赖顺序加载；渲染器仍失败时自动恢复（最多两次），再次失败则显示可重试的中英文错误卡片，不再暴露原始堆栈。
+
+* 错误卡片沿用截图测量主色：背景 `#0C0D0F`、标题 `#FFFFFF`、强调色 `#FFAEBD`。
 
 ### 验证
 
-- `npm run check` 与 JSON 解析通过。
-- Chromium 注入“前两次 WebGL2 创建返回空”的冷启动故障后，启动门控自动重试并成功进入游戏，无 `Error creating WebGL context`。
+
+
+* `npm run check` 与 JSON 解析通过。
+
+* Chromium 注入 “前两次 WebGL2 创建返回空” 的冷启动故障后，启动门控自动重试并成功进入游戏，无 `Error creating WebGL context`。
 
 ## v1.24.1 — 2026-11-13
 
@@ -719,35 +1615,53 @@
 
 ### 修复
 
-- 修复首个联网快照早于 `SaltUnitModels` 模块加载时，机器狗只等待 150 ms 就永久回退为方块模型的问题。
-- 机器狗 / 无人机模型改为持续等待模块与游戏内单位资源就绪，再挂载真实 `SkinnedMesh` 与步态骨骼。
-- 新增兜底模型自动升级：极端情况下先出现的方块机器狗会在真实模型可用后被替换，不再残留方块部件。
-- 清理模型时统一释放方块兜底网格与材质，避免切换操控单位后重复堆叠。
+
+
+* 修复首个联网快照早于 `SaltUnitModels` 模块加载时，机器狗只等待 150 ms 就永久回退为方块模型的问题。
+
+* 机器狗 / 无人机模型改为持续等待模块与游戏内单位资源就绪，再挂载真实 `SkinnedMesh` 与步态骨骼。
+
+* 新增兜底模型自动升级：极端情况下先出现的方块机器狗会在真实模型可用后被替换，不再残留方块部件。
+
+* 清理模型时统一释放方块兜底网格与材质，避免切换操控单位后重复堆叠。
 
 ### 验证
 
-- `node --check public/js/multiplayer.js` 通过。
-- 使用真实浏览器与 WebSocket 远端玩家验证：远端 `hound` 单位 `hunterMounted: true`、`fallbackBuilt: false`，场景内为真实 `SkinnedMesh`。
+
+
+* `node --check public/js/multiplayer.js` 通过。
+
+* 使用真实浏览器与 WebSocket 远端玩家验证：远端 `hound` 单位 `hunterMounted: true`、`fallbackBuilt: false`，场景内为真实 `SkinnedMesh`。
 
 ## v1.24.0 — 2026-11-13
 
 ### 一句话总结
 
-死亡回放改为服务端录制的真实对局数据，客户端不再用本地快照自行拼接“假回放”。
+死亡回放改为服务端录制的真实对局数据，客户端不再用本地快照自行拼接 “假回放”。
 
 ### 新增与修复
 
-- 新增 `services/deathReplay.js`：以 10 Hz 环形缓冲记录每名玩家的权威位置、朝向、俯仰，并记录真实射击的枪口坐标、弹道方向与命中伤害。
-- 击杀发生时，服务端截取击杀前 4.5 秒的击杀者 / 被击杀者双轨轨迹与射击、命中事件，通过 `youDied.replay` 只下发给被击杀者。
-- 回放负载使用紧凑数组格式，明确标记 `version: 1`、`source: "server"` 与服务端计算的击杀距离、方位。
-- 客户端删除本地轨迹拼接与固定三次开枪动画；没有服务端回放数据时显示不可用提示，不再伪造回放。
-- 3D 回放同时驱动双方模型沿真实轨迹移动，并按服务端记录的射击时刻、枪口位置和弹道方向播放枪火与命中效果。
-- 中英文死亡回放文案更新为“服务端实录 / SERVER CAPTURE”。
+
+
+* 新增 `services/deathReplay.js`：以 10 Hz 环形缓冲记录每名玩家的权威位置、朝向、俯仰，并记录真实射击的枪口坐标、弹道方向与命中伤害。
+
+* 击杀发生时，服务端截取击杀前 4.5 秒的击杀者 / 被击杀者双轨轨迹与射击、命中事件，通过 `youDied.replay` 只下发给被击杀者。
+
+* 回放负载使用紧凑数组格式，明确标记 `version: 1`、`source: "server"` 与服务端计算的击杀距离、方位。
+
+* 客户端删除本地轨迹拼接与固定三次开枪动画；没有服务端回放数据时显示不可用提示，不再伪造回放。
+
+* 3D 回放同时驱动双方模型沿真实轨迹移动，并按服务端记录的射击时刻、枪口位置和弹道方向播放枪火与命中效果。
+
+* 中英文死亡回放文案更新为 “服务端实录 / SERVER CAPTURE”。
 
 ### 验证
 
-- 服务端录制服务单测验证双方轨迹、射击与命中事件完整。
-- `npm run check`、HTTP 启动检查与双客户端 WebSocket 击杀回放验证。
+
+
+* 服务端录制服务单测验证双方轨迹、射击与命中事件完整。
+
+* `npm run check`、HTTP 启动检查与双客户端 WebSocket 击杀回放验证。
 
 ## v1.23.3 — 2026-11-13
 
@@ -757,17 +1671,27 @@
 
 ### 移除与调整
 
-- 删除 `public/js/compat-game.js` 与 `public/css/compat.css`，不再加载 2D 战术客户端和样式。
-- 移除 `?gfx=2d`、`?render=2d` 强制入口，以及 WebGL2 不可用、软件渲染或启动超时后的自动 2D 接管。
-- 简化 `public/js/webgl-guard.js`，保留 WebGL2 上下文重试能力，但不再强制切换到 Canvas。
-- 移除专注模式中的 2D 观战目标、部署与销毁分支，专注模式继续绑定 Three.js 战场。
-- `/api/game/meta` 的 `engine` 改为纯 Three.js，`rendering.fallback` 固定为 `null`，并新增 `rendering.requiresWebGL2`。
-- 删除中英文词典中的兼容模式文案，版本更新至 `1.23.3`。
+
+
+* 删除 `public/js/compat-game.js` 与 `public/css/compat.css`，不再加载 2D 战术客户端和样式。
+
+* 移除 `?gfx=2d`、`?render=2d` 强制入口，以及 WebGL2 不可用、软件渲染或启动超时后的自动 2D 接管。
+
+* 简化 `public/js/webgl-guard.js`，保留 WebGL2 上下文重试能力，但不再强制切换到 Canvas。
+
+* 移除专注模式中的 2D 观战目标、部署与销毁分支，专注模式继续绑定 Three.js 战场。
+
+* `/api/game/meta` 的 `engine` 改为纯 Three.js，`rendering.fallback` 固定为 `null`，并新增 `rendering.requiresWebGL2`。
+
+* 删除中英文词典中的兼容模式文案，版本更新至 `1.23.3`。
 
 ### 验证
 
-- `npm run check`、`npm run test:legacy-port` 通过。
-- 启动服务后验证首页、核心静态资源与 `/api/game/meta` 返回正常。
+
+
+* `npm run check`、`npm run test:legacy-port` 通过。
+
+* 启动服务后验证首页、核心静态资源与 `/api/game/meta` 返回正常。
 
 ## v1.23.2 — 2026-11-13
 
@@ -777,17 +1701,27 @@
 
 ### 新增与变更
 
-- 新增 `public/js/death-replay-3d.js`，使用独立 Three.js 渲染器重建港口夜景。
-- 根据老版快照中的位置、高度与朝向驱动击杀者路径、追踪镜头和收尾击杀过程。
-- 场景包含集装箱堆场、龙门吊、灯塔、地面网格、击杀者与被击杀者低多边形模型。
-- 回放视口加入 3D 重建标识、追踪镜头提示、播放进度条、取景框和扫描线效果。
-- WebGL 回放不可用时显示明确提示，不再回退为俯视 2D 地图。
-- 复活倒计时、服务端死亡确认、快照协议与移动算法均保持不变。
+
+
+* 新增 `public/js/death-replay-3d.js`，使用独立 Three.js 渲染器重建港口夜景。
+
+* 根据老版快照中的位置、高度与朝向驱动击杀者路径、追踪镜头和收尾击杀过程。
+
+* 场景包含集装箱堆场、龙门吊、灯塔、地面网格、击杀者与被击杀者低多边形模型。
+
+* 回放视口加入 3D 重建标识、追踪镜头提示、播放进度条、取景框和扫描线效果。
+
+* WebGL 回放不可用时显示明确提示，不再回退为俯视 2D 地图。
+
+* 复活倒计时、服务端死亡确认、快照协议与移动算法均保持不变。
 
 ### 验证
 
-- `npm run check`、`npm run test:legacy-port`、`npm run test:legacy-ws` 通过。
-- 使用 Chromium 实际渲染 3D 回放场景并检查桌面与移动端布局。
+
+
+* `npm run check`、`npm run test:legacy-port`、`npm run test:legacy-ws` 通过。
+
+* 使用 Chromium 实际渲染 3D 回放场景并检查桌面与移动端布局。
 
 ## v1.23.1 — 2026-11-13
 
@@ -797,30 +1731,52 @@
 
 ### 新增功能
 
-- 玩家社区入口与微信群二维码。
-- 1–6 连杀语音播报。
-- 本地战场录制、IndexedDB 回放、下载和删除。
-- 死亡回放、击杀距离与方位。
-- 无人机近地搜索灯，并在离场、切换、死亡、断线和暂停时立即清理。
-- 机器狗和无人机坠毁、翻滚、冒烟与触地爆炸。
-- 方块人怀旧皮肤，未选择单位时默认使用方块人。
-- 紧凑移动端字号与布局。
+
+
+* 玩家社区入口与微信群二维码。
+
+* 1–6 连杀语音播报。
+
+* 本地战场录制、IndexedDB 回放、下载和删除。
+
+* 死亡回放、击杀距离与方位。
+
+* 无人机近地搜索灯，并在离场、切换、死亡、断线和暂停时立即清理。
+
+* 机器狗和无人机坠毁、翻滚、冒烟与触地爆炸。
+
+* 方块人怀旧皮肤，未选择单位时默认使用方块人。
+
+* 紧凑移动端字号与布局。
 
 ### 保持不变
 
-- 保留 v1.23.0 的客户端位置上报、服务端命中、复活、快照、输入限频和反作弊算法。
-- 保留 Canvas 2D 战术兼容模式。
-- 不包含新版红蓝小队、位置追随信用、服务端预测、AOI 增量快照或新版网络校正。
+
+
+* 保留 v1.23.0 的客户端位置上报、服务端命中、复活、快照、输入限频和反作弊算法。
+
+* 保留 Canvas 2D 战术兼容模式。
+
+* 不包含新版红蓝小队、位置追随信用、服务端预测、AOI 增量快照或新版网络校正。
 
 ### 兼容处理
 
-- 老版服务器新增 `classic` 单位别名，沿用男士兵的移动、命中、伤害与复活参数。
-- 死亡回放直接使用老版快照时间与玩家位置，不新增服务器回放记录。
-- 本地录像、社区、连杀和灯光特效全部在浏览器运行。
+
+
+* 老版服务器新增 `classic` 单位别名，沿用男士兵的移动、命中、伤害与复活参数。
+
+* 死亡回放直接使用老版快照时间与玩家位置，不新增服务器回放记录。
+
+* 本地录像、社区、连杀和灯光特效全部在浏览器运行。
 
 ### 验证
 
-- `npm run check` 与 `npm run test:legacy-port` 通过。
-- `npm run test:legacy-ws` 验证老版协议默认方块人、死亡消息与 `deathAck` 正常。
-- Chrome 2D 兼容模式实测：社区弹窗、回放界面、连杀播报已加载，默认单位为 `classic`。
-- Chrome WebGL 实测：五张单位卡加载成功，包含方块人模型，页面无运行时错误。
+
+
+* `npm run check` 与 `npm run test:legacy-port` 通过。
+
+* `npm run test:legacy-ws` 验证老版协议默认方块人、死亡消息与 `deathAck` 正常。
+
+* Chrome 2D 兼容模式实测：社区弹窗、回放界面、连杀播报已加载，默认单位为 `classic`。
+
+* Chrome WebGL 实测：五张单位卡加载成功，包含方块人模型，页面无运行时错误。

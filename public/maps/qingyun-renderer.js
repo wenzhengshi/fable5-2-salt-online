@@ -4200,9 +4200,9 @@ Vt.add(Ce(new bt(_e(n),ve(ge.PEAK))))}{let i=an(8080),t=[],e=[],n=0,s=0;for(;s<1
       vN = (mat3(modelMatrix) * (B * normal.x + Nn * normal.y - T * normal.z)) * vec3(1.0, uMirror, 1.0);
       vObj = position; vUv = vec2(0.0); vCol = aColor;
       gl_Position = projectionMatrix * viewMatrix * wp;
-    }`});{let i=new bt(Vn(mi.dragon,{scale:1.4}),su);i.frustumCulled=!1,Vt.add(i)}function animateDragon(dt){Hi.uDA.value+=20/380*dt;}var Co=Array.from({length:So},()=>new me(0,0,-100,0)),Uc=0,ru=new he({uniforms:{...Ht,uRefl:{value:null},uRip:{value:Co}},vertexShader:Fs,fragmentShader:$n+`
+    }`});{let i=new bt(Vn(mi.dragon,{scale:1.4}),su);i.frustumCulled=!1,Vt.add(i)}function animateDragon(dt){Hi.uDA.value+=20/380*dt;}var Co=Array.from({length:So},()=>new me(0,0,-100,0)),Uc=0,ru=new he({uniforms:{...Ht,uRefl:{value:null},uReflOn:{value:0},uRip:{value:Co}},vertexShader:Fs,fragmentShader:$n+`
     varying vec3 vWp;
-    uniform sampler2D uRefl; uniform vec2 uRes; uniform vec4 uRip[${So}];
+    uniform sampler2D uRefl; uniform float uReflOn; uniform vec2 uRes; uniform vec4 uRip[${So}];
     float rings(vec2 q){ // wake rings left where the player skims the surface: (x, z, start time, strength)
       float s = 0.0;
       for (int i = 0; i < ${So}; i++) {
@@ -4227,7 +4227,7 @@ Vt.add(Ce(new bt(_e(n),ve(ge.PEAK))))}{let i=an(8080),t=[],e=[],n=0,s=0;for(;s<1
       // planar reflection: the mirrored scene was rendered through the same camera, so sample it at this
       // fragment's own screen position, offset by the ripple normal
       vec2 uv = clamp(gl_FragCoord.xy / uRes + N.xz * vec2(0.06, 0.13) / (1.0 + d*0.015), vec2(0.002), vec2(0.998));
-      vec3 refl = texture2D(uRefl, uv).rgb;
+      vec3 refl = uReflOn > 0.5 ? texture2D(uRefl, uv).rgb : vec3(0.14, 0.23, 0.28);
       float F = mix(0.46, 1.0, pow(1.0 - max(dot(N, V), 0.0), 3.0));
       vec3 col = mix(vec3(0.012,0.045,0.06), refl * 0.96, F);
       col += SUN_COL * pow(max(dot(reflect(-V, N), uSunDir), 0.0), 700.0) * 1.2;
@@ -4413,11 +4413,12 @@ const presets = {
   high:   { scale: .9,  pixels: 1440000, reflection: .38, cloud: .42, steps: 24, rays: 24, shadowEvery: 4 },
   medium: { scale: .8,  pixels:  960000, reflection: .33, cloud: .36, steps: 18, rays: 16, shadowEvery: 6 },
   low:    { scale: .68, pixels:  600000, reflection: .27, cloud: .3,  steps: 13, rays: 0,  shadowEvery: 8 },
-  minimal:{ scale: .52, pixels:  360000, reflection: .18, cloud: .22, steps: 8,  rays: 0,  shadowEvery: 12 }
+  smooth: { scale: .74, pixels:  600000, reflection: 0,   cloud: .22, steps: 8,  rays: 0,  shadowEvery: 0 },
+  minimal:{ scale: .58, pixels:  420000, reflection: 0,   cloud: .18, steps: 6,  rays: 0,  shadowEvery: 0 }
 };
 let viewWidth = 0, viewHeight = 0, applied = null;
 let qualityName, tier, frame = 0, frameAverage = 0, samples = 0, cooldown = 1;
-const levels = ['minimal','low','medium','high','ultra'];
+const levels = ['minimal','smooth','low','medium','high','ultra'];
 
 function resetFrameHistory() {
   qualityName = undefined;
@@ -4471,8 +4472,9 @@ const raySource = new F, cameraDirection = new F;
 function renderMap(drawActors, preset) {
   Jt.updateMatrixWorld(true);
   Wc.position.copy(Jt.position);
-  Ht.uShadowOn.value = Ye.shadow;
-  if (Ye.shadow && frame % preset.shadowEvery === 0) {
+  const shadows = Ye.shadow && preset.shadowEvery > 0;
+  Ht.uShadowOn.value = shadows ? 1 : 0;
+  if (shadows && frame % preset.shadowEvery === 0) {
     di.overrideMaterial = Cg;
     // Never sample the depth attachment while writing this shadow map.
     Ht.tShadow.value = null;
@@ -4488,7 +4490,8 @@ function renderMap(drawActors, preset) {
 
   viewProjection.multiplyMatrices(Jt.projectionMatrix, Jt.matrixWorldInverse);
   frustum.setFromProjectionMatrix(viewProjection);
-  if (frustum.intersectsSphere(wg) && Jt.position.y < 260) {
+  const reflection = preset.reflection > 0 && frustum.intersectsSphere(wg) && Jt.position.y < 260;
+  if (reflection) {
     Ht.uMirror.value = -1;
     Ht.uCamTrue.value.set(Jt.position.x, -Jt.position.y, Jt.position.z);
     Vt.scale.y = -1;
@@ -4509,6 +4512,7 @@ function renderMap(drawActors, preset) {
   Ht.uMirror.value = 1;
   Ht.uCamTrue.value.copy(Jt.position);
   ru.uniforms.uRefl.value = kc.texture;
+  ru.uniforms.uReflOn.value = reflection ? 1 : 0;
   Ze.setRenderTarget(Zn);
   Ze.clear();
   Ze.render(di, Jt);
@@ -4588,6 +4592,7 @@ async function warmBatch(scene, camera, target) {
 }
 
 async function warmLanding(camera, quality) {
+  const preset = choosePreset(quality, 0);
   const warmCamera = Jt.clone();
   warmCamera.position.copy(camera.position);
   warmCamera.quaternion.copy(camera.quaternion);
@@ -4630,12 +4635,17 @@ async function warmLanding(camera, quality) {
 
   try {
     await warmMeshes(meshes, warmCamera, colorTarget);
-    if (Ye.shadow) await warmMeshes(meshes.filter(mesh => mesh.layers.test(ki.layers)), ki, depthTarget, Cg);
+    if (Ye.shadow && preset.shadowEvery > 0) {
+      await warmMeshes(meshes.filter(mesh => mesh.layers.test(ki.layers)), ki, depthTarget, Cg);
+    }
 
     const postScene = new js();
     const postQuad = Zc.clone(false);
     postScene.add(postQuad);
-    for (const material of [Vc, uu, $c, Ts]) {
+    const materials = [Vc];
+    if (preset.rays) materials.push(uu);
+    if (Ye.bloom && preset.steps > 13) materials.push($c, Ts);
+    for (const material of materials) {
       postQuad.material = material;
       await warmBatch(postScene, Pg, postTarget);
     }
@@ -4645,8 +4655,13 @@ async function warmLanding(camera, quality) {
     await withWarmTarget(null, () => Ze.compileAsync(postScene, Pg));
 
     Ze.getDrawingBufferSize(outputSize);
-    resizeTargets(outputSize.x, outputSize.y, choosePreset(quality, 0));
-    for (const target of [Zn, kc, mr, Yc, pi, Hc, hr]) {
+    resizeTargets(outputSize.x, outputSize.y, preset);
+    const targets = [Zn, mr];
+    if (preset.reflection) targets.push(kc);
+    if (preset.rays) targets.push(Yc);
+    if (Ye.bloom && preset.steps > 13) targets.push(pi, Hc);
+    if (Ye.shadow && preset.shadowEvery > 0) targets.push(hr);
+    for (const target of targets) {
       await afterPortFrame();
       withWarmTarget(target, () => Ze.clear());
     }

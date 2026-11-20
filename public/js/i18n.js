@@ -31,6 +31,24 @@
     }, duration || 2600);
   }
 
+  const REOPEN_SETTINGS_KEY = 'salt-reopen-settings-after-lang';
+
+  function rememberOpenSettings() {
+    try {
+      const panel = document.querySelector('#ui .panel[role="dialog"]');
+      if (!panel || panel.hidden) return;
+      const selectedTab = [...panel.querySelectorAll('.tab')]
+        .find(tab => tab.getAttribute('aria-selected') === 'true');
+      const graphics = document.getElementById('salt-graphics');
+      sessionStorage.setItem(REOPEN_SETTINGS_KEY, JSON.stringify({
+        tab: selectedTab ? selectedTab.dataset.tab : 'settings',
+        graphics: !!(graphics && !graphics.hidden)
+      }));
+    } catch (error) {
+      /* sessionStorage can be blocked; the reload still applies the language */
+    }
+  }
+
   async function switchLang(lang, button) {
     if (lang === currentLang || !button) {
       return;
@@ -49,7 +67,10 @@
       if (!response.ok) {
         throw new Error('HTTP ' + response.status);
       }
-      window.location.reload();
+      rememberOpenSettings();
+      const next = new URL(window.location.href);
+      next.searchParams.delete('lang');
+      window.location.assign(next.toString());
     } catch (error) {
       button.removeAttribute('aria-busy');
       button.disabled = false;
@@ -159,6 +180,12 @@
     return null;
   }
 
+  function isSkipped(node) {
+    if (!node) return false;
+    const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    return !!(element && element.closest && element.closest('[data-i18n-skip]'));
+  }
+
   function translateValue(value) {
     const trimmed = value.trim();
     if (!trimmed || !/[\u4e00-\u9fff]/.test(trimmed)) return value;
@@ -192,6 +219,7 @@
     acceptNode(node) {
       const parent = node.parentElement;
       if (!parent) return NodeFilter.FILTER_REJECT;
+      if (isSkipped(node)) return NodeFilter.FILTER_REJECT;
       if (/^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA)$/.test(parent.tagName)) return NodeFilter.FILTER_REJECT;
       return /[\u4e00-\u9fff]/.test(node.nodeValue || '')
         ? NodeFilter.FILTER_ACCEPT
@@ -216,6 +244,7 @@
 
     const elements = root.querySelectorAll ? root.querySelectorAll('[aria-label], [title], [placeholder]') : [];
     for (const element of elements) {
+      if (isSkipped(element)) continue;
       for (const attr of ['aria-label', 'title', 'placeholder']) {
         const value = element.getAttribute(attr);
         if (!value) continue;
@@ -242,14 +271,17 @@
 
   function mutationHasCjk(mutation) {
     if (mutation.type === 'characterData') {
+      if (isSkipped(mutation.target)) return false;
       return /[\u4e00-\u9fff]/.test(mutation.target.nodeValue || '');
     }
     if (mutation.type === 'attributes') {
+      if (isSkipped(mutation.target)) return false;
       const value = mutation.target.getAttribute(mutation.attributeName) || '';
       return /[\u4e00-\u9fff]/.test(value);
     }
     if (mutation.type === 'childList') {
       for (const node of mutation.addedNodes) {
+        if (isSkipped(node)) continue;
         const value = node.nodeType === Node.TEXT_NODE ? node.nodeValue : node.textContent;
         if (/[\u4e00-\u9fff]/.test(value || '')) return true;
       }

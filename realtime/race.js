@@ -7,6 +7,9 @@ const raceNames=require('../services/raceNames');
 const multiplayer=require('./multiplayer');
 const {checkStep}=require('./race-trace');
 const outfits=require('../public/js/soldier-outfits');
+const airspace=require('../public/race/airspace');
+const weaponRules=require('../public/js/frontier-rules');
+const storage=require('../config/storage');
 const sessions=new Map(), rooms=new Set(), plaza=new Set();
 const plazaViewRange=310;
 let nextPlazaAt=0, nextRosterAt=0, nextPingAt=0, nextPlazaSlot=0;
@@ -169,9 +172,10 @@ function joinPlaza(owner,url,ws) {
     unit,outfit:outfits.normalize(url.searchParams.get('outfit')),socket:ws,lastInput:0,lastShotAt:0,shotToken:0,shot:0,alive:true};
   const slot=nextPlazaSlot++ % 15;
   const length=race.rules().length;
+  const inventory=weaponRules.normalize(storage.readJson('frontier-inventory.json')?.[owner]);
   plaza.add(visitor);
   nextRosterAt=0;
-  send(visitor,{type:'plazaJoined',id:visitor.id,spawn:{x:(slot%5-2)*2.2,z:length+4+Math.floor(slot/5)*2}});
+  send(visitor,{type:'plazaJoined',id:visitor.id,inventory,spawn:{x:(slot%5-2)*2.2,z:length+4+Math.floor(slot/5)*2}});
   ws.on('pong',()=>{visitor.alive=true;});
   ws.on('message',data=>{
     const now=Date.now();
@@ -181,7 +185,9 @@ function joinPlaza(owner,url,ws) {
     try{pose=JSON.parse(data);}catch{return;}
     if(!pose||![pose.x,pose.y,pose.z,pose.heading].every(Number.isFinite))return;
     const {x,y,z,heading}=pose;
-    if(Math.abs(x)>10.71||y<0||y>2.6||z<0||z>length+19.11||Math.abs(heading)>Math.PI*2)return;
+    const nextUnit=units.includes(pose.unit)?pose.unit:unit;
+    const maxY=nextUnit==='drone'?airspace.maxAltitude:2.6;
+    if(Math.abs(x)>airspace.halfWidth+.01||y<0||y>maxY||z<0||z>length+19.11||Math.abs(heading)>Math.PI*2)return;
     if(Number.isSafeInteger(pose.shot)&&pose.shot>visitor.shotToken){
       visitor.shotToken=pose.shot;
       if(now-visitor.lastShotAt>=100){
@@ -189,9 +195,10 @@ function joinPlaza(owner,url,ws) {
         visitor.shot++;
       }
     }
-    if(units.includes(pose.unit))unit=pose.unit;
+    unit=nextUnit;
+    const weapon=weaponRules.canEquip(inventory,pose.weapon,'race')?pose.weapon:'pac9';
     const pitch=Number.isFinite(pose.pitch)?Math.max(-1.5,Math.min(1.5,pose.pitch)):0;
-    visitor.pose={id:visitor.id,name:visitor.name,unit,outfit:visitor.outfit,x,y,z,heading,pitch,shot:visitor.shot,
+    visitor.pose={id:visitor.id,name:visitor.name,unit,outfit:visitor.outfit,x,y,z,heading,pitch,weapon,shot:visitor.shot,
       moving:pose.moving===true,sprinting:pose.sprinting===true,airborne:pose.airborne===true};
   });
   ws.on('close',()=>{

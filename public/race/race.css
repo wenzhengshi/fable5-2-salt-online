@@ -122,7 +122,7 @@ body:has(#race-lobby:not([hidden])) #app #sr-tools{z-index:10}
 #race-plaza-drivers{margin:6px 0;max-height:85px;overflow:auto;padding-left:20px}
 #race-plaza-drivers li{padding:2px 0}
 
-#race-player-ui .t-btn:not(.t-jump):not(.t-fire):not(.t-reload){display:none}
+#race-player-ui .t-btn:not(.t-jump):not(.t-fire):not(.t-reload):not(.t-ads):not(.t-descend){display:none}
 #race-player-ui .t-fire,#race-player-ui .t-reload{display:block;position:absolute;pointer-events:auto;touch-action:none;border-radius:50%}
 #race-player-ui .t-fire{right:calc(88px + var(--sar));bottom:calc(54px + var(--sab));width:64px;height:64px}
 #race-player-ui .t-reload{right:max(20px,var(--sar));bottom:calc(126px + var(--sab));width:50px;height:50px;font-size:12px}
@@ -139,3 +139,49 @@ body:has(#race-lobby:not([hidden])) #app #sr-tools{z-index:10}
 #race-unit-dialog button{min-height:40px;padding:5px 9px;border:1px solid #607588;border-radius:7px;background:#222e3a;color:#edf3f8}
 #race-unit-dialog button[aria-pressed="true"]{border-color:#ffc66d;color:#ffc66d}
 #race-unit-dialog form{margin-top:12px;text-align:right}
+
+#race-player-ui .touch[data-unit="drone"] .t-descend:not([hidden]),
+#race-player-ui .t-ads {
+  display:block;
+  position:absolute;
+  pointer-events:auto;
+  touch-action:none;
+  width:48px;
+  height:48px;
+  border-radius:50%;
+  font-size:12px;
+}
+#race-player-ui .t-descend[hidden] {display:none}
+#race-player-ui .t-descend {right:calc(158px + var(--sar));bottom:calc(64px + var(--sab))}
+#race-player-ui .t-ads {right:calc(88px + var(--sar));bottom:calc(126px + var(--sab))}
+#race-player-ui .t-descend.active,#race-player-ui .t-ads.active {background:#f1b45e55}
+#plaza-flight-speed {
+  position:absolute;
+  top:calc(114px + var(--sat));
+  left:max(12px,var(--sal));
+  padding:4px 10px;
+  background:#101922ef;
+  border-left:2px solid #84d9ff;
+  font:700 19px/1.4 system-ui,sans-serif;
+  font-variant-numeric:tabular-nums;
+}
+.plaza-field-actions {
+  position:absolute;
+  display:flex;
+  gap:6px;
+  right:max(12px,var(--sar));
+  bottom:calc(14px + var(--sab));
+}
+.plaza-field-actions button {
+  pointer-events:auto;
+  min-height:44px;
+  padding:4px 8px;
+  border:1px solid #7795af;
+  border-radius:4px;
+  background:#101922ef;
+  color:#e3eef6;
+  font-size:12px;
+}
+@media(pointer:coarse) {
+  .plaza-field-actions {left:max(12px,var(--sal));right:auto}
+}

@@ -18,7 +18,7 @@
       const renderer = new Promise((resolve, reject) => {
         script.onload = resolve;
         script.onerror = reject;
-        script.src = assets + 'qingyun-renderer.js?v=7';
+        script.src = assets + 'qingyun-renderer.js?v=8';
         document.head.appendChild(script);
       });
       loading = Promise.all([

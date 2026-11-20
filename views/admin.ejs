@@ -26,7 +26,7 @@
       </div>
     </header>
     <section aria-labelledby="title">
-      <h1 id="title"><%= t(view === 'shop' ? 'admin.shopTitle' : view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
+      <h1 id="title"><%= t(view === 'shop' ? 'admin.shopTitle' : view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'tuning' ? 'admin.houndTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
       <% if (message) { %><p class="<%= view === 'signs' || view === 'moderation' || view === 'qr' || (view === 'shop' && message === t('admin.shopSaved')) ? 'caption' : 'error' %>" role="status"><%= message %></p><% } %>
       <% if (view === 'backup') { %>
         <p><%= t('admin.backupIntro') %></p>
@@ -40,7 +40,7 @@
           <button type="submit" class="primary"><%= t('admin.backupGenerate') %></button>
         </form>
         <p class="caption"><%= t('admin.backupNote') %></p>
-        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/shop"><%= t('admin.shopTitle') %></a><a href="/admin/qr"><%= t('admin.qrTitle') %></a><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/moderation"><%= t('admin.modTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
+        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/shop"><%= t('admin.shopTitle') %></a><a href="/admin/tuning"><%= t('admin.houndTitle') %></a><a href="/admin/qr"><%= t('admin.qrTitle') %></a><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/moderation"><%= t('admin.modTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
       <% } else if (view === 'shop') { %>
         <p><%= t('admin.shopIntro') %></p>
         <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
@@ -61,6 +61,19 @@
             </form>
           <% } %>
         <% } %>
+      <% } else if (view === 'tuning') { %>
+        <p><%= t('admin.houndIntro') %></p>
+        <p class="caption"><%= t('admin.houndCurrent') %> <strong><%= percent %>%</strong> · <%= t('admin.houndSource') %> <%= t(tuning.source === 'env' ? 'admin.houndSrcEnv' : tuning.source === 'file' ? 'admin.houndSrcFile' : 'admin.houndSrcDefault') %></p>
+        <form action="/admin/tuning" method="post">
+          <input name="csrf" type="hidden" value="<%= csrf %>">
+          <label for="hound-percent"><strong><%= t('admin.houndChance') %></strong></label>
+          <input id="hound-percent" name="percent" value="<%= percent %>" type="text"
+            inputmode="decimal" maxlength="6" required pattern="[0-9]+([.][0-9]{1,1})?">
+          <button type="submit" class="primary"><%= t('admin.houndSave') %></button>
+        </form>
+        <% if (tuning.source === 'env') { %><p class="error" role="status"><%= t('admin.houndEnvNote') %></p><% } %>
+        <p class="caption"><%= t('admin.houndNote') %></p>
+        <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
       <% } else if (view === 'signs') { %>
         <p><%= t('admin.signsIntro') %></p>
         <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>

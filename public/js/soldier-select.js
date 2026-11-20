@@ -119,13 +119,10 @@
         </div>
       </section>
 
-      <section class="ss-stage" aria-label="${t('preview')}">
-        <div class="ss-stage-head">
-          <span>${t('preview')}</span>
-          <em id="ss-model-state">${t('loading')}</em>
-        </div>
+      <section class="ss-stage" aria-label="${t('aria')}">
+        <em id="ss-model-state" class="ss-state-only" aria-hidden="true">${t('loading')}</em>
         <div class="ss-stage-frame">
-          <canvas id="ss-preview" aria-label="${t('preview')}"></canvas>
+          <canvas id="ss-preview" aria-hidden="true"></canvas>
           <div class="ss-stage-grid" aria-hidden="true"></div>
           <div class="ss-reticle" aria-hidden="true"><i></i><b></b></div>
           <div class="ss-stage-loading" id="ss-stage-loading">
@@ -628,34 +625,52 @@
   function installSettingsEntry() {
     const pane = document.querySelector('.panel [data-pane="settings"]');
     if (!pane) return false;
-    if (pane.querySelector('[data-soldier-setting]')) {
-      updateSettingsEntry();
-      return true;
+
+    let row = pane.querySelector('[data-row="soldier"]');
+    if (!row) {
+      const existingButton = pane.querySelector('[data-soldier-setting]');
+      row = existingButton ? existingButton.closest('.row') : null;
     }
-    const row = document.createElement('div');
-    row.className = 'row';
-    row.dataset.row = 'soldier';
-    row.innerHTML = `
-      <label>${t('settingsLabel')}</label>
-      <button class="btn small soldier-setting-button" type="button" data-soldier-setting aria-label="${t('aria')}">
-        <span data-soldier-name>${cardCopy(state.selected).name}</span>
-        <i>${t('settingsValue')}</i>
-      </button>
-    `;
-    const note = pane.querySelector('.panel-note');
-    pane.insertBefore(row, note || null);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'row';
+      row.dataset.row = 'soldier';
+      row.innerHTML = `
+        <label>${t('settingsLabel')}</label>
+        <button class="btn small soldier-setting-button" type="button" data-soldier-setting aria-label="${t('aria')}">
+          <span data-soldier-name>${cardCopy(state.selected).name}</span>
+          <i>${t('settingsValue')}</i>
+        </button>
+      `;
+    }
+
+    // Keep the unit entry as the first row, above the grouped settings.
+    // Never insert it relative to .panel-note: client-options may already
+    // have moved that note inside .salt-settings-groups, which would make
+    // insertBefore() throw and abort this whole module.
+    if (pane.firstElementChild !== row) {
+      pane.insertBefore(row, pane.firstElementChild || null);
+    }
     updateSettingsEntry();
     return true;
   }
 
   const settingsObserver = new MutationObserver(() => {
-    if (installSettingsEntry()) settingsObserver.disconnect();
+    try {
+      if (installSettingsEntry()) settingsObserver.disconnect();
+    } catch (error) {
+      console.warn('[soldier-select] settings entry install failed', error);
+    }
   });
   settingsObserver.observe(document.getElementById('ui') || document.body, {
     childList: true,
     subtree: true
   });
-  installSettingsEntry();
+  try {
+    if (installSettingsEntry()) settingsObserver.disconnect();
+  } catch (error) {
+    console.warn('[soldier-select] settings entry install failed', error);
+  }
 
   updateSelection(state.selected, false);
 

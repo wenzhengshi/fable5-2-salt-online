@@ -20,7 +20,7 @@ const raceSession=(()=>{
   function prefetchQingyun() {
     if(prefetchStarted||navigator.connection?.saveData)return;
     prefetchStarted=true;
-    for(const url of ['/maps/qingyun-renderer.js?v=7','/maps/qingyun-models.glb','/maps/qingyun-models.json']){
+    for(const url of ['/maps/qingyun-renderer.js?v=8','/maps/qingyun-models.glb','/maps/qingyun-models.json']){
       const link=document.createElement('link');
       link.rel='prefetch';
       link.href=url;
@@ -363,6 +363,7 @@ const raceSession=(()=>{
       connectPlaza();
     }
   });
+  let plazaInventory = null;
   function connectPlaza(){
     if(leavingPlaza||plazaSocket)return;
     const summary=el('race-plaza-summary');
@@ -383,6 +384,7 @@ const raceSession=(()=>{
       if(message.type==='plazaJoined'){
         clearTimeout(timeout);
         plazaId=message.id;
+        plazaInventory=message.inventory;
         plazaRetry=1000;
         if(visiting&&!gotPlazaSpawn)plazaSpawn=message.spawn;
         gotPlazaSpawn=true;
@@ -455,6 +457,7 @@ const raceSession=(()=>{
         .then(response=>response.ok?response.json():[])
         .then(change).catch(error=>console.warn('[race] plaza ranking unavailable',error));
     },
+    get plazaInventory(){return plazaInventory;},
     joinPlaza(outfit){
       plazaOutfit=outfit;
       el('race-plaza-roster').hidden=false;

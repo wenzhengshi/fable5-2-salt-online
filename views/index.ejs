@@ -35,7 +35,7 @@
     <link rel="stylesheet" href="/css/manual-rotate.css?v=<%= assetVersion %>" />
     <link rel="preload" href="/js/game.bundle.js?v=<%= assetVersion %>" as="script" />
     <% if (preloadQingyun) { %>
-    <link rel="preload" href="/maps/qingyun-renderer.js?v=7" as="script" />
+    <link rel="preload" href="/maps/qingyun-renderer.js?v=8" as="script" />
     <link rel="preload" href="/maps/qingyun-models.glb" as="fetch" crossorigin="anonymous" />
     <link rel="preload" href="/maps/qingyun-models.json" as="fetch" crossorigin="anonymous" />
     <% } %>
@@ -81,6 +81,8 @@
 
     <script>
       window.__SALT_I18N__ = <%- JSON.stringify({ lang: lang, messages: messages, groupQr: groupQr }).replace(/</g, '\\u003c') %>;
+      /* 机械猎犬被击杀后空翻概率：服务端下发，改后台 /admin/tuning 后在线玩家会收到 houndFlip 热更新 */
+      window.__SALT_FLIP__ = <%= typeof houndFlipChance === 'number' && houndFlipChance >= 0 && houndFlipChance <= 1 ? houndFlipChance : 0.5 %>;
     </script>
     <script src="/js/webgl-guard.js?v=<%= assetVersion %>"></script>
     <script src="/js/i18n.js?v=<%= assetVersion %>"></script>
@@ -91,6 +93,12 @@
     <script type="importmap">
       { "imports": { "three": "/vendor/three-game.js?v=<%= assetVersion %>" } }
     </script>
+    <%# Must execute before boot-gate starts game.bundle.js: forwards texture,
+        anisotropy, dynamic-resolution and rain values from the saved settings. %>
+    <script src="/js/graphics-boot.js?v=<%= assetVersion %>-gfx6"></script>
     <script src="/js/boot-gate.js?v=<%= assetVersion %>" data-version="<%= assetVersion %>"></script>
+    <%# Direct load makes the new options file survive a stale cached boot-gate.js.
+        client-options.js guards against double-loading with CORE_SCRIPTS. %>
+    <script src="/js/client-options.js?v=<%= assetVersion %>-co17"></script>
   </body>
 </html>

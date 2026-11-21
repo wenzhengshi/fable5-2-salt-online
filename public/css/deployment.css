@@ -222,6 +222,56 @@ html[lang="en-US"] .menu[data-screen="title"] .m-word {
   text-shadow: 0 2px 6px #000;
   pointer-events: none;
 }
+.spawn-card:has(.spawn-auto-entry:not([hidden])) .spawn-name {
+  padding: 0 6px 32px;
+  font-size: clamp(14px, 1.6vw, 26px);
+}
+.spawn-auto-entry[hidden] { display: none; }
+.spawn-auto-entry {
+  position: absolute;
+  inset: auto 4px 4px;
+  z-index: 1;
+  pointer-events: none;
+}
+.spawn-auto-status {
+  display: block;
+  width: max-content;
+  margin: 0 0 3px auto;
+  padding: 1px 4px;
+  background: #0b131ae8;
+  color: #ffd28a;
+  font: 750 clamp(10px, 1vw, 14px)/1.2 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.spawn-auto-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.spawn-auto-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 3px;
+}
+.spawn-auto-actions button {
+  min-height: 25px;
+  padding: 3px 2px;
+  border: 1px solid #ffcb746b;
+  background: #10191ff2;
+  color: #fff9eb;
+  font: 750 clamp(10px, 1.1vw, 15px)/1.15 system-ui, sans-serif;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.spawn-auto-actions .spawn-auto-enter {
+  background: #ffc063;
+  color: #171c20;
+}
+.spawn-auto-actions button:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
 .spawn-population {
   position: absolute;
   inset: 6px auto auto 6px;
@@ -410,7 +460,7 @@ body:has(.menu[data-screen="title"]) :is(.lang-switch, .mp-chip) {
   box-shadow: none;
   backdrop-filter: none;
 }
-body:has(.menu[data-screen="title"]) .lang-switch { right: calc(var(--gr) + 101px); }
+body:has(.menu[data-screen="title"]) .lang-switch { right: calc(var(--gr) + 128px); }
 body:has(.menu[data-screen="title"]) .lang-switch-k { display: none; }
 body:has(.menu[data-screen="title"]) .lang-switch button {
   padding-inline: 10px;
@@ -424,13 +474,7 @@ body:has(.menu[data-screen="title"]) .lang-switch button[aria-pressed="true"] {
 }
 body:has(.menu[data-screen="title"]) .mp-chip { right: var(--gr); }
 body:has(.menu[data-screen="title"]) .mp-chip :is(.mp-kd,.mp-ping,.mp-roster-btn) { display: none; }
-body:has(.menu[data-screen="title"]) .mp-online em {
-  display: inline;
-  color: #f1e7d3;
-  font: italic 800 15px/1 var(--f-label);
-  letter-spacing: 0;
-}
-body:has(.menu[data-screen="title"]) .mp-online b { color: #f1e7d3; font: 850 20px/1 var(--f-label); }
+body:has(.menu[data-screen="title"]) .mp-online b { color: #f1e7d3; font-size: 14px; }
 body:has(.menu[data-screen="title"]) #sr-tools {
   top: calc(var(--sat) + 15px);
   left: var(--gl);
@@ -493,10 +537,9 @@ body:has(.menu[data-screen="title"]) .mp-toast { bottom: calc(var(--sab) + 49px)
     padding-bottom: 4px;
   }
   body:has(.menu[data-screen="title"]) .vc-rail { left: calc(var(--gl) + 96px); }
-  body:has(.menu[data-screen="title"]) .lang-switch { right: calc(var(--gr) + 59px); }
+  body:has(.menu[data-screen="title"]) .lang-switch { right: calc(var(--gr) + 105px); }
   body:has(.menu[data-screen="title"]) .lang-switch button { padding-inline: 6px; font-size: 13px; }
-  body:has(.menu[data-screen="title"]) .mp-online b { font-size: 16px; }
-  body:has(.menu[data-screen="title"]) .mp-online em { font-size: 12px; }
+  body:has(.menu[data-screen="title"]) .mp-online b { font-size: 12px; }
 }
 @media (max-width: 410px) {
   body:has(.menu[data-screen="title"]) #sr-tools { top: calc(var(--sat) + 12px); }

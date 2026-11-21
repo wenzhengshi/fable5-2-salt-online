@@ -136,8 +136,7 @@
       for (const axis of ['x', 'z']) {
         target.copy(pos);
         target[axis] += vel[axis] * dt;
-        const enteringLake = inLake(target.x, target.z) && !inLake(pos.x, pos.z);
-        const travel = enteringLake ? 0 : sweep(pos, target, radius, [step + .015, height * .65, height - .04]);
+        const travel = sweep(pos, target, radius, [step + .015, height * .65, height - .04]);
         if (travel < Math.abs(vel[axis] * dt) - .0001) {
           pos[axis] += Math.sign(vel[axis]) * travel;
           vel[axis] = 0;

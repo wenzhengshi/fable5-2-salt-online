@@ -45,7 +45,7 @@ function consumeShot(player, now, profile) {
   if (!player) return false;
   const at = Number(now) || Date.now();
   if (!Number.isFinite(player.weaponAmmo)) resetWeaponState(player);
-  if (profile?.id === 'knife') return true;
+  if (player.infiniteAmmo === true || profile?.id === 'knife') return true;
   const limit = profile?.mag || WEAPON_MAG_SIZE;
   const delay = profile?.model ? (profile.reload + .45) * 1000 : WEAPON_EMPTY_RELOAD_MS;
   let stock = player;

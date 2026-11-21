@@ -15,6 +15,9 @@
   function usableOutfit(id) {
     return window.SaltShop?.has('outfit:' + id) ? id : 'default';
   }
+  function corpseOutfit(id) {
+    return outfits?.normalize(id) || 'default';
+  }
   let myOutfit = outfits?.load() || 'default';
   function acceptOutfit(id) {
     if (id === undefined || !outfits) return;
@@ -204,7 +207,7 @@
   let myCoinsKnown = false;
   let myColor = '#ffb347';
   let connected = false;
-  let onlineCount = 0;
+  let onlineCount = null;
   let rosterData = [];
   let friendIds = new Set();
   let followingFriend = null;
@@ -232,7 +235,7 @@
     fallbackAt: 0,
     lastRequestAt: 0
   };
-  let respawnDelayMs = 2800;
+  let respawnDelayMs = 5000;
   let respawnShieldTimer;
   let serverDeathNotified = false;
   let pendingServerDeath = null;
@@ -262,7 +265,7 @@
   ui.innerHTML = `
     <div class="mp-chip" id="mp-chip">
       <span class="mp-dot" id="mp-dot"></span>
-      <span class="mp-online"><b id="mp-online">0</b><em data-mp-label="online"></em></span>
+      <span class="mp-online"><b id="mp-online">—</b></span>
       <span class="mp-kd">
         <i>K</i><b id="mp-kills">0</b>
         <i>D</i><b id="mp-deaths">0</b>
@@ -364,6 +367,7 @@
         <div class="mp-roster-pickups">
           <div class="mp-roster-pickups-head">
             <b data-mp-label="goldActivity"></b>
+            <button type="button" data-gold-supply aria-haspopup="dialog"></button>
             <span data-mp-label="goldActivityHint"></span>
           </div>
           <div class="mp-gold-activity-scroll" id="mp-gold-activity-scroll">
@@ -441,7 +445,6 @@
   };
 
   const labelText = {
-    online: t('online'),
     roster: t('roster'),
     callsign: t('callsign'),
     nameNote: t('nameNote'),
@@ -477,6 +480,7 @@
   el.deathcamMode.textContent = t('deathReplayMode');
   el.deathcamYou.textContent = t('you');
   el.deathcamCanvas.setAttribute('aria-label', t('deathReplay'));
+  ui.querySelector('[data-gold-supply]').textContent = window.__SALT_I18N__.messages.goldSupply.title;
   el.rosterBtn.textContent = t('roster');
   el.rosterBtn.setAttribute('aria-label', t('roster'));
   el.rosterClose.setAttribute('aria-label', t('close'));
@@ -517,7 +521,9 @@
   }
 
   function updateChip() {
-    setText(el.online, String(onlineCount));
+    const presence = onlineCount === null ? '—' :
+      t(onlineCount > 0 ? 'presenceOnline' : 'presenceEmpty');
+    setText(el.online, presence);
     setText(el.kills, String(selfStats.kills || 0));
     setText(el.deaths, String(selfStats.deaths || 0));
     setText(el.ping, pingMs == null ? '—' : Math.round(pingMs) + 'ms');
@@ -842,7 +848,7 @@
     return t('statusMapTip', { map: mapDisplayName(item && item.map ? item.map : 'port') });
   }
   function renderRoster() {
-    setText(el.rosterOnline, t('titleOnline', { n: onlineCount }));
+    setText(el.rosterOnline, t('titleOnline', { n: onlineCount ?? 0 }));
     const followKey = JSON.stringify({
       friends: [...friendIds].sort(),
       following: followingFriend ? followingFriend.id : null,
@@ -2083,12 +2089,16 @@
     const pos = pose ? new THREE.Vector3(pose.x, pose.y, pose.z) : machineWreckPosition(victim, avatar);
     if (!pos) return;
     if (!avatar && G?.player.pos.distanceTo(pos) < 250) {
-      avatar = createAvatar({ ...victim, ...pose, x: pos.x, y: pos.y, z: pos.z, hp: 0 });
+      avatar = createAvatar({ ...victim, ...pose, outfit: corpseOutfit(pose?.outfit), x: pos.x, y: pos.y, z: pos.z, hp: 0 });
       if (!avatar.hunter && !avatar.fallbackBuilt && isMachine(kind)) buildMachineFallbackAvatar(avatar, kind);
       avatars.set(id, avatar);
       scene.add(avatar.group);
     }
     if (!avatar || avatar.wreck) return;
+    if (pose && Object.prototype.hasOwnProperty.call(pose, 'outfit')) {
+      avatar.data.outfit = corpseOutfit(pose.outfit);
+      avatar.setOutfit?.(avatar.data.outfit);
+    }
     chaseLightCleanup(avatar);
     const trail = snapshotTrails.get(String(victim.id));
     const samples = trail && trail.samples ? trail.samples : [];
@@ -2169,6 +2179,18 @@
         w.explodeAt = w.t;
         w.vel.set(0, 0, 0);
         machineBurst(pos, w.kind === 'drone' ? 1.3 : 1.05, window.__saltLunarSilent);
+        if (w.kind === 'drone' || w.kind === 'hound') {
+          const playerId = String(avatar.data?.id || (avatar === localDowned?.avatar ? myId : ''));
+          if (playerId) {
+            window.SaltCorpseField?.reportLanding({
+              playerId,
+              pos: { x: pos.x, y: pos.y, z: pos.z },
+              yaw: avatar.group.rotation.y,
+              surface: window.SaltCorpseField?.landingSurface(pos.x, pos.z, pos.y) || 'ground',
+              at: Date.now() - Math.round((w.t || 0) * 1000)
+            });
+          }
+        }
         try {
           if (G.fx && G.fx.dust) G.fx.dust(pos, new THREE.Vector3(0.8, 1.8, 0.8));
         } catch (err) { /* ignore */ }
@@ -2210,7 +2232,7 @@
     const kind = normalizeSoldier(mySoldier);
     const { pos, vel, yaw } = player;
     const avatar = createAvatar({ id: myId, name: myName, color: myColor, soldier: kind,
-      outfit: usableOutfit(myOutfit), armor: G.frontier?.equipmentFlags, x: pos.x, y: pos.y, z: pos.z, yaw, hp: 0 });
+      outfit: corpseOutfit(myOutfit), armor: G.frontier?.equipmentFlags, x: pos.x, y: pos.y, z: pos.z, yaw, hp: 0 });
     if (!avatar.hunter && !avatar.fallbackBuilt && isMachine(kind)) buildMachineFallbackAvatar(avatar, kind);
     avatar.group.name = 'local-downed-unit';
     avatar.group.getObjectByName('mp-avatar-ring').visible = false;
@@ -2297,7 +2319,20 @@
     updateRespawnOverlay();
   }
 
+  const respawnAudio = new Audio('/audio/respawn-ad.wav');
+  respawnAudio.preload = 'auto';
+
+  function stopRespawnAudio() {
+    respawnAudio.pause();
+    respawnAudio.currentTime = 0;
+  }
+
+  window.addEventListener('saltline:lunar-mode', () => {
+    if (window.__saltLunarSilent) stopRespawnAudio();
+  });
+
   function hideRespawnOverlay() {
+    stopRespawnAudio();
     el.respawn.hidden = true;
     document.body.classList.remove('mp-respawning');
     stopDeathReplay();
@@ -2317,6 +2352,7 @@
   }
 
   function startRespawn(delayMs, by, meta) {
+    const wasActive = respawn.active;
     respawn.active = true;
     respawn.by = by || null;
     respawn.startedAt = Date.now();
@@ -2326,6 +2362,11 @@
     respawn.lastRequestAt = 0;
     pendingDeathMeta = meta || null;
     pendingDeathBy = null;
+    if (!wasActive && respawn.until > Date.now() &&
+        !window.__saltLunarSilent && !G?.game?.menus?.panelOpen) {
+      respawnAudio.currentTime = 0;
+      respawnAudio.play().catch(() => {});
+    }
     showRespawnOverlay(meta || pendingDeathMeta);
   }
 
@@ -3034,7 +3075,7 @@
   const { updateAvatarWeapon } = window.SaltPlayerCombat;
 
   function dressForLunar(avatar, dt, moving, armed, fall) {
-    const enabled = !!window.__saltLunarSilent && !avatar.machine;
+    const enabled = !avatar.machine && (!!window.__saltLunarSilent || avatar.data?.outfit === 'lunar-suit');
     if (enabled && !avatar.lunarSuit && window.SaltLunarSuit) {
       avatar.lunarSuit = window.SaltLunarSuit(THREE);
       avatar.group.add(avatar.lunarSuit.model);
@@ -3044,6 +3085,23 @@
     avatar.body.visible = !enabled;
     suit.model.visible = enabled;
     if (enabled) suit.update(dt, moving, armed, fall);
+    suit.model.rotation.x = avatar.body.rotation.x;
+    suit.model.position.y = avatar.body.position.y;
+  }
+
+  function applyFallbackMotion(avatar, motion) {
+    if (!motion || avatar.rig || avatar.machine) return;
+    for (const [i, armAngle, legAngle] of [[0, motion.armL, motion.legL], [1, motion.armR, motion.legR]]) {
+      const side = i === 0 ? -1 : 1;
+      const arm = avatar.arms[i];
+      if (arm) {
+        arm.rotation.set(armAngle, 0, side * .72 * motion.flare);
+        arm.position.set(0, -.24, 0).applyQuaternion(arm.quaternion);
+        arm.position.x += side * .29;
+        arm.position.y += 1.39;
+      }
+      if (avatar.legs[i]) avatar.legs[i].rotation.x = legAngle;
+    }
   }
 
   function updateAvatars(dt) {
@@ -3068,33 +3126,46 @@
       avatar.group.rotation.y += delta * turn;
 
       const moving = !!(avatar.data && avatar.data.moving);
-      dressForLunar(avatar, dt, moving, avatar.data?.weapon !== null);
+      const swimming = avatar.data?.swimming && !avatar.machine;
+      if (!swimming && avatar.swimTime && !avatar.rig) {
+        for (const [i, arm] of avatar.arms.entries()) {
+          const side = i === 0 ? -1 : 1;
+          arm.position.set(side * .27, i === 0 ? 1.15 : 1.14, -.24);
+          arm.rotation.set(-.92, 0, -side * .24);
+        }
+      }
+      avatar.swimTime = swimming ? (avatar.swimTime || 0) + dt : 0;
+      const swimPose = swimming && window.SaltSwimming.pose(avatar.swimTime, moving);
+      applyFallbackMotion(avatar, swimPose);
       if (avatar.rig) {
         avatar.rig.update(dt, {
           moving,
-          sprint: !!(avatar.data && avatar.data.sprint)
+          sprint: !!(avatar.data && avatar.data.sprint),
+          fall: swimPose
         });
-      } else if (moving) {
+      } else if (!swimming && moving) {
         avatar.walk += dt * (avatar.data.sprint ? 14 : 9);
         const swing = Math.sin(avatar.walk) * 0.5;
         if (avatar.legs[0]) avatar.legs[0].rotation.x = swing;
         if (avatar.legs[1]) avatar.legs[1].rotation.x = -swing;
         if (avatar.arms[0]) avatar.arms[0].rotation.x = -swing * 0.5;
-      } else {
+      } else if (!swimming) {
         avatar.walk *= 0.9;
         if (avatar.legs[0]) avatar.legs[0].rotation.x *= 0.9;
         if (avatar.legs[1]) avatar.legs[1].rotation.x *= 0.9;
       }
       const kind = avatar.soldierKind || normalizeSoldier(avatar.data && avatar.data.soldier);
-      updateAvatarWeapon(avatar, avatar.data?.weapon || 'pac9', avatar.data?.weapon !== null && avatar.data?.carSeat !== 0);
+      const armed = !swimming && avatar.data?.weapon !== null && avatar.data?.carSeat !== 0;
+      updateAvatarWeapon(avatar, avatar.data?.weapon || 'pac9', armed);
       try { updateAvatarDroneLight(avatar, kind); } catch (err) { /* ignore */ }
-      const targetLabelY = isMachine(kind) ? (kind === 'drone' ? 1.35 : 1.05) : 2.28;
+      const targetLabelY = swimming ? 1.6 : isMachine(kind) ? (kind === 'drone' ? 1.35 : 1.05) : 2.28;
       if (avatar.body) {
         avatar.body.rotation.y += (0 - avatar.body.rotation.y) * pose;
-        const lean = avatar.data?.carSeat > 0 ? .17 : 0;
+        const lean = swimPose ? swimPose.pitch : avatar.data?.carSeat > 0 ? .17 : 0;
         avatar.body.rotation.x += (lean - avatar.body.rotation.x) * pose;
-        avatar.body.position.y += (0 - avatar.body.position.y) * pose;
+        avatar.body.position.y += ((swimPose?.lift || 0) - avatar.body.position.y) * pose;
       }
+      dressForLunar(avatar, dt, moving, armed, swimPose);
       avatar.label.position.y += (targetLabelY - avatar.label.position.y) * pose;
       if (avatar.hitAt && now - avatar.hitAt < 140) {
         avatar.group.position.x += (Math.random() - 0.5) * 0.06;
@@ -3147,7 +3218,7 @@
     const original = combat.playerShot;
     if (typeof original !== 'function') return;
     const bossAimDirection = new THREE.Vector3();
-    combat.playerShot = function patchedPlayerShot(origin, dir, opts) {
+    const onlineShot = function patchedPlayerShot(origin, dir, opts) {
       let result;
       let simulated = false;
       const localShot = () => {
@@ -3212,8 +3283,12 @@
           if (enemy && (enemy.type === 'gull' || enemy.type === 'hound')) {
             const { x, y, z } = result.point;
             const floor = result.killed ? G.physics.groundHeight(x, z, y + .8) : undefined;
+            const surface = result.killed
+              ? (window.SaltCorpseField?.landingSurface(x, z, floor) || 'ground')
+              : undefined;
             send({ type: 'ordinaryGoldHit', id: enemy.id, kind: enemy.type, point: { x, y, z },
-              floor, weak: result.part === 'weak', killed: result.killed });
+              floor, surface, weak: result.part === 'weak', killed: result.killed });
+            if (result.killed) window.SaltCorpseField?.trackEnemy(enemy, 'machine-' + enemy.id);
           }
           return result;
         }
@@ -3237,6 +3312,11 @@
         console.error('[mp] online shot check failed', err);
         return localShot();
       }
+    };
+    combat.playerShot = function sharedBulletMarkShot(origin, dir, opts) {
+      const impact = onlineShot.call(this, origin, dir, opts);
+      try { window.SaltBulletMarks?.report(G, origin, dir, impact, opts); } catch (err) { }
+      return impact;
     };
     combat.__mpPatched = true;
   }
@@ -3306,7 +3386,7 @@
   }
 
   function sendState(force) {
-    if (!G?.player || !everJoined) return;
+    if (raceSuspended || !G?.player || !everJoined) return;
     const now = performance.now();
     if (!force && now - lastStateAt < 90) return;
     lastStateAt = now;
@@ -3324,7 +3404,8 @@
       visible: !document.hidden,
       screen: state === 'title' ? 'home' : 'map',
       moving: !!(player.vel && Math.hypot(player.vel.x, player.vel.z) > 0.6),
-      sprint: !!player.sprinting
+      sprint: !!player.sprinting,
+      swimming: !!G.swim?.active
     });
   }
 
@@ -3726,7 +3807,9 @@
     player.syncView();
   }
 
+  let raceSuspended = Boolean(document.body.dataset.raceStart);
   function connect() {
+    if (raceSuspended) return;
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
     window.clearTimeout(reconnectTimer);
     setConnection('connecting');
@@ -3746,8 +3829,11 @@
       reconnectDelay = 1200;
       setConnection('online');
       everJoined = false;
+      window.SaltBulletMarks?.resetHistory();
       send({ type: 'join', name: myName, soldier: mySoldier, outfit: myOutfit, spawns: spawnsFromLevel(),
-        frontier: !!window.SaltFrontierRules, portalFall: !!window.SaltPortalArrival });
+        frontier: !!window.SaltFrontierRules, portalFall: !!window.SaltPortalArrival,
+        corpseSync: window.SaltCorpseField?.httpSync ? 'http' : undefined,
+        infiniteAmmo: window.SaltAmmo?.infinite === true });
       window.clearInterval(pingTimer);
       pingTimer = window.setInterval(() => {
         if (ws && ws.readyState === 1) send({ type: 'ping', t: performance.now() });
@@ -3777,7 +3863,7 @@
       G?.portalBosses?.snapshot('', [], Date.now());
       myId = null;
       pendingRename = null;
-      onlineCount = 0;
+      onlineCount = null;
       window.SaltMapSelect?.setPopulation(null);
       pingMs = null;
       rosterData = [];
@@ -3804,6 +3890,7 @@
         toast(t(event.code === 4403 ? 'banned' : 'kicked'));
         return;
       }
+      if (raceSuspended) return;
       if (everJoined) toast(t('disconnected'));
       scheduleReconnect();
     });
@@ -3832,6 +3919,8 @@
       }
     }
     window.SaltShop?.receive(msg);
+    if (window.SaltBulletMarks?.onMessage(msg, G)) return;
+    if (window.SaltCorpseField?.onMessage(msg, G)) return;
     notifyMessage(msg);
     switch (msg.type) {
       case 'welcome': {
@@ -3885,6 +3974,7 @@
         break;
       case 'mapEntered':
       case 'mapReturned': {
+        window.SaltBulletMarks?.clear(G);
         G?.expedition?.acknowledge(msg);
         unitFlightY = 0;
         unitFlightPrev = null;
@@ -3894,6 +3984,7 @@
       }
       case 'qingyunEntered':
       case 'qingyunReturned': {
+        window.SaltBulletMarks?.clear(G);
         if (G?.qingyun?.collision && ['playing', 'paused'].includes(G.game.state) && G.player.alive && msg.pos) {
           G.qingyun.land(msg.pos, true);
           unitFlightY = 0;
@@ -4004,7 +4095,8 @@
         break;
       case 'snapshot': {
         G?.expedition?.setServerTime(msg.t);
-        onlineCount = Number(msg.online) || 0;
+        const count = Number(msg.online);
+        onlineCount = Number.isSafeInteger(count) && count >= 0 ? count : null;
         window.SaltMapSelect?.setPopulation(msg.mapCounts);
         G?.portalBosses?.snapshot(msg.bossMap, msg.bosses, msg.t, msg.bossBounty);
         G?.sharedPatrols?.snapshot(msg.bossMap,msg.patrols);
@@ -4207,6 +4299,7 @@
   function attachGame(game) {
     G = game;
     G.sharedPatrols ||= window.installSharedPatrols?.(G);
+    window.SaltCorpseField?.attach(G);
     if (game.frontier) {
       for (const message of pendingFrontier.values()) game.frontier.onMessage(message);
       pendingFrontier.clear();
@@ -4227,6 +4320,7 @@
         if (!event || event.state !== 'playing') disposeLocalDroneLight();
         else sendState(true);
         if (event && (event.state === 'title' || event.state === 'intro')) {
+          stopRespawnAudio();
           if (event.state === 'title') {
             clearLocalFall();
             respawn.active = false;
@@ -4275,7 +4369,10 @@
     window.setInterval(() => {
       if (!respawn.active) return;
       updateRespawnOverlay();
-      if (Date.now() >= respawn.until) requestRespawn();
+      if (Date.now() >= respawn.until) {
+        if (!respawnAudio.paused) respawnAudio.pause();
+        requestRespawn();
+      }
     }, 160);
 
     // Frame loop for avatar interpolation.
@@ -4284,6 +4381,8 @@
       lastFrame = now;
       try { updateAvatars(dt); G?.sharedPatrols?.update(dt,connected); } catch (err) { /* ignore */ }
       try { G?.portalBosses?.update(dt, now, connected, normalizeSoldier(mySoldier) === 'drone'); } catch (err) { /* keep drawing other players */ }
+      window.SaltBulletMarks?.tick(G);
+      window.SaltCorpseField?.tick(G);
       if (isMachine(mySoldier) && now - lastUnitBadgeAt > 180) {
         lastUnitBadgeAt = now;
         try { updateUnitBadge(); } catch (err) { /* ignore */ }
@@ -4331,9 +4430,19 @@
   updateChip();
 
   window.__mp = {
-    get online() { return onlineCount; },
+    get online() { return onlineCount ?? 0; },
     get connected() { return connected; },
-    get joined() { return connected && everJoined; },
+    get joined() { return !raceSuspended && connected && everJoined; },
+    suspendForRace() {
+      if (raceSuspended) return;
+      raceSuspended = true;
+      window.clearTimeout(reconnectTimer);
+      ws?.close(4001, 'race-map-switch');
+    },
+    resumeFromRace() {
+      raceSuspended = false;
+      connect();
+    },
     get id() { return myId; },
     get name() { return myName; },
     get soldier() { return mySoldier; },
@@ -4355,6 +4464,35 @@
     get game() { return G; },
     beginDeathView,
     endDeathView,
+    createCorpseAvatar(row) {
+      if (!G || !THREE || !scene || !row || !row.playerId) return null;
+      const soldier = normalizeSoldier(row.soldier);
+      const avatar = createAvatar({
+        id: row.playerId,
+        name: row.name || String(row.playerId),
+        color: '#8a949c',
+        soldier,
+        outfit: corpseOutfit(row.outfit),
+        x: row.pos.x,
+        y: row.pos.y,
+        z: row.pos.z,
+        yaw: row.yaw,
+        hp: 0
+      });
+      if (!avatar.hunter && !avatar.fallbackBuilt && isMachine(soldier)) {
+        buildMachineFallbackAvatar(avatar, soldier);
+      }
+      avatar.group.name = 'salt-corpse-player-' + row.id;
+      avatar.label.visible = false;
+      const ring = avatar.group.getObjectByName('mp-avatar-ring');
+      if (ring) ring.visible = false;
+      scene.add(avatar.group);
+      dressForLunar(avatar, 0, false, false, null);
+      return avatar;
+    },
+    disposeCorpseAvatar(avatar) {
+      if (avatar) disposeAvatar(avatar);
+    },
     createSelfView() {
       if (!G || !THREE || !scene) return null;
       const kind = normalizeSoldier(mySoldier);
@@ -4376,17 +4514,14 @@
           avatar.data.outfit = usableOutfit(myOutfit);
           avatar.setOutfit?.(avatar.data.outfit);
           syncAvatarArmor(avatar);
+          avatar.body.rotation.x += ((fall?.pitch || 0) - avatar.body.rotation.x) * Math.min(1, dt * 10);
+          avatar.body.position.y += ((fall?.lift || 0) - avatar.body.position.y) * Math.min(1, dt * 10);
           dressForLunar(avatar, dt, Math.hypot(player.vel.x, player.vel.z) > .6, armed, fall);
           avatar.group.position.copy(player.pos);
           avatar.group.rotation.y = player.yaw;
           avatar.rig?.update(dt, { moving: Math.hypot(player.vel.x, player.vel.z) > .6,
             sprint: !!player.sprinting, gesture, fall });
-          if (fall && !avatar.rig && !avatar.machine) {
-            if (avatar.arms[0]) avatar.arms[0].rotation.set(fall.armL, 0, -.72 * fall.flare);
-            if (avatar.arms[1]) avatar.arms[1].rotation.set(fall.armR, 0, .72 * fall.flare);
-            if (avatar.legs[0]) avatar.legs[0].rotation.x = fall.legL;
-            if (avatar.legs[1]) avatar.legs[1].rotation.x = fall.legR;
-          }
+          applyFallbackMotion(avatar, fall);
           const rifleVisible = armed && (!gesture || gesture.kind === 'reload' || !avatar.rig?.actionHand);
           updateAvatarWeapon(avatar, G.weapon?.arsenalId || 'pac9', rifleVisible);
           const hand = gesture && avatar.rig?.actionHand?.(gesture.kind, grip);

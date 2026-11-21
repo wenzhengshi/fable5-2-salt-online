@@ -72,7 +72,7 @@
 }
 .race-complete .race-lobby{background:none;place-items:end start;pointer-events:none}
 .race-complete .race-card{pointer-events:auto;width:min(410px,44vw);max-height:70dvh}
-.race-complete .drive-controls,.race-complete .hud,.race-complete .steering-wheel{display:none}
+.race-complete:not(.race-free-driving) :is(.drive-controls,.hud,.steering-wheel){display:none}
 @media(max-width:650px){.race-complete .race-card{width:min(370px,84vw);max-height:55dvh}.race-card{padding:11px}.race-board{margin:8px 0}}
 
 :root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--gl:max(12px,var(--sal));--gr:max(12px,var(--sar));--signal:#f1b45e}
@@ -185,3 +185,39 @@ body:has(#race-lobby:not([hidden])) #app #sr-tools{z-index:10}
 @media(pointer:coarse) {
   .plaza-field-actions {left:max(12px,var(--sal));right:auto}
 }
+
+#race-presence{
+  position:fixed;z-index:9;top:max(10px,var(--sat));left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:8px;white-space:nowrap;padding:4px 5px 4px 10px;
+  color:#e8e4da;background:#101a24ed;border:1px solid #d8c4a45e;border-radius:4px;font-size:12px
+}
+#race-presence b{color:#ffd38c;font-variant-numeric:tabular-nums}
+#race-presence button,#race-roster button{
+  padding:5px 7px;background:#202b34;border:1px solid #d8c4a45e;border-radius:3px;color:#f5efe1
+}
+#race-online{top:max(44px,calc(var(--sat) + 36px))}
+#race-roster{
+  position:fixed;inset:0;width:min(420px,calc(100vw - 24px));max-height:calc(100dvh - 24px);
+  margin:auto;overflow:auto;color:#eee7dc;background:#101922;border:1px solid #d8c4a45e;border-top:3px solid #f1b45e
+}
+#race-roster::backdrop{background:#06101bc4}
+#race-roster header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#race-roster h2{margin:0;font-size:19px}
+#race-roster-counts{margin:8px 0;color:#ffd38c}
+#race-roster-list{margin:0;padding:0;list-style:none}
+#race-roster-list li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid #d8c4a437}
+#race-roster-list li>span:first-child{min-width:0;overflow-wrap:anywhere}
+#race-roster-list li>span:last-child{color:#aebec8;flex-shrink:0}
+#race-roster-list li[data-local="true"]>span:last-child{color:#ffd38c}
+@media(max-width:880px){
+  #race-presence{top:max(52px,calc(var(--sat) + 43px))}
+  #race-online,#race-boost-status{top:max(88px,calc(var(--sat) + 80px))}
+  #race-presence button{min-height:29px}
+}
+
+.race-free-driving #race-lobby,.race-free-driving #reset{display:none!important}
+#race-free-vehicle,#race-vehicle-portal{
+  position:fixed;z-index:12;left:50%;transform:translateX(-50%);bottom:max(85px,calc(var(--sab) + 68px));
+  padding:9px 14px;border:1px solid #ffd38ca6;border-radius:4px;background:#12202aec;color:#ffd38c
+}
+#race-vehicle-portal{bottom:max(126px,calc(var(--sab) + 108px))}

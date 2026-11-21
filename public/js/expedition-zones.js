@@ -5,7 +5,7 @@
   const definitions = [
     ['bayhaven', 'expedition.maps.bayhaven', -8000, [-3200, 3200, -3520, 1279], [-24, 40.5], [-3.7, -5.5, 1.5], 0xff78a4, [-3.7, -8, 1.5]],
     ['dustfall', 'expedition.maps.dustfall', -16000, [-695, 695, -695, 695], [0, 0], [0, -5.5, 1.5], 0xffae52, [0, -8, 1.5]],
-    ['mothlight', 'expedition.maps.mothlight', -20000, [-340, 340, -340, 340], [0, 38], [3.7, -5.5, 1.5], 0x56e5ff, [3.7, -8, 1.5]],
+    ['mothlight', 'expedition.maps.mothlight', -20000, [-390, 390, -390, 390], [0, 38], [3.7, -5.5, 1.5], 0x56e5ff, [3.7, -8, 1.5]],
     ['lunar', 'expedition.maps.lunar', -24000, [-99, 99, -99, 99], [0, 41], [7.4, -5.5, 1.5], 0xc1caff, [7.4, -8, 1.5]]
   ];
   // Offsets from each arrival point. Keep the central path and return rift clear.

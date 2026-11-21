@@ -41,9 +41,9 @@
     const visual = window.SaltPortalVisual;
     const bilingual = (zh,en) => document.documentElement.lang === 'en-US' ? en : zh;
     const signTexture = (zh,en) => visual.signTexture(THREE,bilingual(zh,en));
-    const gate = visual.create(THREE,bilingual('时空隧道','TIME RIFT'),0x56e5ff,.5);
+    const gate = visual.create(THREE,bilingual('时空隧道','TIME RIFT'),0x56e5ff,.82,true);
     gate.name = 'qingyun-time-tunnel';
-    gate.position.set(zone.gate.x, physics.groundHeight(zone.gate.x, zone.gate.z, zone.gate.y) + .06, zone.gate.z);
+    gate.position.set(zone.gate.x, zone.gate.y, zone.gate.z);
     const [ring,vortex,label] = gate.children;
     const ringMaterial=ring.material;
     gate.visible = false;
@@ -225,8 +225,8 @@
     game.qingyun = {
       get active() { return inQingyun; },
       get arrivalShelter() { return inQingyun && zone.inArrivalArea(player.pos); },
-      createTunnel(title, color) {
-        return visual.create(THREE,title,color);
+      createTunnel(title, color, upright = false, ellipse = .68) {
+        return visual.create(THREE,title,color,ellipse,upright);
       },
       get collision() { return collision; },
       preload,

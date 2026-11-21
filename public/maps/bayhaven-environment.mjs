@@ -15754,10 +15754,12 @@ async function wg() {
 	let d = new rr(new xr(12e3, 12e3), new Gn({ color: 4746129 }));
 	d.rotation.x = -Math.PI / 2, d.position.y = -.8, e.add(d), await s.warm(t.spawn.x, t.spawn.z, 1);
 	let f = [];
+	const inWater = (x, z) => !t.isLand(x, z) && t.heightAt(x, z) <= -.8;
 	return {
 		scene: e,
 		color: 13089999,
-		heightAt: (e, n) => Math.max(-.8, t.heightAt(e, n)),
+		heightAt: (x, z) => inWater(x, z) ? Math.min(-2.6, t.heightAt(x, z)) : t.heightAt(x, z),
+		waterLevelAt: (x, z) => inWater(x, z) ? -.8 : null,
 		boxes: (e, r, i, a) => (n.box({
 			cx: (e + i) / 2,
 			cz: (r + a) / 2,

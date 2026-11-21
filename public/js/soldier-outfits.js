@@ -11,7 +11,8 @@
     ['medic','现场救护','Field Medic','#ece5d4','#536878','#de665e','#302c2d'],
     ['prism','紫电特勤','Violet Detail','#7659a3','#3a2b58','#9dd6b1','#2c2936'],
     ['quay','码头工装','Quayside Workwear','#d4aa33','#263348','#ecce55','#25252b'],
-    ['lunar','月尘外勤','Moon Dust Crew','#82939f','#4c576b','#c1d4e0','#2d3643']
+    ['lunar','月尘外勤','Moon Dust Crew','#82939f','#4c576b','#c1d4e0','#2d3643'],
+    ['lunar-suit','月球宇航服','Lunar Spacesuit']
   ];
   const options = Object.freeze(Object.fromEntries(looks.map(([id, zh, en, jacket, pants, trim, boots]) =>
     [id, Object.freeze({ id, zh, en, jacket, pants, trim, boots })])));
@@ -53,7 +54,7 @@
       active.clear();
       const outfit = options[id];
       for (const { mesh, original, materials, channels } of sources) {
-        if (!outfit) { mesh.material = original; continue; }
+        if (!outfit?.jacket) { mesh.material = original; continue; }
         const dyed = materials.map((material, index) => {
           const part = channels[index];
           if (!part) return material;

@@ -12,6 +12,7 @@
     'expedition-zones.js',
     'bayhaven-lift.js',
     'portal-arrival.js',
+    'swimming.js',
     'portal-visual.js',
     'terrain-ray.js',
     'portal-boss-rules.js',
@@ -53,6 +54,8 @@
     'sail.js',
     'focus-mode.js',
     'death-replay-3d.js',
+    'bullet-marks.js',
+    'corpse-field.js',
     'multiplayer.js',
     'hound-flip-tuning.js',
     'kill-streak.js',
@@ -191,7 +194,7 @@
     ensureBootVisible();
     setBootMessage(t('ui.gfxRecovering'), 0.08);
     console.warn('[boot] recovering WebGL renderer', reason || 'unknown');
-    window.setTimeout(() => window.location.reload(), 900);
+    if (!window.SaltMapShell?.active) window.setTimeout(() => window.location.reload(), 900);
   }
 
   function loadScript(file, type) {
@@ -312,10 +315,11 @@
     if (watchTimer) window.clearTimeout(watchTimer);
   });
 
-  start().catch((err) => {
+  bootState.start = () => start().catch((err) => {
     bootState.phase = 'gate-failed';
     bootState.error = err && err.message ? err.message : String(err);
     setProgress(1);
     showPanel(t('ui.bootFailed'), t('ui.bootTimeoutHint'));
   });
+  if (!document.body.dataset.raceStart) bootState.start();
 })();

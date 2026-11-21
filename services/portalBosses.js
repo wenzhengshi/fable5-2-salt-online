@@ -49,6 +49,26 @@ function ground(map, x, z, fallback) {
     (heights[i + n] * (1 - u) + heights[i + n + 1] * u) * v) / 100;
 }
 
+function landingSurface(map, x, z, referenceY = 50, fallbackY = 0) {
+  if (!terrain[map]) {
+    const fallback = Number(fallbackY);
+    return { y: Number.isFinite(fallback) ? fallback : 0, surface: 'ground' };
+  }
+  const terrainY = ground(map, x, z, fallbackY);
+  const localZ = z - worldOffset(map);
+  const probeY = Number.isFinite(Number(referenceY)) ? Number(referenceY) : 50;
+  let surfaceY = terrainY;
+  for (const box of worldBoxes(map)) {
+    if (box[0] > x || box[3] < x || box[2] > localZ || box[5] < localZ) continue;
+    if (box[4] > probeY || box[4] <= surfaceY) continue;
+    surfaceY = box[4];
+  }
+  return {
+    y: surfaceY,
+    surface: surfaceY > terrainY + 0.35 ? 'object' : 'ground'
+  };
+}
+
 function blocked(map, a, b, clearance = 0) {
   const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
   const z = a.z - worldOffset(map);
@@ -148,7 +168,6 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
   const sites = [
     ['cat', 'dustfall', maps.dustfall.exit, -5, 0, 16],
     ['watercolor', 'dustfall', maps.dustfall.exit, 0, 43, 16],
-    ['hound', 'port', qingyun.gate, -4.6, 1.5, 0],
     ['hound', 'qingyun', qingyun.hubReturnGate, 18, 44.3, 3.4],
     ...Object.values(maps).map(map => ['hound', map.id, map.exit, 5, 0, map.landing.y])
   ];
@@ -772,4 +791,4 @@ function createPortalBosses({ mapKey, players, damage, send, fire = () => {}, se
   return { shot, tick, snapshot };
 }
 
-module.exports = { createPortalBosses, ground, blocked, houndPathClear };
+module.exports = { createPortalBosses, ground, landingSurface, blocked, houndPathClear };

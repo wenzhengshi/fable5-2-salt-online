@@ -30,6 +30,7 @@
   if (window.__SALT_CLIENT_OPTIONS_LOADED__) return;
   window.__SALT_CLIENT_OPTIONS_LOADED__ = true;
 
+  let raceGraphics;
   const SETTINGS_KEY = 'saltline.settings.v1';
   const OVERLAY_KEY = 'saltline.benchOverlay';
   const MIGRATION_KEY = 'saltline.autoQualityMigrated.v1';
@@ -528,6 +529,7 @@
   }
 
   function displayTier() {
+    if (raceGraphics) return raceGraphics.getTier();
     if (forcedQuality()) return forcedQuality();
     if (G && G.quality && RANK[G.quality.name] != null) return G.quality.name;
     const saved = savedQuality();
@@ -1423,7 +1425,7 @@
 
   function syncQualityNote() {
     const note = document.querySelector('[data-f="qnote"]');
-    if (!note) return;
+    if (!note || raceGraphics) return;
     const forced = forcedQuality();
     if (forced) {
       note.textContent = pick(
@@ -1706,7 +1708,12 @@
       footer.classList.add('salt-gfx-footer-fixed');
     }
     applyGraphicsLanguage(page);
-    (document.getElementById('app') || document.body).appendChild(page);
+    if (raceGraphics) {
+      page.querySelectorAll('.salt-gfx-section, .salt-gfx-footer, .salt-gfx-tip, .salt-gfx-tier-actions').forEach(node => { node.hidden = true; });
+      page.querySelector('.salt-gfx-page-note').textContent = pick('画质档位即时生效，并同步到其他地图。', 'Quality applies live and is shared across maps.');
+      page.querySelector('#salt-gfx-title').textContent = pick('画质设置', 'Graphics settings');
+    }
+    (raceGraphics?.root || document.getElementById('app') || document.body).appendChild(page);
     gfxPage = page;
     bindGraphicsPage(page);
     return page;
@@ -1937,6 +1944,7 @@
       button.disabled = value === AUTO_TIER && !!forcedQuality();
     }
 
+    if (raceGraphics) return;
     const state = graphics.tiers[tier] || defaultTier('medium');
     const preset = PRESETS[tier] || PRESETS.medium;
     const cap = tierCap(tier);
@@ -2044,6 +2052,15 @@
   }
 
   function setTierFromPage(tier) {
+    if (raceGraphics) {
+      if (tier !== AUTO_TIER && !TIERS.includes(tier)) return;
+      saveQuality(tier);
+      autoMode = tier === AUTO_TIER;
+      raceGraphics.setTier(tier);
+      syncGraphics();
+      syncQualityEntry();
+      return;
+    }
     const seg = document.querySelector('.salt-quality-seg');
     if (!seg) return;
     const button = seg.querySelector('button[data-q="' + tier + '"]');
@@ -2565,8 +2582,8 @@
     }
     const ammo = pane.querySelector('[data-act="infiniteAmmo"]');
     if (ammo) ammo.title = pick(
-      '备弹无限，但弹夹打空后仍需换弹',
-      'Reserve ammo is unlimited, but the magazine still requires a reload'
+      '开启后无需换弹',
+      'No reload required while enabled'
     );
   }
 
@@ -2623,6 +2640,7 @@
     append('audio', [rows.volume]);
     append('interface', [rows.banner, rows.bench]);
     append('gameplay', [rows.ammo]);
+    if (raceGraphics) Object.values(groups).filter(section => section.children.length === 1).forEach(section => section.remove());
     pane.appendChild(root);
     pane.dataset.saltSettingsGrouped = '1';
   }
@@ -2688,6 +2706,7 @@
   }
 
   function boot() {
+    if (document.body.classList.contains('race-settings-page')) return;
     injectStyles();
     migrateAutoDefault();
     migrateBannerLookDefaults();
@@ -2773,6 +2792,30 @@
     }, { once: true });
   }
 
+  if (document.body.classList.contains('race-settings-page')) {
+    window.SaltRaceGraphics = {
+      mount(adapter) {
+        raceGraphics = adapter;
+        injectStyles();
+        graphics = readGraphics();
+        autoMode = savedQuality() === AUTO_TIER;
+        const entry = ensureQualityEntry();
+        entry.querySelector('.salt-entry-advanced').hidden = true;
+        entry.querySelector('.salt-entry-note').textContent = pick('即时生效 · 跨地图同步', 'Live · shared across maps');
+        groupSettingsRows();
+        adapter.root.querySelector('[data-f="qnote"]').hidden = true;
+        localizeSettingsShell();
+        localizeBaseSettings();
+        document.addEventListener('keydown', trapGraphicsKeys, true);
+      },
+      sync() {
+        autoMode = savedQuality() === AUTO_TIER;
+        syncGraphics();
+        syncQualityEntry();
+      },
+      close: closeGraphics
+    };
+  }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });
   } else {

@@ -81,8 +81,7 @@ assert.ok(
 );
 assert.match(comms, /document\.activeElement === el\.input[\s\S]{0,120}exitPointerLock/, '指针锁定不得抢走聊天输入焦点');
 assert.doesNotMatch(ammoScript, /this\.ammo\s*=\s*this\.magSize/, '无限弹药不得每帧直接补满弹夹');
-assert.match(ammoScript, /ensureInfiniteReserve/, '无限弹药必须只补充备弹');
-assert.doesNotMatch(gameCss, /\.h-ammo\.infinite \.h-cue\s*\{\s*display:\s*none/, '无限弹药仍必须显示换弹提示');
+assert.match(ammoScript, /type: "ammoMode"/, '无限弹药的选择应同步到服务器');
 assert.match(gameCss, /\.h-ammo\.infinite \.h-ammo-r::after/, '无限弹药 HUD 必须保留弹夹并标记无限备弹');
 assert.match(server, /playerAuthority\.clampDronePosition/, '服务端必须强制无人机空气墙');
 assert.match(server, /playerAuthority\.consumeShot/, '服务端必须校验老版本弹夹与换弹');
@@ -131,7 +130,7 @@ console.log(JSON.stringify({
     'android-market',
     'flight-collision',
     'server-authority',
-    'infinite-ammo-reload',
+    'infinite-ammo-no-reload',
     'death-replay',
     'death-replay-3d',
     'drone-searchlight',

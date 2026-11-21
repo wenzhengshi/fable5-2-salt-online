@@ -100,6 +100,18 @@
       { from: map.id, to: 'qingyun', gate: { ...map.exit, y: map.landing.y }, arrival: hubArrival }
     ])
   ];
+  function raceGate(map) {
+    const exit = maps[map]?.exit;
+    if (exit) return { x: exit.x + 3.5, z: exit.z, y: maps[map].landing.y };
+    if (map === 'qingyun') return { x: -7.4, z: zone.offsetZ - 5.5, y: 1.5 };
+    return { ...zone.gate, x: zone.gate.x + 3.5 };
+  }
+  function atRaceGate(car) {
+    const gate = raceGate(car.map);
+    const nose = point(car, 0, 0, car.speed < -.3 ? -halfLength : halfLength);
+    return Math.abs(gate.y - car.y) < 4 &&
+      Math.min(Math.hypot(car.x - gate.x, car.z - gate.z), Math.hypot(nose.x - gate.x, nose.z - gate.z)) < 1.85;
+  }
   function portal(car) {
     // Check the bumper as well as the centre, so the driver can pull up to the gate.
     const nose = point(car, 0, 0, car.speed < -.3 ? -halfLength : halfLength);
@@ -115,13 +127,19 @@
     return Math.abs(dx * c - dz * s) <= 2.6 && Math.abs(dx * s + dz * c) <= 3.7 &&
       Math.abs(pos.y - car.y) < 1.8;
   }
+  // The driving HUD belongs on the ground only. Portal drops, high falls,
+  // airborne transport and the car's own arrival animation hide the whole
+  // brake / leave panel instead of leaving inert buttons on screen.
+  function hudVisible({ present = false, alive = true, airborne = false, portalFall = false, carFall = false } = {}) {
+    return !!present && !!alive && !airborne && !portalFall && !carFall;
+  }
   function create() {
     return { ...start, speed: 0, seats: seats.map(() => null), revision: 0 };
   }
   const api = {
     start, seats, maxSpeed, maxReverse, boardSpeed, exitSpeed, parkSpeed,
     wheelBase, steerMax, steerHigh, halfWidth, halfLength,
-    angle, clamp, point, seat, exits, inside, near, portal, create,
+    angle, clamp, point, seat, exits, inside, near, hudVisible, portal, raceGate, atRaceGate, create,
     stepSpeed, steerLimit, turnRate
   };
   if (node) module.exports = api;

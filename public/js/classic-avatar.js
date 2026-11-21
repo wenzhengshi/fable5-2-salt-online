@@ -148,8 +148,11 @@
         visor.position.y = head.position.y - 0.01;
         const fall = state?.fall;
         if (fall) {
-          armL.rotation.set(fall.armL, 0, -.7 * fall.flare);
-          armR.rotation.set(fall.armR, 0, .7 * fall.flare);
+          for (const [index, arm, angle] of [[0, armL, fall.armL], [1, armR, fall.armR]]) {
+            arm.rotation.set(angle, 0, (index === 0 ? -.7 : .7) * fall.flare);
+            shoulder.copy(armBases[index]).y += .24;
+            arm.position.copy(shoulder).add(wrist.copy(down).applyQuaternion(arm.quaternion).multiplyScalar(.24));
+          }
           legL.rotation.x = fall.legL;
           legR.rotation.x = fall.legR;
           head.rotation.x = .1 + fall.brace * .27;

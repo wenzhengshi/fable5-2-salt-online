@@ -69,6 +69,13 @@
     hud.append(giftButton);
     document.body.append(hud);
 
+    // Let the touch objective tracker clear the wallet even when its text wraps or details open.
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => {
+        document.body.style.setProperty('--gold-hud-height', hud.offsetHeight + 'px');
+      }).observe(hud);
+    }
+
     const controlsList = document.querySelector('[data-pane="controls"] .keys');
     if (controlsList && !controlsList.querySelector('.gold-controls-hint')) {
       const row = document.createElement('div');
@@ -147,6 +154,27 @@
     let state = { targets: [], drops: [] };
     const currentMap = () => game.expedition?.active?.id || (game.qingyun?.active ? 'qingyun' : 'port');
     const dialogsOpen = () => giftDialog.open || confirmDialog.open || requestDialog.open;
+    function groundYAt(pos) {
+      const x = Number(pos?.x), z = Number(pos?.z), reference = Number(pos?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+      const probeY = Math.max(-80, Math.min(240, Number.isFinite(reference) ? reference + 2 : 50));
+      let floor = null;
+      try {
+        const sampled = Number(game.physics?.groundHeight?.(x, z, probeY));
+        if (Number.isFinite(sampled)) floor = sampled;
+      } catch (err) { /* fall back to terrain height */ }
+      if (floor != null) return floor;
+      try {
+        const sampled = Number(game.expedition?.terrainHeight?.(x, z));
+        if (Number.isFinite(sampled)) return sampled;
+      } catch (err) { /* keep the stored height */ }
+      return null;
+    }
+    function groundedDrop(row) {
+      const floor = groundYAt(row.pos);
+      if (!Number.isFinite(floor) || Math.abs(row.pos.y - floor) < 0.02) return row;
+      return { ...row, pos: { ...row.pos, y: floor } };
+    }
     function mesh(parent, geometry, x = 0, y = 0, z = 0) {
       const object = new THREE.Mesh(geometry, metal);
       object.position.set(x, y, z);
@@ -163,6 +191,7 @@
       const live = new Set(rows.map(row => row.id));
       for (const id of collection.keys()) if (!live.has(id)) remove(collection, id);
       for (const row of rows) {
+        const nextRow = isDrop ? groundedDrop(row) : row;
         let entry = collection.get(row.id);
         if (!entry) {
           const marker = new THREE.Group();
@@ -174,12 +203,16 @@
           entry = { marker, icon, ringMesh, row, model: null, cooldown: 500 + Math.random() * 1200, telegraph: 0 };
           collection.set(row.id, entry);
         }
-        entry.row = row;
+        entry.row = nextRow;
         if (!isDrop && !entry.model) {
           entry.model = window.SaltUnitModels?.create(row.kind);
           if (entry.model) entry.marker.add(entry.model.model);
         }
-        entry.marker.position.copy(row.pos);
+        if (isDrop) {
+          entry.ringMesh.rotation.x = -Math.PI / 2;
+          entry.ringMesh.position.y = -0.22;
+        }
+        entry.marker.position.copy(nextRow.pos);
       }
     }
     function updateThreat(entry, dt, now) {
@@ -626,7 +659,7 @@
         }
         let nearest = 2.4;
         for (const { row, icon } of drops.values()) {
-          icon.position.y = .42 + Math.sin(now / 300) * .11;
+          icon.position.y = .24;
           icon.rotation.y = now / 480;
           const dist = Math.hypot(player.pos.x - row.pos.x, player.pos.z - row.pos.z);
           if (dist < nearest && Math.abs(player.pos.y - row.pos.y) < 1.8) { target = row; nearest = dist; }

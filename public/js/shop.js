@@ -147,6 +147,10 @@
         '单次入场。首页直达或经传送门进入月球时扣一张。搭车时每位乘员各扣一张。',
         'One entry via direct deployment or a portal. Each vehicle occupant uses one ticket.'
       )));
+      if (product.id === 'lunar-suit') copy.append(make('p', '', tr(
+        '购买后在背包的「随身皮肤」中穿戴，可在其他地图使用。',
+        'Equip from Carried skins in your backpack to wear it on other maps.'
+      )));
       copy.append(make('small', 'shop-stock'));
       const actions = make('div', 'shop-card-actions');
       const action = make('button', 'shop-buy');
@@ -225,10 +229,14 @@
 
   function addEntry(host) {
     if (!host || host.querySelector('.shop-entry')) return;
-    const button = make('button', 'btn shop-entry', tr('商城', 'Shop'));
+    const label = window.__SALT_I18N__?.messages?.ui?.shop || tr('商城', 'Shop');
+    const button = make('button', 'btn shop-entry', label);
     button.type = 'button';
+    button.setAttribute('aria-haspopup', 'dialog');
     button.addEventListener('click', () => open());
-    host.append(button);
+    const home = host.querySelector('.battle-return-home');
+    if (home) host.insertBefore(button, home);
+    else host.append(button);
   }
 
   function receive(message) {

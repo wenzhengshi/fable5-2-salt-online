@@ -10,6 +10,7 @@
     names[kind] = id === 'knife' ? window.__SALT_I18N__.messages.arsenal.knife : window.SaltArsenalRules[id].name;
   }
   const keys = { grenade: 'G', drink: '4', medkit: '5', quiet: '6' };
+  const backpackKeys = new Set(['Digit0', 'Numpad0', 'KeyO']);
   const itemKeys = { KeyG: 'grenade', Digit4: 'drink', Digit5: 'medkit', Digit6: 'quiet' };
 
   window.installFrontier = function (game) {
@@ -61,7 +62,7 @@
     button('pick', pick);
     button('view', toggleView);
     button('backpack', openBackpack);
-    buttons.backpack.setAttribute('aria-keyshortcuts', 'O');
+    buttons.backpack.setAttribute('aria-keyshortcuts', '0 O');
     buttons.backpack.setAttribute('aria-haspopup', 'dialog');
     const backpack = document.createElement('dialog');
     backpack.className = 'frontier-backpack';
@@ -424,10 +425,11 @@
     }
     function openBackpack() {
       if (backpack.open || insertion || !player.alive || game.game.state !== 'playing' ||
-          game.roadSigns?.editing || document.querySelector('dialog[open]') ||
+          game.roadSigns?.editing || window.SaltModal?.isOpen || document.querySelector('dialog[open]') ||
           window.__SALT_FOCUS__?.active) return;
       window.__mp?.closeRoster?.();
       backpackRelock = input.locked;
+      ui.hidden = false;
       backpack.showModal();
       input.setGameplay(false);
       input.exitLock();
@@ -665,7 +667,7 @@
       const slots = rules.usedSlots(inventory);
       const space = slots + '/' + rules.capacity;
       buttons.backpack.hidden = !!phase || !player.alive || (!inDustfall && !hasItems);
-      buttons.backpack.textContent = strings.backpack + ' ' + space + (touch ? '' : ' [O]');
+      buttons.backpack.textContent = strings.backpack + ' ' + space + (touch ? '' : ' [0]');
       if (backpack.open) {
         capacity.textContent = strings.capacity.replace('{space}', space);
         capacity.classList.toggle('frontier-bag-full', slots >= rules.capacity);
@@ -841,8 +843,10 @@
       }
     });
     window.addEventListener('keydown', event => {
+      const backpackKey = backpackKeys.has(event.code) && !event.ctrlKey && !event.altKey && !event.metaKey;
       if (backpack.open) {
-        if (event.code === 'Escape') {
+        if (event.code === 'Escape' || (backpackKey && !event.repeat &&
+            !event.target?.closest?.('input, textarea, [contenteditable]'))) {
           event.preventDefault();
           event.stopImmediatePropagation();
           closeBackpack(true);
@@ -852,10 +856,8 @@
       if (event.repeat || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey ||
           event.target?.closest?.('input, textarea, [contenteditable], dialog') ||
           game.game.state !== 'playing' || window.__SALT_FOCUS__?.active) return;
-      if (!['KeyO', 'Space', 'KeyF', 'KeyV'].includes(event.code) && !itemKeys[event.code]) return;
-      if (event.code === 'KeyO' && !insertion &&
-          (currentMap() === rules.map || carriedOutfits.length > 0 || Object.values(inventory).some(Boolean)) &&
-          !event.target?.closest?.('button, a, select, [tabindex]')) openBackpack();
+      if (!backpackKey && !['Space', 'KeyF', 'KeyV'].includes(event.code) && !itemKeys[event.code]) return;
+      if (backpackKey && !insertion && !event.target?.closest?.('select')) openBackpack();
       else if (event.code === 'Space' && insertion?.phase === 'plane') jump();
       else if (event.code === 'KeyF' && nearest) pick();
       else if (event.code === 'KeyV' && !insertion && (viewChosen || currentMap() === rules.map || currentMap() === 'lunar' ||
@@ -866,7 +868,7 @@
         use(kind);
       }
       event.preventDefault();
-      if (event.code === 'KeyO') event.stopImmediatePropagation();
+      if (backpackKey) event.stopImmediatePropagation();
     }, { capture: true });
     game.renderer?.domElement?.addEventListener('wheel', weaponWheel.onWheel, { passive: false });
     window.addEventListener('saltline:shop', refreshCarriedOutfits);

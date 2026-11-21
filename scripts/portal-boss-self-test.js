@@ -45,7 +45,8 @@ function shoot(boss, target, y, now, person = shooter, x = 0, weapon = pac9) {
 
 try {
   let world = make();
-  for (const map of ['port', 'qingyun', ...Object.keys(maps)]) {
+  assert.deepEqual(world.snapshot('port'), []);
+  for (const map of ['qingyun', ...Object.keys(maps)]) {
     const resident = world.snapshot(map);
     assert.equal(resident.filter(boss => boss.kind === 'hound').length, 1);
     assert.ok(resident.every(boss => boss.phase === 'idle'));
@@ -67,7 +68,7 @@ try {
   assert.equal(awakened.hp, home.maxHp - pac9.damage);
   assert.equal(hits.at(-1).hp, awakened.hp);
   assert.equal(make().snapshot('dustfall')[0].hp, awakened.hp);
-  assert.equal(world.snapshot('port')[0].phase, 'idle');
+  assert.deepEqual(world.snapshot('port'), []);
 
   const firstMove = catOf(world);
   for (let now = 1200; now < 4100; now += 100) {
@@ -143,7 +144,7 @@ try {
   const split = restored.snapshot('dustfall').find(item => item.parentId === home.id);
   assert.equal(split.height, 10);
   assert.equal(split.hp, 600);
-  assert.equal(world.snapshot('port').length, 1);
+  assert.equal(world.snapshot('port').length, 0);
   const beforePause = big.elapsed;
   for (const person of [shooter, bystander, teammate]) person.active = false;
   world.tick(30100);
@@ -285,21 +286,18 @@ try {
   assert.equal(movingWorld.shot(shooter, shownOrigin, atDecal, pac9, 85310), true);
   assert.equal(hits.at(-1).killed, true, 'A drone can hit the head in a recent server pose');
 
-  const portHound = world.snapshot('port').find(boss => boss.kind === 'hound');
+  // Retired port bosses (including saved splits) must never be restored.
   storage.writeJson('portal-bosses.json', {
-    [portHound.id]: { phase: 'active', hp: 600, x: 23, y: 0, z: 19, yaw: Math.PI }
+    'hound-port': { phase: 'active', hp: 600, x: 23, y: 0, z: 19, yaw: Math.PI,
+      elapsed: 180000, splitCount: 1,
+      children: { 1: { phase: 'active', hp: 200, x: 23, y: 0, z: 19, yaw: 0 } } }
   });
   const portWorld = make();
-  const dockDog = portWorld.snapshot('port')[0];
-  const decal = weakPoint(dockDog);
-  const dockEye = { x: decal.x + 5.5, y: decal.y + .42, z: decal.z };
-  outsider.soldier = 'drone';
-  outsider.pos = { ...dockEye, y: dockEye.y - .9 };
-  const dockShot = { x: -5.5 / Math.hypot(5.5, .42), y: -.42 / Math.hypot(5.5, .42), z: 0 };
-  assert.equal(portWorld.shot(outsider, dockEye, { x: -1, y: 0, z: 0 }, pac9, 85400), true);
-  assert.equal(hits.at(-1).teamBlocked, true, 'A horizontal body shot still respects the shield');
-  assert.equal(portWorld.shot(outsider, dockEye, dockShot, pac9, 85500), true);
-  assert.equal(hits.at(-1).killed, true, 'A shallow downward shot at the yellow plate works in port');
+  assert.deepEqual(portWorld.snapshot('port'), []);
+  outsider.pos = { x: 23, y: 1.4, z: 10 };
+  assert.equal(portWorld.shot(outsider, outsider.pos, { x: 0, y: 0, z: 1 }, pac9, 85500), false);
+  portWorld.tick(85600);
+  assert.deepEqual(portWorld.snapshot('port'), []);
 
   storage.writeJson('portal-bosses.json', {
     'hound-qingyun': { phase: 'active', hp: 1200, ...qingyun.landing, yaw: 0 }
@@ -374,7 +372,7 @@ try {
     assert.ok(!reloaded.some(boss => boss.parentId === parent.id));
   }
 
-  for (const [map, dx, dz] of [['port', 0, -25], ['bayhaven', 0, 25], ['bayhaven', -25, 0]]) {
+  for (const [map, dx, dz] of [['bayhaven', 0, 25], ['bayhaven', -25, 0]]) {
     storage.writeJson('portal-bosses.json', {});
     const local = make().snapshot(map).find(boss => boss.kind === 'hound');
     storage.writeJson('portal-bosses.json', {

@@ -7,6 +7,7 @@ const {Worker,isMainThread,parentPort,workerData}=require('node:worker_threads')
 const storage=require('../config/storage');
 const raceNames=require('./raceNames');
 const raceBoss=require('./raceBoss');
+const goldSupply=require('./goldSupply');
 const file='frontier-inventory.json';
 const fee=50000, tickRate=90, duration=30*60*1000, historyLimit=500;
 let physics;
@@ -145,11 +146,18 @@ function change(now,update) {
   let result;
   storage.updateJson(file,stored=>{
     const data=Array.isArray(stored)?{}:stored;
-    const wallet=(data.gold||={}).carried||={};
+    goldSupply.init(data,now);
+    const gold=data.gold;
+    const wallet=gold.carried||={};
     const race=data.racing||={records:{},active:{},receipts:{},history:[],pot:0};
     if(!Array.isArray(race.history))race.history=[];
-    raceBoss.ensurePool(race,now);
-    result=update(race,wallet);
+    const ensurePool=()=>{
+      const spawned=raceBoss.ensurePool(race,now);
+      if(spawned)goldSupply.issue(gold,spawned.amount);
+      return spawned;
+    };
+    ensurePool();
+    result=update(race,wallet,ensurePool);
     return data;
   });
   return result;
@@ -271,7 +279,7 @@ function prepare(owner,id,now) {
 function settle(owner,id,ticks,wallTicks,now,placement) {
   if(!ticks)return {error:'run'};
   ticks=Math.max(ticks,wallTicks);
-  return change(now,(race,wallet)=>{
+  return change(now,(race,wallet,ensurePool)=>{
     if(race.receipts[id]?.owner===owner)return refreshReceipt(race.receipts[id].response,owner,race);
     if(race.active[owner]?.id!==id)return {error:'ticket'};
     delete race.active[owner];
@@ -290,7 +298,7 @@ function settle(owner,id,ticks,wallTicks,now,placement) {
       reward=fee+race.pot;
       credit(wallet,owner,reward);
       race.pot=0;
-      bossSpawn=raceBoss.ensurePool(race,now);
+      bossSpawn=ensurePool();
     } else {
       const championOwner=lost(race,wallet);
       if(championOwner){

@@ -532,7 +532,8 @@
           lastCheck = 0;
           target = null;
         }
-        const playing = !!map && player.alive && game.game.state === 'playing';
+        const falling = !!game.frontier?.airborne || !!game.portalArrival?.showingFall;
+        const playing = !!map && player.alive && game.game.state === 'playing' && !falling;
         holder.visible = !!map;
         toolbar.hidden = !playing;
         if (!playing) {

@@ -287,7 +287,6 @@
       state.clips = sortAndLimit(Array.isArray(rows) ? rows : []);
     } catch (err) {
       state.memoryOnly = true;
-      state.clips = [];
     }
     renderLibrary();
   }
@@ -315,25 +314,30 @@
 
   async function deleteClip(id) {
     state.clips = state.clips.filter((clip) => clip.id !== id);
-    if (state.selectedId === id) {
-      state.selectedId = null;
-      if (state.selectedUrl) URL.revokeObjectURL(state.selectedUrl);
-      state.selectedUrl = '';
-      const video = document.querySelector('#sr-video');
-      if (video?.hasAttribute('src')) {
-        video.pause();
-        video.removeAttribute('src');
-        video.load();
-      }
-      const image = document.querySelector('#sr-photo');
-      image?.removeAttribute('src');
-      if (image) image.hidden = true;
-    }
+    if (state.selectedId === id) clearSelection();
     try {
       await dbRequest('readwrite', (store) => store.delete(id));
     } catch (err) { /* memory-only clips still delete from UI */ }
-    renderLibrary();
     if (state.clips[0]) selectClip(state.clips[0].id);
+    else renderLibrary();
+  }
+
+  function clearSelection() {
+    state.selectedId = null;
+    if (state.selectedUrl) URL.revokeObjectURL(state.selectedUrl);
+    state.selectedUrl = '';
+    const video = document.querySelector('#sr-video');
+    if (video?.hasAttribute('src')) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    }
+    const image = document.querySelector('#sr-photo');
+    image?.removeAttribute('src');
+    if (image) image.hidden = true;
+    ui.modal.querySelector('#sr-player-empty').hidden = false;
+    ui.modal.querySelector('.sr-download').hidden = true;
+    ui.modal.querySelector('.sr-delete').hidden = true;
   }
 
   function createUi() {
@@ -833,6 +837,14 @@
   });
 
   window.SaltReplay = {
+    async refresh() {
+      await libraryReady;
+      if (state.memoryOnly) return;
+      await loadClips();
+      if (selectedClip()) return;
+      clearSelection();
+      if (state.clips[0]) selectClip(state.clips[0].id);
+    },
     get supported() { return canRecordCanvas(); },
     get mp4Supported() { return mp4Supported; },
     get wechat() { return IS_WECHAT; },

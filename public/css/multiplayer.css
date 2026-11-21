@@ -69,15 +69,8 @@ body.is-playing .mp-chip:hover,
   50% { opacity: 0.45; }
 }
 
-.mp-online { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; }
-.mp-online b { font: 700 15px/1 var(--f-display); letter-spacing: 0.04em; color: var(--bone); }
-.mp-online em {
-  font-style: normal;
-  font-size: 9px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: rgba(232, 228, 218, 0.5);
-}
+.mp-online { white-space: nowrap; }
+.mp-online b { font: 700 13px/1 var(--f-label); color: var(--bone); }
 
 .mp-kd {
   display: inline-flex;
@@ -1407,7 +1400,6 @@ body.mp-respawning .lang-switch {
     padding: 4px 5px 4px 9px;
   }
 
-  .mp-chip .mp-online em { display: none; }
   .mp-kd { padding-left: 7px; }
   .mp-roster-btn { padding: 0 8px; font-size: 9px; letter-spacing: 0.06em; }
   .mp-feed { top: calc(82px + var(--sat)); max-width: 70vw; }

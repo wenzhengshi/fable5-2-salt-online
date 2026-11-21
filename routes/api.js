@@ -2,7 +2,10 @@ const path = require('node:path');
 const express = require('express');
 const userController = require('../controllers/userController');
 const gameController = require('../controllers/gameController');
+const bulletMarkController = require('../controllers/bulletMarkController');
+const corpseFieldController = require('../controllers/corpseFieldController');
 const groupQr = require('../services/groupQr');
+const goldSupply = require('../services/goldSupply');
 const locales = {
   'zh-CN': require('../locales/zh-CN.json'),
   'en-US': require('../locales/en-US.json')
@@ -16,7 +19,13 @@ router.get('/game/meta', gameController.meta);
 router.get('/game/leaderboard', gameController.leaderboard);
 router.get('/game/gold/pickups', gameController.goldPickups);
 router.get('/game/gold/activity', gameController.goldActivity);
+router.get('/game/gold/supply', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(goldSupply.publicStatus());
+});
 router.get('/game/chat/history', gameController.chatHistory);
+router.get('/game/bullet-marks', bulletMarkController.list);
+router.get('/game/corpse-field', corpseFieldController.list);
 router.get('/focus/status', userController.focusStatus);
 router.post('/focus/start', userController.focusStart);
 

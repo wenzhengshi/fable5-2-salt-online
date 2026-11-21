@@ -38,16 +38,19 @@ const weapon = {
   }
 };
 
+const sent = [];
+const handlers = {};
 const windowObject = {
   __SALT_I18N__: { messages: { gameText: {} } },
   __G: { weapon },
+  __mp: { send(message) { sent.push(JSON.parse(JSON.stringify(message))); } },
   addEventListener() {},
   setInterval() { return 1; }
 };
 
 const documentObject = {
   activeElement: null,
-  addEventListener() {},
+  addEventListener(type, handler) { handlers[type] = handler; },
   querySelector() { return null; },
   createElement() {
     return { className: '', innerHTML: '', querySelector() { return null; } };
@@ -70,25 +73,18 @@ const context = vm.createContext({
 const source = fs.readFileSync(path.join(__dirname, '../public/js/ammo.js'), 'utf8');
 vm.runInContext(source, context, { filename: 'ammo.js' });
 
-assert.equal(weapon.ammo, 30, '启用无限弹药时不应预先把弹夹补满到循环外的异常值');
-weapon.update(0.016);
-assert.equal(weapon.ammo, 29, '无限弹药下每次射击仍应消耗弹夹子弹');
-assert.ok(weapon.reserve >= weapon.magSize * 12, '无限弹药必须保持充足的无限备弹');
+assert.equal(windowObject.SaltAmmo.infinite, true, '应读取已保存的无限弹药选项');
+assert.equal(weapon.infiniteAmmo, true, '已保存的选项应传给武器');
+assert.equal(weapon.reserve, 120, '启用选项不应覆盖普通备弹数');
+assert.equal(weapon.ammo, 30, '启用选项不应覆盖普通弹夹数');
 
-weapon.ammo = 0;
-weapon.update(0.016);
-weapon.update(0.016);
-assert.equal(weapon.ammo, 0, '空弹夹后必须停止射击并等待换弹，不能瞬间补满');
-const emptyRemainedEmpty = weapon.ammo === 0;
-
-weapon.reset();
-assert.equal(weapon.ammo, 30, '复活重置后弹夹恢复满弹');
-assert.ok(weapon.reserve >= weapon.magSize * 12, '复活重置后备弹仍保持无限');
-
-console.log(JSON.stringify({
-  ok: true,
-  magazineAfterShot: 29,
-  emptyMagazineRemainsEmpty: emptyRemainedEmpty,
-  reserve: weapon.reserve,
-  reloadRequired: true
-}, null, 2));
+const click = () => handlers.click({ target: { closest: () => ({}) }, preventDefault() {} });
+click();
+assert.equal(weapon.infiniteAmmo, false);
+assert.equal(JSON.parse(storage.get('saltline.settings.v1')).infiniteAmmo, false);
+assert.deepEqual(sent[0], { type: 'ammoMode', infinite: false });
+click();
+assert.equal(weapon.infiniteAmmo, true);
+assert.equal(JSON.parse(storage.get('saltline.settings.v1')).infiniteAmmo, true);
+assert.deepEqual(sent[1], { type: 'ammoMode', infinite: true });
+console.log(JSON.stringify({ ok: true, settingSync: true }));

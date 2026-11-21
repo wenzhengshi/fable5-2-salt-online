@@ -175,6 +175,21 @@
   for (const outfit of Object.values(outfits.options)) {
     outfitSelect.add(new Option(chinese ? outfit.zh : outfit.en, outfit.id));
   }
+  function applyPreviewOutfit() {
+    const made = state.current;
+    if (!made || isMachine(made.kind)) return;
+    made.setOutfit?.(state.outfit);
+    if (state.outfit === 'lunar-suit' && !made.spacesuit && window.SaltLunarSuit) {
+      made.spacesuit = window.SaltLunarSuit(window.__G.THREE);
+      made.spacesuit.update(0, false, false);
+      state.pivot.add(made.spacesuit.model);
+    }
+    if (made.spacesuit) {
+      const equipped = state.outfit === 'lunar-suit';
+      made.model.visible = !equipped;
+      made.spacesuit.model.visible = equipped;
+    }
+  }
   function refreshOutfits() {
     for (const option of outfitSelect.options) {
       if (option.value !== 'default') {
@@ -183,13 +198,13 @@
     }
     if (state.outfit !== 'default' && !window.SaltShop?.has('outfit:' + state.outfit)) state.outfit = 'default';
     outfitSelect.value = state.outfit;
-    state.current?.setOutfit?.(state.outfit);
+    applyPreviewOutfit();
   }
   window.addEventListener('saltline:shop', refreshOutfits);
   refreshOutfits();
   outfitSelect.addEventListener('change', () => {
     state.outfit = outfits.normalize(outfitSelect.value);
-    state.current?.setOutfit?.(state.outfit);
+    applyPreviewOutfit();
   });
 
   function updateSelection(kind, focus) {
@@ -379,6 +394,7 @@
   function clearPreviewModel() {
     if (!state.pivot || !state.current) return;
     state.current.armor?.dispose();
+    state.current.spacesuit?.model.removeFromParent();
     state.pivot.remove(state.current.model);
     if (typeof state.current.dispose === 'function') state.current.dispose();
     state.current = null;
@@ -405,6 +421,7 @@
     state.current = made;
     state.pivot.rotation.y = previewYaw(unit);
     state.pivot.add(made.model);
+    applyPreviewOutfit();
     if (isMachine(unit)) made.previewBounds = getPreviewBounds(made.model);
     frameLiveModel();
     if (made.armorAnchors) {

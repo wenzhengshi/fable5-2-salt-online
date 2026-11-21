@@ -6,10 +6,12 @@ const contentFilter = require('../services/contentFilter');
 const raceNames = require('../services/raceNames');
 const chatHistory = require('../services/chatHistory');
 const focusMode = require('../services/focusMode');
+const bulletMarks = require('../services/bulletMarks');
+const corpseField = require('../services/corpseField');
 const deathReplay = require('../services/deathReplay');
 const { createShop } = require('../services/shop');
 const playerAuthority = require('../services/playerAuthority');
-const { createPortalBosses } = require('../services/portalBosses');
+const { createPortalBosses, landingSurface } = require('../services/portalBosses');
 const { BOSS_NAMES } = require('../public/js/portal-boss-rules');
 const { isInsideAirWall, PORT_PLAYER_START, PORT_SPAWN_YAW } = require('../public/js/flight-collision');
 const { randomUUID } = require('node:crypto');
@@ -38,7 +40,7 @@ const sameMap = (a, b) => a.mapId === b.mapId && a.inQingyun === b.inQingyun;
 const mapKeyOf = (player) => player.inQingyun ? 'qingyun' : player.mapId || 'port';
 
 const TICK_MS = 100;
-const RESPAWN_MS = 2800;
+const RESPAWN_MS = 5000;
 const RESPAWN_PROTECT_MS = 4000;
 const PROTECT_MS = 2000;
 const BOSS_SPAWN_GRACE_MS = 9000;
@@ -72,7 +74,7 @@ const BOAT_SEAT_OFFSETS = [
 const EXTERNAL_PLATFORM = { x0: 82, x1: 126, z0: -12, z1: 28, top: 0.22 };
 const FOCUS_BLOCKED_TYPES = new Set([
   'state', 'soldier', 'spawns', 'chat', 'voiceState', 'rename',
-  'shot', 'hit', 'died', 'respawn', 'boatBoard', 'boatLeave',
+  'shot', 'bulletMark', 'hit', 'died', 'respawn', 'boatBoard', 'boatLeave',
   'boatPose', 'boatInvite', 'sedanBoard', 'sedanLeave', 'sedanPose', 'sedanPortal', 'sedanReady', 'mapEnter', 'mapReturn', 'mapLeave', 'qingyunEnter', 'qingyunLeave', 'qingyunReturn',
   'followInvite', 'followInviteResponse', 'followLeave', 'followDismiss'
 ]);
@@ -81,6 +83,11 @@ const FOLLOW_INVITE_COOLDOWN_MS = 1200;
 const FOLLOW_MAX_PENDING = 5;
 const FOLLOW_MAX_FOLLOWERS = 4;
 const FOLLOW_GAP = 2.4;
+const HISTORY_MARK_CHUNK = 120;
+const HISTORY_CORPSE_CHUNK = 40;
+const HISTORY_CHUNK_GAP_MS = 50;
+const HISTORY_BUFFER_LIMIT = 16 * 1024;
+let nextHistoryId = 1;
 
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
 
@@ -548,6 +555,15 @@ function getOnlinePlayers() {
   });
 }
 
+// The race roster only needs location and public identity from live sessions.
+function getBattlePresence() {
+  const now = Date.now();
+  return [...players.values()].filter(player => player.ws.readyState === 1).map(player => {
+    const location = publicLocation(player, publicFocusState(player, now));
+    return { owner: player.signOwner, id: player.id, name: player.name, ...location };
+  });
+}
+
 /* ------------------------------------------------------------- game actions */
 
 function rosterPayload() {
@@ -935,6 +951,24 @@ function killPlayer(victim, killer, now, cause = null) {
     catch (error) { console.error('[gold] player death drop failed:', error.message); }
   }
   touchBoard(victim.name, 0, 1, 0);
+  if (mapKeyOf(victim) === corpseField.MAP_ID) {
+    try {
+      const source = killer || cause;
+      const landing = landingSurface(corpseField.MAP_ID, victim.pos.x, victim.pos.z, victim.pos.y, victim.pos.y);
+      corpseField.addPlayer({
+        at: now,
+        pos: { ...victim.pos, y: landing.y },
+        yaw: victim.yaw,
+        surface: landing.surface,
+        playerId: victim.id,
+        name: victim.name,
+        soldier: victim.soldier,
+        outfit: victim.outfit,
+        shooterId: source && source.id,
+        shooterName: source && source.name
+      });
+    } catch (error) { console.error('[corpse-field] player death record failed:', error.message); }
+  }
   announceDeath(victim, killer, now);
   send(victim.ws, {
     type: 'youDied',
@@ -1015,7 +1049,23 @@ const sharedPatrols = require('../services/sharedPatrols').createSharedPatrols({
     const flip = unit.kind === 'hound' && Math.random() < 0.5;
     broadcast({type:'patrolDestroyed',map:unit.map,id:unit.id,pos:{x:unit.x,y:unit.y,z:unit.z},flip},
       other => other.joined && mapKeyOf(other) === unit.map);
-    try { gold.awardMachineKill(player,unit.map,{x:unit.x,y:floor,z:unit.z},now); }
+    const landing = landingSurface(unit.map, unit.x, unit.z, unit.y, floor);
+    if (unit.map === corpseField.MAP_ID) {
+      try {
+        corpseField.addMachine({
+          id: 'patrol-' + unit.id,
+          at: now,
+          kind: unit.kind,
+          pos: { x: unit.x, y: landing.y, z: unit.z },
+          yaw: unit.yaw,
+          surface: landing.surface,
+          victimId: 'patrol-' + unit.id,
+          shooterId: player.id,
+          shooterName: player.name
+        });
+      } catch (error) { console.error('[corpse-field] patrol death record failed:', error.message); }
+    }
+    try { gold.awardMachineKill(player,unit.map,{x:unit.x,y:landing.y,z:unit.z},now); }
     catch (error) { console.error('[patrol] reward failed',error.message); }
   }
 });
@@ -1205,7 +1255,7 @@ function handleMessage(player, raw) {
     }
     return;
   }
-  if (player.focusUntil > now && msg.type !== 'ping' && msg.type !== 'join' && msg.type !== 'focusEnd') {
+  if (player.focusUntil > now && msg.type !== 'ping' && msg.type !== 'join' && msg.type !== 'focusEnd' && msg.type !== 'ammoMode') {
     send(player.ws, focusPayload(player, { scope: player.focusKind || 'manual', denied: true }));
     return;
   }
@@ -1226,6 +1276,8 @@ function handleMessage(player, raw) {
         playerAuthority.resetWeaponState(player);
       }
       player.joined = true;
+      player.corpseHttpSync = msg.corpseSync === 'http';
+      player.infiniteAmmo = msg.infiniteAmmo === true;
       player.frontier = msg.frontier === true;
       player.portalFall = msg.portalFall === true;
       const focused = player.focusUntil > now;
@@ -1251,6 +1303,7 @@ function handleMessage(player, raw) {
         focus: focusPayload(player)
       });
       shop.publish(player);
+      sendPortHistory(player);
       /* 入场时补发一次后空翻概率：避免「页面早加载、改完之后才入场」的玩家拿着旧值 */
       send(player.ws, { type: 'houndFlip', chance: houndTuning.read().chance });
       frontier.inventory(player);
@@ -1405,6 +1458,8 @@ function handleMessage(player, raw) {
     case 'sedanLeave':
     case 'sedanPose':
     case 'sedanPortal':
+    case 'sedanRacePortal':
+    case 'sedanRaceArrival':
     case 'sedanReady':
       sedan.handle(player, msg, now);
       break;
@@ -1577,6 +1632,7 @@ function handleMessage(player, raw) {
       player.motionBudget = null;
       beginPortalArrival(player, now);
       send(player.ws, { type: 'qingyunReturned', pos: player.pos });
+      sendPortHistory(player);
       break;
     }
     case 'qingyunLeave': {
@@ -1589,6 +1645,7 @@ function handleMessage(player, raw) {
       player.shotCredits = 0;
       player.pendingShot = null;
       player.motionBudget = null;
+      sendPortHistory(player);
       break;
     }
     case 'mapEnter': {
@@ -1632,6 +1689,7 @@ function handleMessage(player, raw) {
       player.motionBudget = null;
       if (msg.type === 'mapReturn') beginPortalArrival(player, now);
       send(player.ws, { type: 'mapReturned', pos: player.pos });
+      sendPortHistory(player);
       break;
     }
     case 'signList': {
@@ -1695,6 +1753,37 @@ function handleMessage(player, raw) {
     case 'ordinaryGoldHit':
       if (mapKeyOf(player) === 'port' && player.active && player.alive) gold.ordinaryHit(player, playerAuthority.takeReportedShot(player, now), msg, now);
       break;
+    case 'corpseLanded': {
+      if (mapKeyOf(player) !== corpseField.MAP_ID || !player.joined) break;
+      try {
+        const settled = corpseField.settle({
+          id: msg.id,
+          victimId: msg.victimId,
+          playerId: msg.playerId,
+          pos: msg.pos,
+          yaw: msg.yaw,
+          surface: msg.surface,
+          at: msg.at,
+          reporter: { id: player.id, pos: player.pos }
+        });
+        if (settled && !player.corpseHttpSync) send(player.ws, { type: 'corpseSettled', corpse: settled });
+      } catch (error) { console.error('[corpse-field] landing record failed:', error.message); }
+      break;
+    }
+    case 'corpsePose': {
+      if (mapKeyOf(player) !== corpseField.MAP_ID || !player.joined) break;
+      try {
+        corpseField.setPose({
+          id: msg.id,
+          victimId: msg.victimId,
+          pos: msg.pos,
+          pose: msg.pose,
+          at: msg.at,
+          reporter: { id: player.id, pos: player.pos }
+        });
+      } catch (error) { console.error('[corpse-field] pose record failed:', error.message); }
+      break;
+    }
     case 'goldHit':
       if (player.active && player.alive) gold.shoot(player, playerAuthority.takeReportedShot(player, now), msg.id, now);
       break;
@@ -1751,12 +1840,18 @@ function handleMessage(player, raw) {
       if (player.active && player.alive) player.hasDeployed = true;
       player.moving = !!msg.moving;
       player.sprint = !!msg.sprint;
+      player.swimming = player.active && player.alive && player.boatSeat == null &&
+        player.carSeat == null && player.soldier !== 'hound' && player.soldier !== 'drone' && !!msg.swimming;
       player.prone = false;
       player.lastSeen = now;
       if (player.active && player.alive && Number.isFinite(msg.hp) && msg.hp > player.hp) {
         monitor(player, 'healthClaim', now);
         if (player.moderationBlocked) break;
       }
+      break;
+    }
+    case 'ammoMode': {
+      if (player.joined && typeof msg.infinite === 'boolean') player.infiniteAmmo = msg.infinite;
       break;
     }
     case 'shot': {
@@ -1793,6 +1888,7 @@ function handleMessage(player, raw) {
       (player.lastWeaponShot ||= Object.create(null))[profile.id] = now;
       player.weaponId = profile.id;
       if (profile.id === 'knife') break;
+      player.pendingBulletMark = { at: now, origin: { ...origin }, dir: { ...dir }, range: profile.range };
       const patrol = sharedPatrols.intersect(player,origin,dir,profile.range,now);
       const bossProfile = patrol ? {...profile,range:patrol.dist} : profile;
       if (portalBosses.shot(player, origin, dir, bossProfile, now) ||
@@ -1804,6 +1900,37 @@ function handleMessage(player, raw) {
         { type: 'shot', id: player.id, origin, dir },
         (other) => other !== player && other.active && sameMap(other, player)
       );
+      break;
+    }
+    case 'bulletMark': {
+      const shot = player.pendingBulletMark;
+      player.pendingBulletMark = null;
+      if (!shot || now - shot.at > 1200 || !player.active || !player.alive ||
+          mapKeyOf(player) !== bulletMarks.MAP_ID) break;
+      const point = safeVec(msg.point);
+      const rawNormal = safeVec(msg.normal);
+      const normalLength = rawNormal && Math.hypot(rawNormal.x, rawNormal.y, rawNormal.z);
+      if (!point || !normalLength || normalLength < 0.5 || normalLength > 1.5) break;
+      const normal = {
+        x: rawNormal.x / normalLength,
+        y: rawNormal.y / normalLength,
+        z: rawNormal.z / normalLength
+      };
+      const dx = point.x - shot.origin.x;
+      const dy = point.y - shot.origin.y;
+      const dz = point.z - shot.origin.z;
+      const along = dx * shot.dir.x + dy * shot.dir.y + dz * shot.dir.z;
+      const radial = Math.hypot(dx - shot.dir.x * along, dy - shot.dir.y * along, dz - shot.dir.z * along);
+      if (along < 0 || along > shot.range + 2 || radial > 2) break;
+      const mark = bulletMarks.add({
+        id: msg.id,
+        point,
+        normal,
+        surface: msg.surface,
+        shooterId: player.id
+      });
+      if (!mark) break;
+      broadcast({ type: 'bulletMark', mark }, (other) => other.joined && mapKeyOf(other) === bulletMarks.MAP_ID);
       break;
     }
     case 'hit': {
@@ -2070,6 +2197,80 @@ function sendWelcome(player) {
   });
 }
 
+function historyTargetValid(player) {
+  return !!player && !!player.joined && mapKeyOf(player) === bulletMarks.MAP_ID &&
+    !!player.ws && player.ws.readyState === 1;
+}
+
+function sendPortHistory(player) {
+  if (!historyTargetValid(player)) return;
+  const marks = bulletMarks.snapshot({ limit: bulletMarks.MAX_MARKS });
+  const corpses = player.corpseHttpSync ? null : corpseField.snapshot({ limit: corpseField.MAX_LIMIT });
+  const corpseCount = corpses?.corpses.length ?? 0;
+  const historyId = nextHistoryId++;
+  const ws = player.ws;
+  player.portHistoryId = historyId;
+  let markOffset = 0;
+  let corpseOffset = 0;
+
+  const scheduleNext = () => {
+    const timer = setTimeout(sendNext, HISTORY_CHUNK_GAP_MS);
+    timer.unref();
+  };
+
+  const sendNext = () => {
+    if (player.portHistoryId !== historyId || player.ws !== ws || !historyTargetValid(player)) return;
+    if (ws.bufferedAmount >= HISTORY_BUFFER_LIMIT) {
+      scheduleNext();
+      return;
+    }
+    if (markOffset < marks.marks.length) {
+      const chunk = marks.marks.slice(markOffset, markOffset + HISTORY_MARK_CHUNK);
+      markOffset += chunk.length;
+      send(player.ws, {
+        type: 'bulletMarks',
+        map: marks.map,
+        historyId,
+        marks: chunk,
+        total: marks.total,
+        partial: true
+      });
+    }
+    if (corpseOffset < corpseCount && ws.bufferedAmount < HISTORY_BUFFER_LIMIT) {
+      const chunk = corpses.corpses.slice(corpseOffset, corpseOffset + HISTORY_CORPSE_CHUNK);
+      corpseOffset += chunk.length;
+      send(player.ws, {
+        type: 'corpseField',
+        map: corpses.map,
+        historyId,
+        revision: corpses.revision,
+        total: corpses.total,
+        corpses: chunk,
+        partial: true
+      });
+    }
+    if (markOffset < marks.marks.length || corpseOffset < corpseCount) {
+      scheduleNext();
+      return;
+    }
+    send(player.ws, {
+      type: 'bulletMarksComplete',
+      map: marks.map,
+      historyId,
+      total: marks.total
+    });
+    if (corpses) send(ws, {
+      type: 'corpseFieldComplete',
+      map: corpses.map,
+      historyId,
+      revision: corpses.revision,
+      total: corpses.total
+    });
+  };
+
+  sendNext();
+}
+
 function removePlayer(player, reason) {
   if (!players.has(player.id)) return;
   /* 断线快照：把最后随身金币写进排行榜行，离线玩家也能显示「最后一次在线金币」 */
@@ -2222,6 +2423,7 @@ function tick() {
         ? null : player.weaponId || 'pac9',
       moving: !!player.moving,
       sprint: !!player.sprint,
+      swimming: !!player.swimming,
       shield: now < player.protectedUntil
     });
   }
@@ -2339,6 +2541,10 @@ async function getModerationReport() {
 function attachMultiplayer(server) {
   if (wss) return wss;
   loadBoard();
+  corpseField.setPublisher((corpse, action) => {
+    broadcast({ type: action === 'updated' ? 'corpseUpdated' : 'corpse', corpse }, player =>
+      player.joined && !player.corpseHttpSync && mapKeyOf(player) === corpseField.MAP_ID);
+  });
   wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
 
   upgradeServer = server;
@@ -2392,7 +2598,11 @@ function attachMultiplayer(server) {
       }
     });
 
-    ws.on('close', () => { if (isCurrent()) removePlayer(player, 'close'); });
+    ws.on('close', (code, reason) => {
+      if (!isCurrent()) return;
+      const switchedToRace = code === 4001 && reason.toString() === 'race-map-switch';
+      removePlayer(player, switchedToRace ? 'race-map-switch' : 'close');
+    });
     ws.on('error', (err) => {
       console.error('[mp] socket error', err && err.message);
       if (isCurrent()) removePlayer(player, 'error');
@@ -2447,6 +2657,7 @@ module.exports = {
   refreshRaceWallets() {gold.refreshWallets();},
   getLeaderboard,
   getOnlinePlayers,
+  getBattlePresence,
   getModerationReport,
   banPlayer,
   kickPlayer,
@@ -2459,11 +2670,16 @@ module.exports = {
     const boardSaved = flushBoard();
     const chatSaved = chatHistory.flush();
     const focusSaved = focusMode.flush();
-    return boardSaved && chatSaved && focusSaved;
+    const marksSaved = bulletMarks.flush();
+    const corpsesSaved = corpseField.flush();
+    return boardSaved && chatSaved && focusSaved && marksSaved && corpsesSaved;
   },
   shutdownMultiplayer() {
     flushBoard();
     chatHistory.flush();
+    bulletMarks.flush();
+    corpseField.flush();
+    corpseField.setPublisher(null);
   },
   RESPAWN_MS
 };

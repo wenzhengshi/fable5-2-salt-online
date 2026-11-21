@@ -4594,7 +4594,9 @@ window.createMothlightEnvironment = async function () {
   const candidates = qh(city.colliders);
   const boxes = new Map(city.colliders.map(box => [box, [box.minX, box.y0, box.minZ, box.maxX, box.y1, box.maxZ]]));
   return {
-    scene, color: 0x050c1a, heightAt: () => 0,
+    scene, color: 0x050c1a,
+    heightAt: (x, z) => Math.max(Math.abs(x), Math.abs(z)) > 350 ? -3 : 0,
+    waterLevelAt: (x, z) => Math.max(Math.abs(x), Math.abs(z)) > 350 ? 0 : null,
     boxes: (x, z, ex, ez) => candidates(Math.min(x, ex), Math.max(x, ex), Math.min(z, ez), Math.max(z, ez)).map(box => boxes.get(box)),
     update(camera, dt, time) {
       ve.uTime.value = time;

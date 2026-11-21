@@ -7,6 +7,9 @@ const { hit, eraFor, rewardFor, parse } = require('../public/js/gold-rules');
 const arsenal = require('../public/js/arsenal-rules');
 const bossRewards = require('./bossRewards');
 const pickupLog = require('./goldPickups');
+const supply = require('./goldSupply');
+const corpseField = require('./corpseField');
+const { landingSurface } = require('./portalBosses');
 
 const FILE = 'frontier-inventory.json';
 const DAY = 86400000;
@@ -45,6 +48,36 @@ const closeTo = (player, pos) => Math.hypot(player.pos.x - pos.x, player.pos.z -
   Math.abs(player.pos.y - pos.y) <= 1.8;
 const liveDrop = (drop, now) => drop.until === null || drop.until > now;
 
+function groundedDrop(map, pos) {
+  const landing = landingSurface(map, pos.x, pos.z, pos.y + 2, pos.y);
+  return { x: pos.x, y: landing.y, z: pos.z };
+}
+
+function normalizeDropPositions(data) {
+  let changed = false;
+  for (const [id, drop] of Object.entries(data.drops || {})) {
+    if (!drop || !drop.pos || !Number.isFinite(Number(drop.pos.y))) continue;
+    const pos = groundedDrop(drop.map, drop.pos);
+    if (Math.abs(pos.y - Number(drop.pos.y)) < 0.001) continue;
+    data.drops[id] = { ...drop, pos };
+    changed = true;
+  }
+  return changed;
+}
+
+function persistGroundedDrops() {
+  try {
+    storage.updateJson(FILE, (raw) => {
+      const data = Array.isArray(raw) ? {} : raw;
+      const gold = data.gold ||= {};
+      normalizeDropPositions(gold);
+      return data;
+    });
+  } catch (error) {
+    console.error('[gold] drop grounding migration failed:', error.message);
+  }
+}
+
 function schedule(day, epoch) {
   const lanes = Object.entries(LOCATIONS).flatMap(([map, positions]) => positions.map((ground, index) =>
     ({ map, kind: index ? 'drone' : 'hound', ground })));
@@ -77,7 +110,13 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
   let state;
   const giftOffers = new Map();
   function load() {
-    return state ||= storage.readJson(FILE).gold || {};
+    if (!state) {
+      const loaded = storage.readJson(FILE).gold || {};
+      const migrated = normalizeDropPositions(loaded);
+      state = loaded;
+      if (migrated) persistGroundedDrops();
+    }
+    return state;
   }
   function change(update) {
     let next;
@@ -86,7 +125,7 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
       next = data.gold ||= {};
       next.drops ||= {};
       next.carried ||= {};
-      update(next);
+      update(next, data);
       return data;
     });
     state = next;
@@ -95,14 +134,22 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
   function live(row, now) {
     return row.hp > 0 && row.at <= now && row.until > now;
   }
-  function rotate(now) {
+  function rotate(now, sweep = false) {
     const day = dayOf(now);
-    const current = load().dispatch;
-    if (current?.day === day && (current.launchDroneBoost || eraFor(day, current.epoch))) return;
-    change(data => {
+    const current = load();
+    const dispatch = current.dispatch;
+    if (current.supply && dispatch?.day === day && (dispatch.launchDroneBoost || eraFor(day, dispatch.epoch)) &&
+        (!sweep || !Object.values(current.drops || {}).some(row => !liveDrop(row, now)))) return;
+    change((data, root) => {
+      supply.init(root, now);
       const saved = data.dispatch;
-      if (saved?.day === day) {
-        if (saved.launchDroneBoost || eraFor(day, saved.epoch)) return;
+      if (saved?.day !== day) {
+        const midnight = day * DAY - 8 * 3600000;
+        supply.recoverExpired(data, midnight - 1);
+        const next = schedule(day, saved?.epoch ?? day);
+        supply.carryInto(data, saved, next);
+        data.dispatch = next;
+      } else if (!saved.launchDroneBoost && !eraFor(day, saved.epoch)) {
         // Keep today's original targets and their progress when upgrading a live server.
         const extra = randomInt(5, 11);
         const launchPoints = Object.entries(LOCATIONS);
@@ -119,8 +166,8 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
         }
         saved.count += extra;
         saved.launchDroneBoost = true;
-      } else data.dispatch = schedule(day, saved?.epoch ?? day);
-      for (const [id, row] of Object.entries(data.drops)) if (!liveDrop(row, now)) delete data.drops[id];
+      }
+      supply.recoverExpired(data, now);
     });
   }
   function available(player, now) {
@@ -135,7 +182,9 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     const rows = Object.values(dispatch.targets);
     const targets = rows.filter(row => row.map === map && live(row, now))
       .map(({ id, kind, pos, hp }) => ({ id, kind, pos, hp }));
-    const drops = Object.values(data.drops || {}).filter(row => row.map === map && liveDrop(row, now) &&
+    const drops = Object.values(data.drops || {}).map(row => row.pos
+      ? { ...row, pos: groundedDrop(row.map, row.pos) } : row)
+      .filter(row => row.map === map && liveDrop(row, now) &&
       (row.until !== null || Math.hypot(player.pos.x - row.pos.x, player.pos.y - row.pos.y,
         player.pos.z - row.pos.z) <= DEATH_DROP_VIEW))
       .map(({ id, pos, amount }) => ({ id, pos, amount }));
@@ -170,8 +219,9 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
       if (!Number.isSafeInteger(balance) || balance <= 0) return;
       const amount = Math.min(balance, PLAYER_DEATH_DROP);
       const id = randomUUID();
+      const dropPos = groundedDrop(map, pos);
       data.carried[owner] = balance - amount;
-      data.drops[id] = { id, map, pos, amount, until: null };
+      data.drops[id] = { id, map, pos: dropPos, amount, until: null };
       dropped = true;
     });
     if (dropped) broadcast(map, now);
@@ -364,10 +414,25 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
       if (!saved || !live(saved, now)) return;
       saved.hp = Math.max(0, saved.hp - weapon.damage);
       if (saved.hp) return;
-      data.drops[id] = { id, map: saved.map, pos: saved.ground, amount: saved.reward, until: now + 20 * 60000 };
+      supply.issue(data, saved.reward - (saved.recycled || 0));
+      data.drops[id] = { id, map: saved.map, pos: groundedDrop(saved.map, saved.ground),
+        amount: saved.reward, until: now + 20 * 60000 };
       destroyed = true;
     });
     if (destroyed) {
+      if (row.map === corpseField.MAP_ID) {
+        const landing = landingSurface(row.map, row.ground.x, row.ground.z, row.pos.y, row.ground.y);
+        corpseField.addMachine({
+          id: 'gold-' + id,
+          at: now,
+          kind: row.kind,
+          pos: { ...row.ground, y: landing.y },
+          surface: landing.surface,
+          victimId: 'gold-' + id,
+          shooterId: player.id,
+          shooterName: player.name
+        });
+      }
       for (const other of players.values()) if (other.joined && mapOf(other) === row.map) {
         send(other.ws, { type: 'goldDestroyed', id, pos: row.pos });
       }
@@ -402,7 +467,21 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     record.done = true;
     if (record.damage + .01 < MACHINE_HP[msg.kind] || !Number.isFinite(msg.floor) ||
         msg.floor < -80 || msg.floor > point.y + 1.2 || point.y - msg.floor > 24) return;
-    awardMachineKill(player,map,{x:point.x,y:msg.floor,z:point.z},now);
+    const landing = landingSurface(map, point.x, point.z, point.y, msg.floor);
+    const landingPos = { x: point.x, y: landing.y, z: point.z };
+    if (map === corpseField.MAP_ID) {
+      corpseField.addMachine({
+        id: 'machine-' + msg.id,
+        at: now,
+        kind: msg.kind,
+        pos: landingPos,
+        surface: landing.surface,
+        victimId: 'machine-' + msg.id,
+        shooterId: player.id,
+        shooterName: player.name
+      });
+    }
+    awardMachineKill(player,map,landingPos,now);
   }
   function awardMachineKill(player,map,point,now) {
     if (!available(player,now) || !player.signOwner) return;
@@ -415,6 +494,7 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
       const balance = (data.carried[owner] || 0) + FIXED_KILL_REWARD;
       if (!Number.isSafeInteger(balance)) return;
       data.carried[owner] = balance;
+      supply.issue(data, FIXED_KILL_REWARD);
       credited = true;
       const budget = ordinaryBudget(data, day);
       if (budget.remaining < budget.amount) return;
@@ -426,8 +506,9 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
       }
       delete misses[owner];
       data.ordinaryBonus = { day, spent: budget.spent + budget.amount };
+      supply.issue(data, budget.amount);
       const id = randomUUID();
-      data.drops[id] = { id, map, pos: point,
+      data.drops[id] = { id, map, pos: groundedDrop(map, point),
         amount: budget.amount, until: now + 20 * 60000 };
       awarded = true;
     });
@@ -444,7 +525,10 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     const now = Date.now();
     rotate(now);
     let receipt;
-    change(data => { receipt = bossRewards.settle(data, result); });
+    change(data => {
+      receipt = bossRewards.settle(data, result);
+      if (receipt) supply.issue(data, receipt.payouts.reduce((total, payout) => total + payout.amount, 0));
+    });
     if (!receipt) return;
     const payouts = new Map(receipt.payouts.map(row => [row.owner, row]));
     for (const player of players.values()) {
@@ -459,10 +543,15 @@ module.exports = function createGold({ players, send, frontier, roll = randomInt
     expireGifts(now);
     if (now < nextRotationCheck) return;
     nextRotationCheck = now + 10000;
-    try { rotate(now); } catch (error) { console.error('[gold] dispatch storage:', error.message); }
+    try { rotate(now, true); } catch (error) { console.error('[gold] dispatch storage:', error.message); }
   }
   return { handle, shoot, ordinaryHit, awardMachineKill, deposited, dropOnDeath, tick, reserved: pendingAmount,
-    refreshWallets() {state=storage.readJson(FILE).gold||{};broadcastAll(Date.now());},
+    refreshWallets() {
+      const loaded = storage.readJson(FILE).gold || {};
+      normalizeDropPositions(loaded);
+      state = loaded;
+      broadcastAll(Date.now());
+    },
     settleBossReward, bossBudget: now => bossRewards.budgetFor(load(), now),
     /* 排行榜金币列：读取玩家当前随身金币（无签名/非法值回落 0），不写盘、不改账本 */
     balanceFor(player) {

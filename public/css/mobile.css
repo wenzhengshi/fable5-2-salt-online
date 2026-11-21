@@ -1,5 +1,12 @@
 /* mobile.css — final phone typography pass. Loaded after feature styles. */
 
+.is-touch:has(.gold-hud:not([hidden])) .h-obj {
+  top: calc(20px + var(--sat) + var(--gold-hud-height, 32px));
+}
+body.is-touch:has(.gold-hud.is-expanded:not([hidden])):has(.hud.on:not(.off-port) .h-obj.has) #sr-tools {
+  left: calc(var(--gl) + min(310px, var(--vp-w, 100vw) * .43) + 8px);
+}
+
 .is-touch .h-health {
   left: var(--gl);
   bottom: calc(10px + var(--sab));
@@ -19,19 +26,23 @@
 .is-touch .t-ads,
 .is-touch .t-reload { width: 46px; height: 46px; }
 .is-touch .t-jump { right: calc(20px + var(--sar)); bottom: calc(119px + var(--sab)); }
-.is-touch .t-descend { right: calc(75px + var(--sar)); bottom: calc(119px + var(--sab)); }
+.is-touch .t-descend { right: calc(92px + var(--sar)); bottom: calc(147px + var(--sab)); }
 .is-touch .t-ads { right: calc(83px + var(--sar)); bottom: calc(13px + var(--sab)); }
 .is-touch .t-reload { right: calc(85px + var(--sar)); bottom: calc(65px + var(--sab)); }
-.is-touch .t-interact { width: 52px; height: 52px; right: calc(140px + var(--sar)); bottom: calc(66px + var(--sab)); }
+.is-touch .t-interact { width: 52px; height: 52px; right: calc(157px + var(--sar)); bottom: calc(94px + var(--sab)); }
 .is-touch .t-pause { width: 44px; height: 44px; }
+
+.is-touch .touch :is(.t-jump, .t-reload, .t-fire, .t-ads) {
+  transform: translate(-18px, -28px);
+}
 
 body.is-touch:not(:has(.menu[data-screen="title"])) .vc-rail {
   top: auto;
-  bottom: calc(54px + var(--sab));
+  bottom: calc(24px + var(--sab));
   left: var(--gl);
   right: auto;
   gap: 4px;
-  flex-direction: row;
+  flex-direction: column;
   transform: none;
 }
 body.is-touch:not(:has(.menu[data-screen="title"])) .vc-rail button {
@@ -98,7 +109,7 @@ body.is-touch:not(:has(.menu[data-screen="title"])) #sr-tools button em { displa
 
   .mp-chip { font-size: 9.5px !important; }
   .mp-online b { font-size: 13px !important; }
-  .mp-online em, .mp-kd i, .mp-net { font-size: 8px !important; }
+  .mp-kd i, .mp-net { font-size: 8px !important; }
   .mp-kd b { font-size: 10.5px !important; }
   .mp-ping { font-size: 9px !important; }
   .mp-roster-btn { font-size: 8.5px !important; }

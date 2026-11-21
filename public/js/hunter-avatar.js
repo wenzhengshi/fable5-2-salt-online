@@ -235,6 +235,7 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       this.armCalibration = {};
       this.armLengths = {};
       this.fingers = { L: [], R: [] };
+      this.handScales = {};
       this.weapon = createAvatarWeapon(model.userData.soldierKind, weaponTemplate);
       this.weaponBaseY = this.weapon.position.y;
       this.weaponBasePitch = this.weapon.rotation.x;
@@ -277,7 +278,10 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       }
       for (const side of ['L', 'R']) {
         const hand = this.bones.get(`Hand.${side}`);
-        if (hand) hand.scale.setScalar(0.001);
+        if (hand) {
+          this.handScales[side] = hand.scale.clone();
+          hand.scale.copy(this.handScales[side]).multiplyScalar(.001);
+        }
       }
 
       this.armCalibration.L = this.calibrateArm('L');
@@ -494,23 +498,46 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       this.aimHand('L', muzzle.clone().multiplyScalar(0.72).addScaledVector(up, 0.28));
     }
 
+    swingArms(pose) {
+      const left = this.bones.get('UpperArm.L');
+      const right = this.bones.get('UpperArm.R');
+      if (!left || !right) return;
+      const sideways = right.getWorldPosition(new THREE.Vector3())
+        .sub(left.getWorldPosition(new THREE.Vector3())).normalize();
+      const facing = (this.model.parent || this.model).getWorldQuaternion(new THREE.Quaternion());
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(facing);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(facing);
+      for (const [side, upper, sign, swing] of [['L', left, -1, pose.armL], ['R', right, 1, pose.armR]]) {
+        const shoulder = upper.getWorldPosition(new THREE.Vector3());
+        const reach = shoulder.clone().addScaledVector(sideways, sign * (.20 + .19 * pose.flare))
+          .addScaledVector(up, -.24 * Math.cos(swing)).addScaledVector(forward, -.38 * Math.sin(swing));
+        const elbow = shoulder.clone().addScaledVector(sideways, sign * .8)
+          .addScaledVector(up, -.24);
+        this.solveArm(side, reach, elbow);
+      }
+    }
+
     update(dt, data) {
       const fall = data?.fall;
+      if (this.visibleHands !== !!fall) {
+        this.visibleHands = !!fall;
+        for (const [side, scale] of Object.entries(this.handScales)) {
+          this.bones.get(`Hand.${side}`).scale.copy(scale).multiplyScalar(fall ? 1 : .001);
+        }
+      }
       if (fall) {
         this.armsSettled = false;
         this.model.position.y = this.baseY;
         this.apply({
-          'UpperArm.L': [['z', -.65 * fall.flare], ['x', fall.armL]],
-          'UpperArm.R': [['z', .65 * fall.flare], ['x', fall.armR]],
-          'LowerArm.L': [['x', -.75 - fall.brace * .21]],
-          'LowerArm.R': [['x', -.52 - fall.brace * .33]],
+          'UpperArm.L': [], 'UpperArm.R': [], 'LowerArm.L': [], 'LowerArm.R': [], 'Hand.L': [], 'Hand.R': [],
           'UpperLeg.L': [['x', fall.legL], ['z', -.2]],
           'UpperLeg.R': [['x', fall.legR], ['z', .2]],
           'LowerLeg.L': [['x', .45 + Math.max(0, -fall.legL) * .6]],
           'LowerLeg.R': [['x', .4 + Math.max(0, -fall.legR) * .6]],
           Chest: [['y', fall.head * -.65], ['x', .14 + fall.brace * .28]],
-          Head: [['y', fall.head], ['x', -.16 + fall.brace * .28]]
+          Head: [['y', fall.head], ['x', fall.swim ? .5 : -.16 + fall.brace * .28]]
         });
+        this.swingArms(fall);
         return;
       }
       const moving = !!(data && data.moving);

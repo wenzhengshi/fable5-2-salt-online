@@ -17,6 +17,9 @@
     />
     <script>setTimeout(function () { var link = document.getElementById('app-fonts'); if (link) link.media = 'all'; }, 500);</script>
     <script src="/js/forced-layout.js?v=<%= assetVersion %>"></script>
+    <link rel="stylesheet" href="/css/gold-supply.css?v=<%= assetVersion %>">
+<link rel="stylesheet" href="/css/settings-panel.css?v=<%= assetVersion %>" />
+    <link rel="stylesheet" href="/css/map-shell.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/game.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/multiplayer.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/comms.css?v=<%= assetVersion %>" />
@@ -40,10 +43,11 @@
     <link rel="preload" href="/maps/qingyun-models.json" as="fetch" crossorigin="anonymous" />
     <% } %>
   </head>
-  <body<% if (raceTransfer) { %> data-race-transfer="<%= raceTransfer %>"<% } %>>
+  <body<% if (raceStart) { %> data-race-start="<%= raceStart %>"<% } %><% if (raceTransfer) { %> data-race-transfer="<%= raceTransfer %>"<% } %>>
     <div id="app">
       <canvas id="view"></canvas>
       <div id="ui"></div>
+      <template id="salt-settings-template"><%- include('settings-panel', { racing: false }) %></template>
       <div id="boot">
         <% if (raceTransfer) { %>
         <div class="race-transfer-rift" aria-hidden="true"></div>
@@ -96,9 +100,11 @@
     <%# Must execute before boot-gate starts game.bundle.js: forwards texture,
         anisotropy, dynamic-resolution and rain values from the saved settings. %>
     <script src="/js/graphics-boot.js?v=<%= assetVersion %>-gfx6"></script>
+    <script src="/js/map-shell.js?v=<%= assetVersion %>"></script>
     <script src="/js/boot-gate.js?v=<%= assetVersion %>" data-version="<%= assetVersion %>"></script>
     <%# Direct load makes the new options file survive a stale cached boot-gate.js.
         client-options.js guards against double-loading with CORE_SCRIPTS. %>
     <script src="/js/client-options.js?v=<%= assetVersion %>-co17"></script>
-  </body>
+  <script src="/js/gold-supply.js?v=<%= assetVersion %>"></script>
+</body>
 </html>

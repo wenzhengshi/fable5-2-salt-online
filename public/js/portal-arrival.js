@@ -117,7 +117,7 @@
       updateNatural(dt) {
         if (game.game.state === 'paused') return;
         if (flight || game.game.state !== 'playing' || !player.alive || !player.enabled ||
-            game.frontier?.airborne || window.__mp?.soldier === 'drone' ||
+            game.frontier?.airborne || game.swim?.active || window.__mp?.soldier === 'drone' ||
             game.sedan?.riding || window.__saltBoat?.riding) {
           endNatural();
           return;

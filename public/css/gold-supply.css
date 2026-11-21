@@ -1,0 +1,33 @@
+.gold-supply-dialog {
+  position: fixed;
+  width: min(430px, calc(100vw - 24px));
+  max-height: calc(100dvh - 20px);
+  padding: 16px;
+  color: #f1e8d9;
+  background: #111b24;
+  border: 1px solid #dbb77d66;
+  border-top: 3px solid #f1b45e;
+  border-radius: 5px;
+  overflow: auto;
+}
+.gold-supply-dialog::backdrop { background: #06101bb5; }
+.gold-supply-dialog header, .gold-supply-dialog dl > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.gold-supply-dialog h2 { font: 750 19px/1.25 system-ui, sans-serif; margin: 0; }
+.gold-supply-dialog button, [data-gold-supply] {
+  font: 650 12px/1.2 system-ui, sans-serif;
+  color: #ffe0a6;
+  padding: 6px 8px;
+  border: 1px solid #c89d5a88;
+  border-radius: 3px;
+  background: #172634;
+  cursor: pointer;
+}
+.gold-supply-dialog dl { margin: 9px 0; }
+.gold-supply-dialog dl > div { padding: 7px 0; border-bottom: 1px solid #dbb77d30; }
+.gold-supply-dialog dd { margin: 0; color: #ffd18a; font-variant-numeric: tabular-nums; text-align: right; }
+.gold-supply-dialog small { display: block; color: #bec6ca; line-height: 1.5; }

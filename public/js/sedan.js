@@ -36,9 +36,11 @@
     brakeButton.type = 'button';
     brakeButton.className = 'sedan-brake';
     brakeButton.textContent = labels.brake;
+    brakeButton.hidden = true;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'sedan-leave';
+    button.hidden = true;
     el.append(meter, status, brakeButton, button);
     document.body.append(el);
 
@@ -48,7 +50,7 @@
     let model, mp, target, display, local = rules.create(), seat = null, drive = null, travel = null;
     let nextPose = 0, portalUntil = 0, requestUntil = 0, noticeUntil = 0, lookOffset = 0;
     let wheels = 0, steering = 0, pitch = 0, roll = 0, retry = false;
-    let pendingExit = false, brakeHeld = false;
+    let pendingExit = false, brakeHeld = false, falling = null;
     let lastChassisX = Infinity, lastChassisZ = Infinity, lastChassisHeading = Infinity;
     const now = () => performance.now();
     const floor = (x, z, cap) => physics.groundHeight(x, z, cap);
@@ -125,7 +127,6 @@
       if (travel && !retry) return;
       retry = false;
       travel = state;
-      el.hidden = false;
       button.hidden = true;
       brakeButton.hidden = true;
       meter.hidden = true;
@@ -166,6 +167,20 @@
       mp.onMessage(message => {
         if (!mp.connected) return;
         if (message.type === 'sedanTravel') void loadTravel(message.car);
+        if (message.type === 'sedanRaceTravel') {
+          window.SaltMapShell.openRace('plaza', { vehicle: message.transfer }).catch(() => {
+            release();
+            say('failed');
+          });
+          return;
+        }
+        if (message.type === 'sedanArrival') {
+          display=null;
+          apply(message.car);
+          falling = { at: now(), revision: message.car.revision };
+          portalUntil = now() + 3500;
+          return;
+        }
         if (message.type === 'sedanResult') {
           requestUntil = 0;
           if (message.reason === 'leave') {
@@ -192,6 +207,12 @@
           apply(message.car);
           if (message.reason === 'full') say('full');
           if (message.reason === 'range') say('range');
+          if (message.reason === 'passengers') {
+            status.textContent = document.documentElement.lang === 'en-US'
+              ? 'Passengers must get out before entering the race portal.'
+              : '进入赛车场前，请让乘客先下车';
+            noticeUntil = now() + 2700;
+          }
         }
         if (message.type === 'snapshot' && !travel) {
           const state = message.sedan;
@@ -211,6 +232,7 @@
     }
 
     function requestExit() {
+      if (falling) return false;
       const state = drive || display;
       if (!state || seat == null) return false;
       const index = exitIndex(state, seat);
@@ -324,6 +346,12 @@
         Object.assign(drive, next);
       }
       if (!pendingExit && now() > portalUntil && (throttle > .12 || input.pressed?.('interact'))) {
+        if (mp?.connected && rules.atRaceGate(drive)) {
+          portalUntil = now() + 1800;
+          sendPose();
+          mp.send({ type: 'sedanRacePortal', revision: drive.revision });
+          return;
+        }
         const route = rules.portal(target || drive);
         if (route) {
           portalUntil = now() + 1800;
@@ -366,10 +394,9 @@
         scene.add(model.root);
       }
       if (model) model.root.visible = !!state;
-      el.hidden = !state || !player.alive || game.frontier?.airborne;
       if (!state) { display = null; return; }
 
-      if (drive && player.alive) {
+      if (drive && player.alive && !falling) {
         if (requestUntil <= now()) driveStep(dt);
         if (travel) return;
         if (mp?.connected && now() >= nextPose) {
@@ -387,20 +414,28 @@
       }
       model.root.position.set(display.x, display.y, display.z);
       alignChassis(display);
-      model.root.rotation.set(pitch, display.heading, roll, 'YXZ');
+      let fallPitch = 0;
+      if (falling && seat != null) {
+        const progress = Math.min(1, (now() - falling.at) / 2100);
+        model.root.position.y += 32 * (1 - progress * progress);
+        fallPitch = .32 * Math.sin(Math.PI * progress);
+        if (progress === 1) {
+          mp?.send({ type: 'sedanReady', revision: falling.revision });
+          falling = null;
+        }
+      } else falling = null;
+      model.root.rotation.set(pitch + fallPitch, display.heading, roll, 'YXZ');
       wheels -= display.speed / model.radius * dt;
       for (const wheel of model.wheels) {
         wheel.spin.rotation.x = wheels;
         if (wheel.front) wheel.root.rotation.y = drive ? steering : 0;
       }
       model.steeringSpin.rotation.z = drive ? steering * 2 : 0;
-      if (seat != null && player.alive) positionRider(dt);
+      if (seat != null && player.alive) positionRider(dt, model.root.position.y - display.y);
       if (pendingExit && seat != null && requestUntil <= now()) {
         const live = drive || state;
         if (Math.abs(live.speed) <= rules.exitSpeed) requestExit();
       }
-      const near = rules.near(display, player.pos);
-      el.hidden ||= seat == null && !near;
       button.hidden = false;
       button.textContent = seat == null ? labels.board :
         pendingExit && Math.abs(state.speed) > rules.parkSpeed ? labels.leavePending : labels.leave;
@@ -417,12 +452,24 @@
         status.textContent = seat == null
           ? (mp?.connected ? target.seats.filter(Boolean).length : 0) + '/4'
           : pendingExit && !stopped ? (seat === 0 ? labels.exitPending : labels.waitingForStop)
-            : seat === 0 ? (rules.portal(state) ? labels.portal : stopped ? labels.parked : labels.driver)
+            : seat === 0 ? ((rules.portal(state) || rules.atRaceGate(state)) ? labels.portal : stopped ? labels.parked : labels.driver)
               : labels.passenger;
       }
     }
 
-    function positionRider(dt) {
+    function updateHud() {
+      const canInteract = display?.map === mapOf() &&
+        (seat != null || rules.near(display, player.pos));
+      el.hidden = game.game.state !== 'playing' || !rules.hudVisible({
+        present: !!travel || canInteract,
+        alive: player.alive,
+        airborne: game.frontier?.airborne,
+        portalFall: game.portalArrival?.showingFall,
+        carFall: !!falling
+      });
+    }
+
+    function positionRider(dt, fallHeight = 0) {
       const driver = seat === 0;
       const side = Math.sign(rules.seats[seat].x);
       const limit = driver ? Math.PI : 1.29;
@@ -434,10 +481,11 @@
       player.vel.set(0, 0, 0);
       const offset = rules.seats[seat];
       toVector(player.pos, driver ? rules.seat(display, seat) : rules.point(display, side * 1.06, offset.y, offset.z));
+      player.pos.y += fallHeight;
       player.syncView();
       if (driver) {
         const look = player.yaw;
-        const anchor = rules.point(display, 0, 1.35, .35);
+        const anchor = rules.point(display, 0, 1.35 + fallHeight, .35);
         const desired = view.set(anchor.x + Math.sin(look) * 6.4, anchor.y + 1.6 - player.pitch * 4, anchor.z + Math.cos(look) * 6.4);
         const length = ray.set(desired.x - anchor.x, desired.y - anchor.y, desired.z - anchor.z).length();
         ray.divideScalar(length);
@@ -476,7 +524,9 @@
     };
 
     return game.sedan = {
+      listen,
       update,
+      updateHud,
       get riding() { return seat != null || !!travel; },
       get driving() { return seat === 0 || !!travel; },
       get state() { return display; }

@@ -1,6 +1,7 @@
 'use strict';
 
 const rules = require('../public/js/sedan-rules');
+const transfers = require('./vehicleTransfer');
 
 module.exports = function createSedan(players, send, dropping, enterMap = () => true) {
   const cars = [];
@@ -95,6 +96,28 @@ module.exports = function createSedan(players, send, dropping, enterMap = () => 
   }
 
   function handle(player, msg, now) {
+    if (msg.type === 'sedanRaceArrival') {
+      const map = mapOf(player);
+      if (!player.joined || !player.alive || player.carSeat != null || player.boatSeat != null) return;
+      const passage = transfers.take(player.signOwner, map, msg.transfer, now);
+      if (!passage) return;
+      const car = carOnMap(map, player);
+      const incoming = car && car.seats.every(id => id == null) ? car : spawn(map);
+      const location = rules.inside({ ...player.pos, map, heading: passage.heading }) ? player.pos :
+        map === 'port' ? { x: 27.5, y: 0, z: 29.5 } : rules.raceGate(map);
+      Object.assign(incoming, location, { heading: passage.heading, speed: 0, revision: incoming.revision + 1 });
+      incoming.seats[0] = player.id;
+      player.active = true;
+      player.frontierDrop = null;
+      player.carId = incoming.id;
+      player.carSeat = 0;
+      player.protectedUntil = now + 3800;
+      const session = sessions.get(incoming);
+      Object.assign(session, { lastPose: 0, lastPortal: now, waitingForDriver: true });
+      sync();
+      send(player.ws, { type: 'sedanArrival', car: snapshot(map, player) });
+      return;
+    }
     if (!player.joined || !player.alive || !player.active || player.boatSeat != null ||
         dropping(player, now)) {
       if (msg.type === 'sedanLeave') reply(player, 'not-riding');
@@ -166,6 +189,21 @@ module.exports = function createSedan(players, send, dropping, enterMap = () => 
       Object.assign(car, { x, y, z, heading: rules.angle(heading), speed });
       session.lastPose = now;
       sync();
+      return;
+    }
+    if (msg.type === 'sedanRacePortal') {
+      if (now - session.lastPortal < 1800 || !rules.atRaceGate(car)) return;
+      if (car.seats.slice(1).some(Boolean)) { reply(player, 'passengers'); return; }
+      const transfer = transfers.issue(player.signOwner, 'race', car.heading, now);
+      if (!transfer) return;
+      session.lastPortal = now;
+      send(player.ws, { type: 'sedanRaceTravel', transfer });
+      remove(player);
+      if (car.map !== 'dustfall') {
+        sessions.delete(car);
+        cars.splice(cars.indexOf(car), 1);
+      }
+      ensureDustfallCar();
       return;
     }
     if (msg.type !== 'sedanPortal' || now - session.lastPortal < 1800) return;

@@ -4370,6 +4370,7 @@ export async function createEnvironment() {
   }
   return {
     scene: K.scene, color: 0xb3a194, heightAt: em,
+    waterLevelAt: (x, z) => Math.abs(x - Xp(z)) <= 30 && $p(x, z) < Wp - .18 ? Wp : null,
     terrain: K.dbg.terrain.geometry,
     boxes,
     update(camera, dt) {

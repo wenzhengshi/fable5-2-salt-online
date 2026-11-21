@@ -85,6 +85,64 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
     return rotation;
   }
 
+  function roundPose(value) {
+    return Math.round(Number(value) * 10000) / 10000;
+  }
+
+  function capturePose(source) {
+    const rig = source && source.rig ? source.rig : source;
+    const bones = rig && rig.bones;
+    if (!bones) return null;
+    const rotations = {};
+    let count = 0;
+    for (const name of BONE_NAMES) {
+      const bone = bones[name];
+      const quaternion = bone && bone.quaternion;
+      if (!quaternion) continue;
+      const values = [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
+      if (!values.every((value) => Number.isFinite(Number(value)))) continue;
+      rotations[name] = values.map(roundPose);
+      count += 1;
+    }
+    if (!count) return null;
+    const body = bones.body;
+    const position = body && body.position;
+    const bodyPos = position && [position.x, position.y, position.z].every((value) => Number.isFinite(Number(value)))
+      ? [roundPose(position.x), roundPose(position.y), roundPose(position.z)]
+      : null;
+    const group = rig && rig.group || (source && source.model);
+    let rawYaw = Number(source && source.yaw);
+    if (!Number.isFinite(rawYaw) && group && group.rotation) rawYaw = Number(group.rotation.y);
+    return {
+      yaw: Number.isFinite(rawYaw) ? roundPose(rawYaw) : 0,
+      bodyPos,
+      bones: rotations
+    };
+  }
+
+  function applyPose(made, pose) {
+    if (!made || !made.bones || !pose || typeof pose !== 'object') return false;
+    const body = made.bones.body;
+    if (body && Array.isArray(pose.bodyPos) && pose.bodyPos.length === 3 &&
+        pose.bodyPos.every((value) => Number.isFinite(Number(value)))) {
+      body.position.set(Number(pose.bodyPos[0]), Number(pose.bodyPos[1]), Number(pose.bodyPos[2]));
+    }
+    const rotations = pose.bones && typeof pose.bones === 'object' ? pose.bones : null;
+    if (!rotations) return false;
+    let applied = 0;
+    for (const name of Object.keys(rotations)) {
+      const bone = made.bones[name];
+      const values = rotations[name];
+      if (!bone || !bone.quaternion || !Array.isArray(values) || values.length !== 4) continue;
+      const [x, y, z, w] = values.map(Number);
+      if (![x, y, z, w].every(Number.isFinite)) continue;
+      bone.quaternion.set(x, y, z, w);
+      applied += 1;
+    }
+    made.model.updateMatrixWorld(true);
+    return applied > 0;
+  }
+
   function makeHoundRig(bones) {
     const base = snapshotRotation(bones);
     const body = bones.body;
@@ -270,6 +328,8 @@ import { clone as cloneSkinned } from '/vendor/SkeletonUtils.js';
       return MACHINE_KINDS.has(value);
     },
     create,
+    capturePose,
+    applyPose,
     whenReady,
     isReady(kind) {
       return !!(kind === 'hound' || kind === 'drone') && !!sourceFor(kind);

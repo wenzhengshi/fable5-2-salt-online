@@ -1,0 +1,35 @@
+    <div class="panel" role="dialog" aria-modal="true" aria-label="设置与操作说明" tabindex="-1" hidden>
+      <header class="panel-h">
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" data-tab="settings" aria-selected="true">设置</button>
+          <button class="tab" role="tab" data-tab="controls" aria-selected="false">操作说明</button>
+        </div>
+        <button class="btn small" data-act="close-panel">关闭</button>
+      </header>
+      <div class="panel-b" data-pane="settings">
+        <div class="row"><label id="l-q">画质</label>
+          <div class="seg" role="group" aria-labelledby="l-q"><% for (const [tier, label] of Object.entries({minimal:"极低",smooth:"流畅",low:"低",medium:"中",high:"高",ultra:"极高"})) { %><button type="button" data-q="<%= tier %>" aria-pressed="false"><%= label %></button><% } %></div></div>
+        <div class="row"><label for="s-sens">鼠标灵敏度</label><div class="slider"><input id="s-sens" type="range" min="0.2" max="3" step="0.05"><output data-o="sens"></output></div></div>
+        <div class="row"><label id="l-inv">反转 Y 轴</label><button class="toggle" data-act="invert" aria-labelledby="l-inv" aria-pressed="false"><i></i><span>关</span></button></div>
+        <% if (!racing) { %>
+        <div class="row"><label id="l-inf">无限子弹</label><button class="toggle" data-act="infiniteAmmo" aria-labelledby="l-inf" aria-pressed="false" title="开启后无需换弹"><i></i><span>关</span></button></div>
+        <% } %>
+        <div class="row"><label for="s-vol">主音量</label><div class="slider"><input id="s-vol" type="range" min="0" max="100" step="1"><output data-o="vol"></output></div></div>
+        <div class="row"><label for="s-fov">视野范围</label><div class="slider"><input id="s-fov" type="range" min="60" max="95" step="1" value="60"><output data-o="fov">60°</output></div></div>
+        <div class="row" data-row="fs"><label id="l-fs">显示</label><button class="btn small" data-act="fullscreen" aria-labelledby="l-fs fs-t"><span id="fs-t">进入全屏</span></button></div>
+        <p class="panel-note" data-f="qnote"></p>
+      </div>
+      <div class="panel-b" data-pane="controls" hidden>
+        <% if (racing) { %>
+        <h3><%= lang === 'en-US' ? 'Driving' : '驾驶' %></h3>
+        <dl class="keys">
+          <div><dt><%= lang === 'en-US' ? 'Steering' : '转向' %></dt><dd><kbd>A</kbd> <kbd>D</kbd></dd></div>
+          <div><dt><%= lang === 'en-US' ? 'Throttle / brake / reverse' : '油门／刹车／倒车' %></dt><dd><kbd>W</kbd> <kbd>Space</kbd> <kbd>S</kbd></dd></div>
+          <div><dt><%= lang === 'en-US' ? 'Gear / neutral' : '换挡／空挡' %></dt><dd><kbd>1–5</kbd> <kbd>N</kbd></dd></div>
+          <div><dt><%= lang === 'en-US' ? 'View / horn' : '切换视角／鸣笛' %></dt><dd><kbd>V</kbd> <kbd>E</kbd></dd></div>
+          <div><dt><%= lang === 'en-US' ? 'Board / exit / portal' : '上下车／车辆穿越' %></dt><dd><kbd>H</kbd> <kbd>F</kbd></dd></div>
+          <div><dt><%= lang === 'en-US' ? 'Backpack on foot' : '步行时打开背包' %></dt><dd><kbd>0</kbd></dd></div>
+        </dl>
+        <% } %>
+      </div>
+    </div>

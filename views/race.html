@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>盐港 · 集装箱跑道</title>
+<% const settingsLabel = lang === 'en-US' ? 'Settings' : '设置'; %>
+<link rel="stylesheet" href="/css/gold-supply.css?v=<%= assetVersion %>">
+<link rel="stylesheet" href="/css/frontier.css?v=<%= assetVersion %>">
+<link rel="stylesheet" href="/css/settings-panel.css?v=<%= assetVersion %>">
 <style>
 :root{color-scheme:dark;--gold:#f1b45e;--ink:#11191f;--ivory:#f5efe1;--line:rgba(226,237,238,.22);font:15px/1.4 "Microsoft YaHei","PingFang SC",system-ui,sans-serif}
 *{box-sizing:border-box}
@@ -20,6 +24,16 @@ h1{font-size:clamp(17px,2.2vw,25px);line-height:1.15;margin:5px 0 0;white-space:
 .commands{display:flex;gap:7px;pointer-events:auto}
 .commands button,.modal button{background:#11191fe8;border:1px solid var(--line);padding:9px 12px;border-radius:4px}
 .commands button:hover,.modal button:hover{border-color:var(--gold)}
+#race-settings-dialog{position:fixed;inset:0;margin:0;padding:0;width:100%;height:100%;max-width:none;max-height:none;overflow:hidden;border:0;background:transparent;color:var(--ivory)}
+#race-settings-dialog::backdrop{background:#0b131a88}
+#race-settings-dialog{
+  --sat:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-bottom,0px);
+  --bone:#e8e4da;--bone-dim:#a5a29a;--steel:#a0a7ad;--signal:#ffb13b;
+  --ink-2:#151a1e;--signal-hot:#ffc269;--f-display:system-ui,sans-serif;--f-label:system-ui,sans-serif;--f-mono:ui-monospace,monospace;
+}
+#race-settings-dialog .btn.small{min-height:38px;padding:6px 12px;border:1px solid var(--line);background:#1c2023}
+#race-settings-dialog .keys>div{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+#race-settings-dialog .keys dd{margin:0}
 .commands kbd,.controls kbd{font:600 10px system-ui;color:#e7c38e;margin-left:5px}
 .bottom{align-items:flex-end}
 .run{padding:12px 14px;background:#11191fe8;border:1px solid var(--line);border-radius:4px;width:min(290px,43vw);font-variant-numeric:tabular-nums}
@@ -113,7 +127,7 @@ progress::-webkit-progress-bar{background:#52616a}progress::-webkit-progress-val
 }
 </style>
 <link rel="stylesheet" href="/race/race.css?v=<%= assetVersion %>"><link rel="stylesheet" href="/css/modal.css"><link rel="stylesheet" href="/css/replay.css"></head>
-<body class="clean-view" data-plaza-visit="<%= plazaVisit %>"><main id="app">
+<body class="clean-view race-settings-page" data-plaza-visit="<%= plazaVisit %>"><main id="app">
 <div id="view" aria-label="盐港集装箱跑道三维画面"></div>
 <div class="steering-wheel" aria-label="方向盘">
   <div id="steering-rotor" class="steering-rotor" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -150,6 +164,7 @@ progress::-webkit-progress-bar{background:#52616a}progress::-webkit-progress-val
       <button id="ignition" type="button" aria-pressed="false"><span id="ignition-label">点火</span><kbd>I</kbd></button>
       <button id="reset" type="button">重回起点<kbd>R</kbd></button>
       <button id="sound" type="button" aria-pressed="false" title="切换声音">静音</button>
+      <button type="button" data-race-settings><%= settingsLabel %></button>
       <button id="pause" type="button">暂停<kbd>Esc</kbd></button>
     </div>
   </div>
@@ -164,7 +179,10 @@ progress::-webkit-progress-bar{background:#52616a}progress::-webkit-progress-val
     <div class="speed"><strong id="speed">0</strong><small>km/h</small><span id="gear">1 挡</span></div>
   </div>
 </div>
-<div class="modal" id="modal" hidden><section><h2 id="modal-title"></h2><p id="modal-body"></p><button id="continue" class="primary" type="button">继续驾驶</button></section></div>
+<div class="modal" id="modal" hidden><section><h2 id="modal-title"></h2><p id="modal-body"></p><button id="continue" class="primary" type="button">继续驾驶</button> <button id="race-settings-paused" type="button" data-race-settings hidden><%= settingsLabel %></button></section></div>
+<dialog id="race-settings-dialog" aria-label="<%= settingsLabel %>">
+  <%- include('settings-panel', { racing: true }) %>
+</dialog>
 
 <div id="race-lobby" class="race-lobby">
   <section class="race-card" aria-labelledby="race-title">
@@ -192,7 +210,7 @@ progress::-webkit-progress-bar{background:#52616a}progress::-webkit-progress-val
     </section>
     <button id="race-history-open" class="race-history-open" type="button" hidden><%= t('raceHistory.open') %></button>
     <button id="race-enter" type="button">重试进入赛道</button>
-    <a href="/">返回首页</a>
+    <a href="/" target="_top">返回首页</a>
     <button id="race-plaza-units" class="race-history-open" type="button" hidden><%= t('soldierSelect.title') %></button>
     <details id="race-plaza-roster" hidden>
       <summary id="race-plaza-summary"></summary>
@@ -256,6 +274,21 @@ progress::-webkit-progress-bar{background:#52616a}progress::-webkit-progress-val
     </footer>
   </section>
 </div>
+<div id="race-presence" hidden>
+  <span><b id="race-total-online">—</b> <%= t('mp.online') %></span>
+  <span><b id="race-local-online">—</b> <%= t('mp.mapOnline') %></span>
+  <button id="race-roster-open" type="button" aria-haspopup="dialog"><%= t('mp.roster') %></button>
+</div>
+<dialog id="race-roster" class="race-card" aria-labelledby="race-roster-title">
+  <header>
+    <h2 id="race-roster-title"><%= t('mp.roster') %></h2>
+    <form method="dialog"><button type="submit"><%= t('mp.close') %></button></form>
+  </header>
+  <p id="race-roster-counts"></p>
+  <button type="button" data-gold-supply aria-haspopup="dialog"><%= t('goldSupply.title') %></button>
+  <p id="race-roster-empty" hidden><%= t('raceResult.rosterEmpty') %></p>
+  <ul id="race-roster-list"></ul>
+</dialog>
 <script>window.__SALT_I18N__ = <%- JSON.stringify({ lang: lang, messages: messages }).replace(/</g, '\\u003c') %>;</script>
 <script src="/race/ad-rules.js?v=<%= assetVersion %>"></script>
 <script type="importmap">{"imports":{"three":"/vendor/three-game.js"}}</script>
@@ -263,6 +296,8 @@ progress::-webkit-progress-bar{background:#52616a}progress::-webkit-progress-val
 <script src="/js/portal-arrival.js?v=<%= assetVersion %>"></script>
 <script src="/js/soldier-outfits.js?v=<%= assetVersion %>"></script>
 <script src="/js/classic-avatar.js?v=<%= assetVersion %>"></script>
+<script src="/race/performance.js?v=<%= assetVersion %>"></script>
+<script src="/js/client-options.js?v=<%= assetVersion %>"></script>
 <script src="/race/session.js?v=<%= assetVersion %>"></script>
 <script src="/js/player-input.bundle.js?v=<%= assetVersion %>"></script>
 <script src="/js/flight-collision.js?v=<%= assetVersion %>"></script>
@@ -274,17 +309,30 @@ progress::-webkit-progress-bar{background:#52616a}progress::-webkit-progress-val
 <script src="/race/airspace.js?v=<%= assetVersion %>"></script>
 <div id="race-online" role="status" hidden></div>
 <div id="race-boost-status" hidden></div>
+<button id="race-free-vehicle" type="button" data-board="<%= t('car.board') %>" data-leave="<%= t('car.leave') %>" hidden><%= t('car.board') %></button>
+<button id="race-vehicle-portal" type="button" hidden><%= t('raceResult.vehiclePortal') %> <kbd>F</kbd></button>
 <div id="race-player-ui" hidden>
   <div id="plaza-crosshair" aria-hidden="true"></div>
   <output id="plaza-ammo" aria-label="<%= t('raceResult.plazaAmmo') %>" data-reloading="<%= t('raceResult.plazaReloading') %>"></output>
   <div class="plaza-field-actions">
     <button id="plaza-view" type="button" aria-keyshortcuts="V"><%= t('frontier.switchThird') %></button>
+    <button type="button" data-race-settings><%= settingsLabel %></button>
+    <button id="plaza-backpack-open" type="button" aria-haspopup="dialog" aria-keyshortcuts="0 O"><%= t('frontier.backpack') %> [0]</button>
     <button id="plaza-switch-weapon" type="button" hidden><%= t('raceResult.plazaSwitchWeapon') %></button>
   </div>
   <output id="plaza-flight-speed" aria-label="<%= t('raceResult.droneSpeed') %>" hidden></output>
   <p class="race-walk-hint"><%= t('raceResult.portalHint') %></p>
   <p class="race-touch-hint"><%= t('raceResult.touchPortalHint') %></p>
 </div>
+<dialog id="plaza-backpack" class="frontier-backpack" aria-labelledby="plaza-backpack-title">
+  <header>
+    <h2 id="plaza-backpack-title"><%= t('frontier.backpack') %></h2>
+    <form method="dialog"><button type="submit"><%= t('frontier.closeBackpack') %></button></form>
+  </header>
+  <p id="plaza-backpack-capacity"></p>
+  <ul id="plaza-backpack-items"></ul>
+  <p id="plaza-backpack-empty"><%= t('frontier.backpackEmpty') %></p>
+</dialog>
 <div id="app-toast" role="status" hidden></div>
 <script>const replayLocales={"zh-CN":{"replay":{"launch":"本地回放","launchHint":"打开本地录屏与截图，F9 开始或停止录屏","recording":"正在录制","stop":"停止保存","start":"开始录制","kicker":"SALTLINE / LOCAL REPLAY","title":"录屏与截图","intro":"录制战场画面与游戏音效，或点相机截取当前画面。","wechatTitle":"微信内置浏览器无法下载回放","wechatWarning":"请先点击右上角「···」选择「在浏览器打开」，再开始录制。微信内置浏览器不允许保存视频文件，录制完成后将无法下载。","wechatConfirm":"当前为微信内置浏览器，录制完成后将无法下载回放。\n\n请点击右上角「···」，选择「在浏览器打开」后再录制。\n\n仍要现在录制吗？","wechatContinue":"仍要录制","wechatCancel":"先不录制","wechatStatus":"微信内无法下载，请改用系统浏览器录制","wechatDownloadBlocked":"微信内置浏览器无法下载回放，请点击右上角「···」选择「在浏览器打开」","library":"本地记录","empty":"暂无本地记录。点相机截图，或按 F9 开始录制。","selectHint":"选择录屏或截图","localOnly":"仅保存在当前设备的浏览器","durationLimit":"单段最长 {minutes} 分钟","storage":"本地已用 {used} / 可用 {total}","memoryOnly":"浏览器存储不可用，记录仅在当前页面保留","ready":"录制画面与游戏音效，优先输出 MP4","recordingHint":"正在录制画面与游戏音效，点击停止后保存","unsupported":"当前浏览器不支持画布录制，请升级浏览器","fallbackFormat":"当前浏览器不支持原生 MP4，将保存为 WebM","download":"下载文件","delete":"删除","confirmDelete":"确定删除这段本地回放吗？","deleteTitle":"删除本地回放","deleteMessage":"{name}\n\n将从当前设备永久删除，此操作无法撤销。","deleteConfirm":"确认删除","cancel":"取消","deleted":"本地回放已删除","clipDetails":"{duration} · {size} · {date}","clipDetailsAudio":"{duration} · {size} · 含游戏音效 · {date}","unknownUnit":"综合战场","savedMp4":"MP4 回放已保存到本机","savedWebm":"当前浏览器已保存 WebM 回放","savedMp4Wechat":"MP4 回放仅保存在微信内，无法下载；请改用系统浏览器重新录制","savedWebmWechat":"WebM 回放仅保存在微信内，无法下载；请改用系统浏览器重新录制","startFailed":"录制启动失败，请检查浏览器权限或存储空间","emptyRecording":"录制内容为空，未保存","downloaded":"回放文件已开始下载","close":"关闭","photoHint":"打卡截图（F8）","photoPreview":"当前选中的战场截图","photoSaved":"已保存打卡截图，可在录屏与截图中下载","photoMemoryOnly":"截图已完成，浏览器存储不可用，请在当前页面下载","photoFailed":"截图失败，请稍后重试","photoDownloaded":"PNG 截图已开始下载","photoDeleteTitle":"删除打卡截图","photoDeleted":"打卡截图已删除","photoDetails":"PNG · {width} × {height} · {size} · {date}","photoWechatSave":"请长按截图预览保存图片。也可以在系统浏览器中截图并下载。"},"modal":{"kicker":"SALTLINE / 系统提示","notice":"提示","confirm":"确认","cancel":"取消","close":"关闭"}},"en-US":{"replay":{"launch":"Local replay","launchHint":"Open local recordings and screenshots. F9 starts or stops recording.","recording":"Recording","stop":"Stop & save","start":"Start recording","kicker":"SALTLINE / LOCAL REPLAY","title":"Recordings & screenshots","intro":"Record the battlefield with game audio or tap the camera to capture the current view.","wechatTitle":"Replays cannot be downloaded in WeChat","wechatWarning":"Open this page in your system browser first: tap ··· in the top-right corner and choose Open in browser. WeChat's built-in browser cannot save video files, so recorded replays cannot be downloaded.","wechatConfirm":"You are using WeChat's built-in browser. Replays recorded here cannot be downloaded.\n\nTap ··· in the top-right corner and choose Open in browser before recording.\n\nRecord anyway?","wechatContinue":"Record anyway","wechatCancel":"Not now","wechatStatus":"Downloads are blocked in WeChat. Record in your system browser.","wechatDownloadBlocked":"WeChat cannot download replays. Tap ··· and choose Open in browser.","library":"Local captures","empty":"No local captures yet. Tap the camera for a screenshot, or press F9 to start recording.","selectHint":"Select a recording or screenshot","localOnly":"Stored in this browser on this device","durationLimit":"Up to {minutes} minutes per clip","storage":"{used} used / {total} available locally","memoryOnly":"Browser storage is unavailable. Captures will last only for the current page.","ready":"Record the view with game audio, preferring MP4","recordingHint":"Recording the view and game audio. Stop to save.","unsupported":"Canvas recording is unavailable. Please update your browser.","fallbackFormat":"Native MP4 is unavailable. This browser will save WebM.","download":"Download","delete":"Delete","confirmDelete":"Delete this local replay?","deleteTitle":"Delete local replay","deleteMessage":"Permanently delete {name} from this device?\n\nThis cannot be undone.","deleteConfirm":"Delete","cancel":"Cancel","deleted":"Local replay deleted","clipDetails":"{duration} · {size} · {date}","clipDetailsAudio":"{duration} · {size} · game audio · {date}","unknownUnit":"Battlefield","savedMp4":"MP4 replay saved on this device","savedWebm":"WebM replay saved on this browser","savedMp4Wechat":"The MP4 replay is stored only inside WeChat and cannot be downloaded. Re-record in your system browser.","savedWebmWechat":"The WebM replay is stored only inside WeChat and cannot be downloaded. Re-record in your system browser.","startFailed":"Recording could not start. Check browser permissions or storage space.","emptyRecording":"The recording was empty and was not saved.","downloaded":"Replay download started","close":"Close","photoHint":"Take a screenshot (F8)","photoPreview":"Selected battlefield screenshot","photoSaved":"Screenshot saved. Open Recordings & screenshots to download it.","photoMemoryOnly":"Screenshot captured. Storage is unavailable; download it before leaving this page.","photoFailed":"Could not take the screenshot. Try again shortly.","photoDownloaded":"PNG screenshot download started","photoDeleteTitle":"Delete screenshot","photoDeleted":"Screenshot deleted","photoDetails":"PNG · {width} × {height} · {size} · {date}","photoWechatSave":"Touch and hold the preview to save the image, or capture and download it in your system browser."},"modal":{"kicker":"SALTLINE / SYSTEM NOTICE","notice":"Notice","confirm":"Confirm","cancel":"Cancel","close":"Close"}}}; Object.assign(window.__SALT_I18N__.messages, replayLocales[window.__SALT_I18N__.lang]);</script>
 <script src="/js/modal.js?v=race-media1"></script>
@@ -6443,6 +6491,11 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     return Math.max(Math.abs(car.x)+x-width/2,-14-(car.z-z),car.z+z-(length+20));
   }
   function obstruction(from, to, traffic=[]) {
+    if(from.free&&Math.abs(to.z-(length+13))<5){
+      for(const x of [-2.43,0,2.43]){
+        if(blocksContact(from,to,{x,z:length+13,w:2.18,d:1.55}))return 'container';
+      }
+    }
     const edge=edgeOverlap(to);
     if(edge>0&&edge>=edgeOverlap(from))return 'edge';
     for(const npc of traffic) {
@@ -6537,10 +6590,15 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     return Math.sign(car.gear)*rules.clamp(velocity+(pull-roadDrag)*dt,0,spec.limit);
   }
   function drive(car, throttle, steering, brake, dt, traffic) {
-    car.speed=stepSpeed(car,throttle,brake,dt);
+    if(car.free){
+      const direction=Math.sign(car.gear);
+      const target=brake||!throttle?0:direction*(direction<0?20:800/3.6);
+      const change=(brake?145:throttle?34:11)*dt;
+      car.speed+=rules.clamp(target-car.speed,-change,change);
+    }else car.speed=stepSpeed(car,throttle,brake,dt);
     const velocity=Math.abs(car.speed);
     const gripLimit=Math.atan(7.5*rules.wheelBase/Math.max(1,velocity*velocity));
-    const steeringLimit=Math.min(rules.steerLimit(velocity),gripLimit);
+    const steeringLimit=Math.min(rules.steerLimit(velocity),car.free?Math.atan(24*rules.wheelBase/Math.max(1,velocity*velocity)):gripLimit);
     const target=-steering*steeringLimit;
     const eased=car.steering+(target-car.steering)*Math.min(1,dt*(velocity<2.5?15:11));
     car.steering=rules.clamp(eased,-steeringLimit,steeringLimit);
@@ -6565,7 +6623,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
 <script>function createVehicleAudio() {
   const cruiseLevels=[.056,.047,.039,.031,.024];
   let ctx, master, engine, horn, noise;
-  let running=false, muted=false, honking=false, audible=true;
+  let running=false, muted=false, honking=false, audible=true, volume=.8;
   let lastImpact=-Infinity, readyAt=0, hornRelease=0;
   const engineTargets=new WeakMap();
 
@@ -6604,7 +6662,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     limiter.threshold.value=-12;
     limiter.ratio.value=7;
     limiter.connect(ctx.destination);
-    master=gain(muted||!audible?0:.74,limiter);
+    master=gain(muted||!audible?0:.74*volume/.8,limiter);
 
     noise=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);
     const samples=noise.getChannelData(0);
@@ -6739,12 +6797,16 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   function setAudible(value) {
     if(audible===value)return;
     audible=value;
-    if(master)sweep(master.gain,audible&&!muted?.74:0,.045);
+    if(master)sweep(master.gain,audible&&!muted?.74*volume/.8:0,.045);
+  }
+  function setVolume(value) {
+    volume=value;
+    if(master)sweep(master.gain,audible&&!muted?.74*volume/.8:0,.045);
   }
   function setMuted(value) {
     muted=value;
     if(!muted)unlock();
-    if(master)sweep(master.gain,audible&&!muted?.74:0,.045);
+    if(master)sweep(master.gain,audible&&!muted?.74*volume/.8:0,.045);
   }
   function stop() {
     running=false;
@@ -6754,7 +6816,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     engineTargets.delete(engine.level.gain);
     sweep(engine.level.gain,0,.07);
   }
-  return {get ctx(){return ctx;},start,update,setHorn,impact,setAudible,setMuted,stop,prepare:unlock,resume(){if(ctx)unlock();}};
+  return {get ctx(){return ctx;},start,update,setHorn,impact,setAudible,setMuted,setVolume,stop,prepare:unlock,resume(){if(ctx)unlock();}};
 }
 
 (async () => {
@@ -6771,18 +6833,44 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     $('continue').hidden=!action;
     $('modal').hidden=false;
   }
+  const performanceOptions=window.SaltRacePerformance;
+  const settingsDialog=$('race-settings-dialog');
+  const settingsPanel=settingsDialog.querySelector('.panel');
+  const settingsKey='saltline.settings.v1';
+  const readSettings=()=>{
+    try { return JSON.parse(localStorage.getItem(settingsKey)) || {}; }
+    catch { return {}; }
+  };
+  const bounded=(value,min,max,fallback)=>Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
+  function preferences(){
+    const saved=readSettings();
+    return {
+      quality:performanceOptions.validTier(saved.quality)?saved.quality:'auto',
+      sens:bounded(saved.sens,.2,3,1),
+      fov:bounded(saved.fov,60,95,74),
+      volume:bounded(saved.volume,0,1,.8),
+      invertY:!!saved.invertY
+    };
+  }
+  let settings=preferences();
+  const mobile=matchMedia('(pointer:coarse)').matches;
+  const lowerPowered=(navigator.deviceMemory>0&&navigator.deviceMemory<=3)
+    ||(navigator.hardwareConcurrency>0&&navigator.hardwareConcurrency<=4)
+    ||Math.min(screen.width,screen.height)<380;
+  const autoQuality=mobile?(lowerPowered?'minimal':'smooth'):'medium';
+  const effectiveTier=()=>settings.quality==='auto'?autoQuality:settings.quality;
+  let quality=performanceOptions.tiers[effectiveTier()];
   let renderer;
   try { renderer = new T.WebGLRenderer({antialias:true, powerPreference:'high-performance'}); }
   catch { dialog('无法启用 3D', '请用支持 WebGL 2 的浏览器打开，并启用硬件加速。'); return; }
   renderer.setClearColor(0xadbac9);
   renderer.toneMapping = T.NeutralToneMapping;
   renderer.toneMappingExposure = 1.02;
-  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.enabled=!!quality.shadows;
   renderer.shadowMap.type=T.PCFShadowMap;
   renderer.shadowMap.autoUpdate=false;
   renderer.shadowMap.needsUpdate=true;
   $('view').append(renderer.domElement);
-  const mobile=window.matchMedia('(pointer:coarse)').matches;
   const scene=new T.Scene(), camera=new T.PerspectiveCamera(47,1,.08,770);
   scene.fog=new T.FogExp2(0xb2adad,.0029);
   const light=PortVisual.lighting(renderer,scene,mobile);
@@ -6933,7 +7021,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
         playerCars.set(peer.id,model);
       }
       model.root.visible=true;
-      model.root.position.set(peer.x,0,peer.z);
+      model.root.position.set(peer.x,peer.y||0,peer.z);
       model.root.rotation.y=peer.heading;
       for(const wheel of model.wheels)wheel.rotation.x=peer.wheelAngle;
     }
@@ -6959,16 +7047,19 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   const mirrorCenter=new T.Vector3(), mirrorNormal=new T.Vector3(), mirrorUp=new T.Vector3();
   const reflectedEye=new T.Vector3(), offset=new T.Vector3(), corner=new T.Vector3();
   const mirrors=[];
+  const idleMirror=new T.MeshBasicMaterial({color:0x263845});
   function addMirror(lens,halfWidth,halfHeight,spread) {
-    const target=new T.WebGLRenderTarget(mobile?160:240,mobile?80:120,{depthBuffer:true});
+    const width=quality.mirrorWidth||1;
+    const target=new T.WebGLRenderTarget(width,Math.max(1,width/2),{depthBuffer:true});
     const glass=target.texture;
     glass.name="live-rear-view";
     glass.repeat.x=-1;
     glass.offset.x=1;
-    lens.material=new T.MeshBasicMaterial({map:glass,toneMapped:false});
+    const reflection=new T.MeshBasicMaterial({map:glass,toneMapped:false});
+    lens.material=quality.mirrors?reflection:idleMirror;
     lens.castShadow=false;
     lens.receiveShadow=false;
-    mirrors.push({lens,target,halfWidth,halfHeight,spread});
+    mirrors.push({lens,target,reflection,halfWidth,halfHeight,spread});
   }
   for(const lens of carModel.root.getObjectsByProperty('name','side-mirror-lens')) {
     lens.rotation.set(-.078,Math.PI+(lens.position.x<0?-.265:.43),0,'YXZ');
@@ -7136,8 +7227,9 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   const lastRow=Math.floor((P.length+20-.0001)/P.chunk);
   let visibleRow;
   function refreshRows() {
-    const current=Math.floor((finished?walker.position.z:car.z)/P.chunk);
-    const first=Math.max(-1,current-(finished?5:1)), last=Math.min(lastRow,current+5);
+    const current=Math.floor((finished&&!freeDriving?walker.position.z:car.z)/P.chunk);
+    const first=Math.max(-1,current-(finished?quality.rows:1));
+    const last=Math.min(lastRow,current+quality.rows);
     const span=first+':'+last;
     if(span===visibleRow)return;
     visibleRow=span;
@@ -7388,6 +7480,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   }
   scene.add(podium);
   const holdRaceExit=window.SaltPortalArrival.holdPrompt();
+  let usedExit;
   const walker=new T.Group();
   const plazaOutfit=window.SaltSoldierOutfits.load();
   showUnit(walker,raceSession.unit,plazaOutfit);
@@ -7422,14 +7515,59 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   function flightBoxes(position,reach=5){
     return P.nearby(position.z,reach).map(({x,z,w,d,h})=>plazaBox(x,z,w,d,h)).concat(podiumBoxes);
   }
+  const plazaBackpack=$('plaza-backpack');
+  let backpackRelock=false;
+  function togglePlazaBackpack(){
+    if(plazaBackpack.open){plazaBackpack.close();return;}
+    if(!plazaInput||!finished||freeDriving||document.querySelector('dialog[open]')||
+        window.SaltModal?.isOpen||!$('race-history').hidden||!$('modal').hidden)return;
+    const inventory=activeInventory();
+    const text=window.__SALT_I18N__.messages;
+    $('plaza-backpack-capacity').textContent=text.frontier.capacity.replace('{space}',rules.usedSlots(inventory)+'/'+rules.capacity);
+    const rows=Object.entries(rules.limits).filter(([kind])=>inventory[kind]).map(([kind])=>{
+      const row=document.createElement('li');
+      const label=document.createElement('span');
+      const weapon=rules.weaponKinds[kind];
+      label.textContent=weapon?(weapon==='knife'?text.arsenal.knife:window.SaltArsenalRules[weapon].name):
+        text.frontier.items[kind]+' ×'+inventory[kind];
+      row.append(label);
+      if(weapon&&!machineUnit()&&window.__G.weapon&&window.SaltArsenal){
+        const equip=document.createElement('button');
+        equip.type='button';
+        equip.disabled=window.__G.weapon.arsenalId===weapon;
+        equip.textContent=equip.disabled?text.frontier.equipped:text.frontier.equipWeapon;
+        equip.addEventListener('click',()=>{
+          if(!rules.canEquip(activeInventory(),weapon,'race'))return;
+          window.SaltArsenal.equip(weapon);
+          plazaBackpack.close();
+        });
+        row.append(equip);
+      }
+      return row;
+    });
+    $('plaza-backpack-items').replaceChildren(...rows);
+    $('plaza-backpack-empty').hidden=rows.length>0;
+    backpackRelock=plazaInput.locked;
+    plazaInput.setGameplay(false);
+    plazaInput.exitLock();
+    plazaBackpack.showModal();
+  }
+  $('plaza-backpack-open').addEventListener('click',togglePlazaBackpack);
+  plazaBackpack.addEventListener('close',()=>{
+    if(!finished||freeDriving)return;
+    plazaInput.setGameplay(true);
+    if(backpackRelock)plazaInput.requestLock();
+    backpackRelock=false;
+  });
+
   function startPlazaCombat(inputUi){
     const game=Object.assign(window.__G,{renderer,scene,camera,player:plazaPlayer,input:plazaInput,physics:plazaPhysics});
     import('/race/plaza-combat.js?v=<%= assetVersion %>').then(module=>module.install(game,{
       version:'<%= assetVersion %>',
-      running:()=>finished&&!plazaSuspended,
+      running:()=>finished&&!freeDriving&&!plazaSuspended,
       inventory:activeInventory,
       onShot(){plazaShot++;},
-      onAudio(sound){plazaSound=sound;},
+      onAudio(sound){plazaSound=sound;plazaSound?.setVolume(muted?0:settings.volume);},
       isMachine:machineUnit,
       getMuted:()=>muted
     })).then(combat=>{
@@ -7478,16 +7616,9 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
         if(name==='input:lock')document.body.classList.toggle('race-pointer-locked',locked);
       }
     }});
-    try {
-      const settings=JSON.parse(localStorage.getItem('saltline.settings.v1'));
-      if(Number.isFinite(settings?.sens))plazaInput.sensitivity=Math.min(3,Math.max(.2,settings.sens));
-      plazaInput.invertY=!!settings?.invertY;
-      if(Number.isFinite(settings?.fov))camera.fov=Math.min(100,Math.max(55,settings.fov));
-      else camera.fov=75;
-    } catch {
-      camera.fov=75;
-    }
-    camera.updateProjectionMatrix();
+    plazaInput.sensitivity=settings.sens;
+    plazaInput.invertY=settings.invertY;
+    updateCameraFov();
     walker.rotation.y=plazaYaw;
     walker.visible=true;
     startPlazaCombat(inputUi);
@@ -7572,7 +7703,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   }
   function walkPlaza(dt,flightDt){
     const suspended=plazaSuspended=!!(document.hidden||window.SaltModal?.isOpen||
-      !document.getElementById('race-history').hidden||!document.getElementById('modal').hidden||$('race-unit-dialog').open);
+      !document.getElementById('race-history').hidden||!document.getElementById('modal').hidden||$('race-unit-dialog').open||plazaBackpack.open||settingsDialog.open||$('race-roster').open);
     if(suspended&&plazaInput.locked)plazaInput.exitLock();
     plazaInput.setGameplay(!suspended);
     plazaInput.update(dt);
@@ -7667,9 +7798,12 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     if(view?.model)window.SaltPlayerCombat.updateAvatarWeapon(view,window.__G.weapon?.arsenalId||'pac9',true);
     const gate=grounded ? exitGates.find(portal=>Math.abs(pos.x-portal.position.x)<=1.35&&
       Math.abs(pos.z-podium.position.z-portal.position.z)<=.85) : null;
-    if(holdRaceExit(gate?.userData.destination,performance.now()/1000,!suspended&&!moving)){
+    const destination=gate?.userData.destination;
+    if(destination!==usedExit)usedExit=null;
+    if(holdRaceExit(destination,performance.now()/1000,!suspended&&!moving)&&destination!==usedExit){
+      usedExit=destination;
       plazaInput.exitLock();
-      raceSession.travel(gate.userData.destination);
+      raceSession.travel(destination);
     }
     raceSession.publishPlaza({x:pos.x,y:pos.y,z:pos.z,heading:plazaYaw,pitch:plazaPitch,shot:plazaShot,weapon:window.__G.weapon?.arsenalId,unit:raceSession.unit,moving:drone?flightSpeed>1:moving,sprinting:!drone&&sprint,airborne:!grounded});
     plazaInput.endFrame();
@@ -7696,13 +7830,19 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
 
   const audio=createVehicleAudio();
   window.__G.audio=audio;
+  audio.setVolume(settings.volume);
   let muted=false, focused=true, engineOn=false;
-  let cockpit=false, paused=false, finished=raceSession.visiting, elapsed=0, started=false, toastUntil=0, last=0, accumulator=0;
+  let freeDriving=false, freeExitRequested=false, freeGear=1, freeGate=null;
+  let cockpit=false, paused=false, finished=raceSession.visiting, elapsed=0, started=false, toastUntil=0, last=0;
   const key=new Set(), held=new Map();
   const steeringRotor=$('steering-rotor');
   const clamp=SaltSedanRules.clamp;
   const steeringTravel=360;
   let wheelPosition=0, wheelVelocity=0;
+  $('race-roster').addEventListener('race:open',()=>{
+    clearInput();
+    plazaInput?.exitLock();
+  });
   const keyActions={KeyW:'driveForward',ArrowUp:'driveForward',KeyS:'reverse',ArrowDown:'reverse',KeyA:'left',ArrowLeft:'left',KeyD:'right',ArrowRight:'right',Space:'brake',KeyE:'horn'};
   function syncAudio() {
     const active=focused&&!document.hidden&&(!paused||finished);
@@ -7722,7 +7862,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     $('ignition-label').textContent=next?'熄火':'点火';
   }
   function toggleIgnition() {
-    if(paused||finished||!raceSession.active)return;
+    if(paused||finished&&!freeDriving||!finished&&!raceSession.active)return;
     document.body.classList.remove('clean-view');
     setIgnition(!engineOn);
   }
@@ -7734,7 +7874,12 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     toastUntil=performance.now()+1550;
   }
   function chooseGear(gear) {
-    if(paused||finished)return false;
+    if(paused||finished&&!freeDriving)return false;
+    if(freeDriving){
+      if(Math.abs(car.speed)>1&&Math.sign(gear)!==Math.sign(car.gear))return false;
+      freeGear=gear;
+      return true;
+    }
     const blocked=P.selectGear(car,gear);
     if(blocked) {
       showNotice(blocked==='stop'?'停稳后再切换前进或倒挡':'车速过高，请先减速再降挡');
@@ -7746,7 +7891,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   }
   function applyAction(action) {
     syncAudio();
-    if(paused||finished||!raceSession.active)return;
+    if(paused||finished&&!freeDriving||!finished&&!raceSession.active)return;
     if(action==='reverse'&&!chooseGear(-1))return;
     if(action==='driveForward'&&car.gear<0) {
       if(Math.abs(car.speed)>=.12) {
@@ -7761,30 +7906,50 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     key.clear();held.clear();syncAudio();
     for(const button of document.querySelectorAll('.held')) button.classList.remove('held');
   }
+  function updateCameraFov() {
+    camera.fov=finished&&!freeDriving?settings.fov:(cockpit?56:47)+(settings.fov-74);
+    camera.updateProjectionMatrix();
+  }
   function setCameraMode(next) {
     if(cockpit===next)return;
     cockpit=next;
     $('camera').setAttribute('aria-pressed',String(cockpit));
     document.body.classList.toggle('cockpit-view',cockpit);
-    camera.fov=cockpit?56:47;
+    updateCameraFov();
     footwell.visible=cockpit;
     // The chase camera can show chassis shadows; the close interior should not sample the moving chassis shadow.
     for(const part of sedanShadowReceivers)part.receiveShadow=!cockpit;
     shadowDirty=true;
     mirrorIndex=0;
-    camera.updateProjectionMatrix();
     snapCamera();
   }
   function toggleCamera() {setCameraMode(!cockpit);}
   function togglePause() {
-    if(finished)return;
+    if(finished&&!freeDriving)return;
     paused=!paused;clearInput();
+    $('race-settings-paused').hidden=!paused;
     if(paused) dialog('已暂停','进度与计时已保留。','继续驾驶');
     else $('modal').hidden=true;
   }
   function restart() {raceSession.restart();}
   window.addEventListener('keydown',event=>{
-    if(finished){
+    if(event.defaultPrevented||settingsDialog.open||$('race-roster').open)return;
+    if(finished&&!freeDriving&&!event.repeat&&!event.ctrlKey&&!event.altKey&&!event.metaKey&&
+        ['Digit0','Numpad0','KeyO'].includes(event.code)&&!event.target?.closest?.('input,textarea,[contenteditable]')){
+      event.preventDefault();
+      togglePlazaBackpack();
+      return;
+    }
+    if(plazaBackpack.open)return;
+    if(finished&&!event.repeat&&event.code==='KeyH'){
+      if(!$('race-free-vehicle').hidden)requestFreeVehicle();
+      return;
+    }
+    if(freeDriving&&!event.repeat&&event.code==='KeyF'){
+      requestVehicleTravel();
+      return;
+    }
+    if(finished&&!freeDriving){
       if(event.code==='KeyU'&&!event.repeat&&!event.defaultPrevented&&!window.SaltModal?.isOpen&&$('race-history').hidden){
         openPlazaUnits();
       }
@@ -7806,14 +7971,18 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     if(gearKey&&!event.ctrlKey&&!event.metaKey)chooseGear(Number(gearKey[1]));
     if(event.code==='KeyN')chooseGear(0);
     if(event.code==='KeyI') toggleIgnition();
-    if(event.code==='KeyR') restart();
+    if(event.code==='KeyR'&&!freeDriving) restart();
     if(event.code==='KeyV'||event.code==='KeyC') toggleCamera();
     if(event.code==='Escape') togglePause();
   });
   window.addEventListener('keyup',event=>{if(key.delete(event.code))syncAudio();});
   window.addEventListener('blur',()=>{focused=false;clearInput();});
   window.addEventListener('focus',()=>{focused=true;syncAudio();});
-  document.addEventListener('visibilitychange',()=>document.hidden?clearInput():syncAudio());
+  document.addEventListener('visibilitychange',()=>{
+    last=0;
+    if(document.hidden)clearInput();
+    else syncAudio();
+  });
   for(const button of document.querySelectorAll('[data-action]')) {
     button.addEventListener('pointerdown',event=>{
       event.preventDefault();
@@ -7834,13 +8003,13 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   $('sound').addEventListener('click',()=>{
     muted=!muted;
     audio.setMuted(muted);
-    plazaSound?.setVolume(muted?0:.8);
+    plazaSound?.setVolume(muted?0:settings.volume);
     $('sound').setAttribute('aria-pressed',String(muted));
     $('sound').textContent=muted?'开声音':'静音';
   });
   $('reset').addEventListener('click',restart);
   $('pause').addEventListener('click',togglePause);
-  $('continue').addEventListener('click',()=>finished?restart():togglePause());
+  $('continue').addEventListener('click',()=>finished&&!freeDriving?restart():togglePause());
   function taking(action) {
     if([...held.values()].includes(action))return 1;
     for(const code of key)if(keyActions[code]===action)return 1;
@@ -7866,7 +8035,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     follow.set(pos.x,pos.y,pos.z);aim.set(target.x,target.y,target.z);
   }
   function snapCamera() {
-    if(finished){
+    if(finished&&!freeDriving){
       plazaCamera();
     }else{
       cameraTargets();
@@ -7875,8 +8044,8 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     }
   }
   function resize() {
-    const ratio=Math.min(window.devicePixelRatio||1,window.matchMedia('(pointer:coarse)').matches?1.35:1.65);
-    renderer.setPixelRatio(Math.min(ratio,Math.sqrt(2450000/(innerWidth*innerHeight))));
+    const ratio=Math.min(window.devicePixelRatio||1,quality.dpr);
+    renderer.setPixelRatio(Math.min(ratio,Math.sqrt(quality.pixels/Math.max(1,innerWidth*innerHeight))));
     renderer.setSize(innerWidth,innerHeight,false);
     camera.aspect=innerWidth/Math.max(1,innerHeight);camera.updateProjectionMatrix();
   }
@@ -7888,15 +8057,110 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     enterPlaza();
     raceSession.prefetchQingyun();
   }
-  resize();snapCamera();refreshRows();updateHud();
+  updateCameraFov();resize();snapCamera();refreshRows();updateHud();
   renderer.domElement.addEventListener('webglcontextlost',event=>{
     event.preventDefault();paused=true;clearInput();
     dialog('画面已中断','重新打开这个 HTML 即可开始新一局。');
   });
-  const fixed=1/90;
+  const raceClock=performanceOptions.createClock();
   let nextImpact=0,nextHud=0;
   let presented=0, mirrorIndex=0, shadowDirty=true;
   let shadowX=0, shadowZ=0, shadowHeading=0;
+  function applyQuality(tier) {
+    settings.quality=tier;
+    quality=performanceOptions.tiers[effectiveTier()];
+    renderer.shadowMap.enabled=!!quality.shadows;
+    shadowDirty=true;
+    mirrorIndex=0;
+    for(const {lens,target,reflection} of mirrors){
+      const width=quality.mirrorWidth||1;
+      target.setSize(width,Math.max(1,width/2));
+      lens.material=quality.mirrors?reflection:idleMirror;
+    }
+    resize();
+    refreshRows();
+  }
+  window.SaltRaceGraphics.mount({root:settingsDialog,getTier:effectiveTier,setTier:applyQuality});
+  function writePreference(key,value){
+    settings[key]=value;
+    try { localStorage.setItem(settingsKey,JSON.stringify({...readSettings(),[key]:value})); }
+    catch {}
+    syncSettings();
+  }
+  function syncSettings(){
+    for(const [key,id,scale,format] of sliders){
+      $(id).value=settings[key]*scale;
+      settingsPanel.querySelector('[data-o="'+id.slice(2)+'"]').textContent=format(settings[key]);
+    }
+    const invert=settingsPanel.querySelector('[data-act="invert"]');
+    invert.setAttribute('aria-pressed',String(settings.invertY));
+    invert.querySelector('span').textContent=settings.invertY?(english?'On':'开'):(english?'Off':'关');
+    if(plazaInput){
+      plazaInput.sensitivity=settings.sens;
+      plazaInput.invertY=settings.invertY;
+    }
+    audio.setVolume(settings.volume);
+    plazaSound?.setVolume(muted?0:settings.volume);
+    updateCameraFov();
+  }
+  const english=document.documentElement.lang==='en-US';
+  const sliders=[
+    ['sens','s-sens',1,value=>value.toFixed(2)+'×'],
+    ['volume','s-vol',100,value=>Math.round(value*100)+'%'],
+    ['fov','s-fov',1,value=>value+'°']
+  ];
+  for(const [key,id,scale] of sliders){
+    $(id).addEventListener('input',()=>writePreference(key,+$(id).value/scale));
+  }
+  const fullscreenDoc=window.frameElement?.ownerDocument||document;
+  function syncFullscreen(){
+    $('fs-t').textContent=fullscreenDoc.fullscreenElement?(english?'Exit fullscreen':'退出全屏'):(english?'Enter fullscreen':'进入全屏');
+  }
+  fullscreenDoc.addEventListener('fullscreenchange',syncFullscreen);
+  if(fullscreenDoc!==document)window.addEventListener('pagehide',()=>fullscreenDoc.removeEventListener('fullscreenchange',syncFullscreen),{once:true});
+  function selectTab(name){
+    for(const tab of settingsPanel.querySelectorAll('[data-tab]')){
+      tab.setAttribute('aria-selected',String(tab.dataset.tab===name));
+    }
+    for(const pane of settingsPanel.querySelectorAll('[data-pane]'))pane.hidden=pane.dataset.pane!==name;
+  }
+  settingsPanel.addEventListener('click',event=>{
+    const button=event.target.closest('button');
+    if(!button)return;
+    if(button.dataset.tab)selectTab(button.dataset.tab);
+    if(button.dataset.act==='close-panel')settingsDialog.close();
+    if(button.dataset.act==='invert')writePreference('invertY',!settings.invertY);
+    if(button.dataset.act==='fullscreen'){
+      const action=fullscreenDoc.fullscreenElement?fullscreenDoc.exitFullscreen?.():fullscreenDoc.documentElement.requestFullscreen?.();
+      action?.catch(()=>{});
+    }
+  });
+  settingsDialog.addEventListener('click',event=>{
+    if(event.target===settingsDialog)settingsDialog.close();
+  });
+  settingsDialog.addEventListener('close',()=>window.SaltRaceGraphics.close());
+  function refreshSettings(){
+    const previousTier=settings.quality;
+    settings=preferences();
+    if(previousTier!==settings.quality)applyQuality(settings.quality);
+    syncSettings();
+    window.SaltRaceGraphics.sync();
+  }
+  window.addEventListener('storage',event=>{
+    if(event.key===settingsKey||event.key===null)refreshSettings();
+  });
+  for(const button of document.querySelectorAll('[data-race-settings]')){
+    button.addEventListener('click',()=>{
+      clearInput();
+      plazaInput?.exitLock();
+      refreshSettings();
+      selectTab('settings');
+      syncFullscreen();
+      settingsPanel.hidden=false;
+      settingsDialog.showModal();
+      settingsPanel.querySelector('[data-tab="settings"]').focus();
+    });
+  }
   function moveSteering(target,dt) {
     const speed=Math.abs(car.speed);
     const assist=.65+.35*Math.exp(-((speed-5)**2)/30)-.21*Math.min(1,speed/P.topSpeed);
@@ -7913,34 +8177,112 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     } else {
       wheelPosition=clamp(wheelPosition+step,-1,1);
     }
-    steeringRotor.style.transform='rotate('+(wheelPosition*steeringTravel).toFixed(2)+'deg)';
+  }
+  function requestFreeVehicle(){
+    if(freeDriving){
+      if(raceSession.freeCar?.airborne)return;
+      freeExitRequested=true;
+    }else raceSession.sendVehicle({type:'vehicleBoard'});
+  }
+  function requestVehicleTravel(){
+    if(freeGate&&raceSession.sendVehicle({type:'vehicleTravel',map:freeGate.userData.destination}))clearInput();
+  }
+  $('race-free-vehicle').onclick=requestFreeVehicle;
+  $('race-vehicle-portal').onclick=requestVehicleTravel;
+  function updateFreeVehicle(dt){
+    const state=raceSession.freeCar;
+    const nextDriving=!!state?.driving;
+    if(freeDriving!==nextDriving){
+      freeDriving=nextDriving;
+      freeExitRequested=false;
+      paused=false;
+      $('modal').hidden=true;
+      clearInput();
+      document.body.classList.toggle('race-free-driving',freeDriving);
+      walker.visible=!freeDriving;
+      $('race-player-ui').hidden=freeDriving;
+      plazaInput?.setGameplay(!freeDriving);
+      if(freeDriving){
+        raceSession.takePlazaSpawn();
+        walked=true;
+        document.body.classList.remove('clean-view');
+        plazaInput?.exitLock();
+        freeGear=state.gear;
+        Object.assign(car,state);
+        setIgnition(true);
+        if(state.airborne)setCameraMode(false);
+      }else{
+        const side=car.x>8?1:-1;
+        const exit=SaltSedanRules.point(car,side*2.35,0,0);
+        walker.position.set(clamp(exit.x,-10,10),0,clamp(exit.z,0,P.length+18));
+        standingOn=-1;
+        verticalSpeed=0;
+        grounded=true;
+        setIgnition(false);
+        setCameraMode(false);
+      }
+      updateCameraFov();
+      snapCamera();
+    }
+    carModel.root.visible=!!state;
+    const control=$('race-free-vehicle');
+    const blocked=paused||settingsDialog.open||$('race-roster').open||!$('race-history').hidden||$('race-unit-dialog').open;
+    control.hidden=!state||blocked||!!state.airborne||(!freeDriving&&!SaltSedanRules.near(state,walker.position));
+    control.textContent=freeDriving?($('race-free-vehicle').dataset.leave||'下车')+' [H]':
+      ($('race-free-vehicle').dataset.board||'上车')+' [H]';
+    if(!state){$('race-vehicle-portal').hidden=true;return;}
+    const lead=freeDriving&&!state.airborne?raceSession.freeCarAge:0;
+    const x=state.x+Math.sin(state.heading)*state.speed*lead;
+    const z=state.z+Math.cos(state.heading)*state.speed*lead;
+    const ease=1-Math.exp(-dt*24);
+    if(!freeDriving)Object.assign(car,state);
+    car.x+=(x-car.x)*ease;
+    car.y+=(state.y-car.y)*ease;
+    car.z+=(z-car.z)*ease;
+    Object.assign(car,{heading:state.heading,speed:state.speed,gear:state.gear,steering:state.steering,wheelAngle:state.wheelAngle});
+    const bumper=SaltSedanRules.point(state,0,0,state.speed<-.3?-2.45:2.45);
+    freeGate=freeDriving&&!state.airborne&&!blocked?exitGates.find(gate=>{
+      const gx=gate.position.x,gz=podium.position.z+gate.position.z;
+      return Math.min(Math.hypot(state.x-gx,state.z-gz),Math.hypot(bumper.x-gx,bumper.z-gz))<=1.85;
+    }):null;
+    $('race-vehicle-portal').hidden=!freeGate;
+    if(!freeDriving)return;
+    const allowed=!blocked&&!document.hidden&&!state.airborne;
+    const reverse=!!taking('reverse'), forward=!!(taking('driveForward')||taking('forward'));
+    if(allowed&&Math.abs(state.speed)<1){
+      if(reverse)freeGear=-1;
+      else if(forward&&freeGear<=0)freeGear=1;
+    }
+    moveSteering(allowed?taking('right')-taking('left'):0,dt);
+    const throttle=allowed&&!freeExitRequested&&engineOn&&(freeGear<0?reverse:forward);
+    const brake=!allowed||freeExitRequested||!!taking('brake');
+    raceSession.sendVehicle({type:'vehicleInput',steer:wheelPosition,gear:freeGear,throttle,brake});
+    if(freeExitRequested&&Math.abs(state.speed)<2)raceSession.sendVehicle({type:'vehicleExit'});
+    audio.update(state.speed,throttle?1:0,brake,0,undefined,freeGear);
+    acceleratorPedal.classList.toggle('is-pressed',throttle);
+    brakePedal.classList.toggle('is-pressed',brake);
   }
   function frame(now) {
-    const wallDt=last?Math.max(.001,(now-last)/1000):1/60;
+    const wallDt=last&&!document.hidden?Math.max(0,(now-last)/1000):0;
     const dt=Math.min(.065,wallDt);
-    last=now;
-    const buttonSteer=taking('right')-taking('left');
-    moveSteering(paused||finished?0:buttonSteer,dt);
-    const steer=wheelPosition;
-    const driving=!paused&&!finished&&raceSession.active;
-    if(driving&&car.gear>=0&&Math.abs(car.speed)<=.24&&taking('reverse')&&chooseGear(-1)){
-      setIgnition(true);
-    }
-    const directionalPedal=car.gear<0?taking('reverse'):taking('driveForward');
-    const pedal=driving&&!!(taking('forward')||directionalPedal);
+    last=document.hidden?0:now;
+    const driving=!paused&&!finished&&!settingsDialog.open&&!$('race-roster').open&&!document.hidden&&raceSession.active;
+    const buttonSteer=driving?taking('right')-taking('left'):0;
+    const forward=driving&&taking('driveForward');
+    const reverse=driving&&taking('reverse');
+    const throttlePedal=driving&&taking('forward');
     const braking=driving&&!!taking('brake');
-    acceleratorPedal.classList.toggle('is-pressed',pedal);
-    brakePedal.classList.toggle('is-pressed',braking);
+    let pedal=!!(throttlePedal||(car.gear<0?reverse:forward));
     const networkState=raceSession.sample();
     const launch=raceSession.takeLaunch();
     if(launch){
       Object.assign(car,P.start,launch);
+      raceClock.reset();
       snapCamera();
     }
-    if(raceSession.active&&!finished){
+    if(raceSession.active&&!finished&&!document.hidden){
       const previousSpeed=Math.abs(car.speed);
-      accumulator+=dt;
-      const inputSteer=driving?Math.round(steer*100):0;
+      let simulated=0;
       const speedBeforeHit=raceSession.consumeHit();
       if(speedBeforeHit){
         car.speed*=.45;
@@ -7948,12 +8290,18 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
         showNotice('与其他玩家发生碰撞');
       }
       let obstacles;
-      while(accumulator>=fixed){
-        accumulator-=fixed;
+      raceClock.advance(launch?0:wallDt,fixed=>{
+        simulated+=fixed;
+        moveSteering(buttonSteer,fixed);
+        const inputSteer=driving?Math.round(wheelPosition*100):0;
+        if(reverse&&car.gear>=0&&Math.abs(car.speed)<=.24&&chooseGear(-1))setIgnition(true);
+        pedal=!!(throttlePedal||(car.gear<0?reverse:forward));
         if(!obstacles){
           const nearbyTraffic=raceSession.hasFreshTraffic?networkState.traffic:traffic;
-          obstacles=nearbyTraffic.filter(other=>Math.abs(other.z-car.z)<16);
-          for(const peer of networkState?.peers||[])if(Math.abs(peer.z-car.z)<16){
+          // The collision solver checks distance against each simulated pose.
+          // Culling around the first pose could miss a car later in this batch.
+          obstacles=nearbyTraffic.slice();
+          for(const peer of networkState?.peers||[]){
             obstacles.push({x:peer.x,z:peer.z,heading:peer.heading,w:2.28,d:4.86,kind:'player',id:peer.id});
           }
         }
@@ -7977,19 +8325,31 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
         raceSession.record(command,car,speedAtStart);
         if(car.z>=P.length){
           exitCar();
-          break;
+          return false;
         }
-      }
+      });
       raceSession.flush();
-      if(driving)audio.update(car.speed,engineOn&&pedal?1:0,braking,(Math.abs(car.speed)-previousSpeed)/Math.max(dt,.01),P.engineRPM(car,engineOn&&pedal?1:0),car.gear);
+      if(driving)audio.update(car.speed,engineOn&&pedal?1:0,braking,(Math.abs(car.speed)-previousSpeed)/Math.max(simulated,.01),P.engineRPM(car,engineOn&&pedal?1:0),car.gear);
 
     }
+    if(finished)updateFreeVehicle(dt);
+    else{
+      acceleratorPedal.classList.toggle('is-pressed',pedal);
+      brakePedal.classList.toggle('is-pressed',braking);
+    }
+    steeringRotor.style.transform='rotate('+(wheelPosition*steeringTravel).toFixed(2)+'deg)';
     if(finished)raceSession.flush();
     const result=raceSession.takeResult();
     if(result){
       if(!finished)exitCar();
       if(result.finishPlace>=1&&result.finishPlace<=3)placeOnPodium(result.finishPlace);
       raceSession.finish(result);
+    }
+    // Give the simulation the next frame budget if a long stall left work
+    // queued. The omitted render does not change the recorded tick count.
+    if(raceClock.behind&&!finished){
+      requestAnimationFrame(frame);
+      return;
     }
     if(now>=nextHud){
       const boostHud=$('race-boost-status');
@@ -8001,7 +8361,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     }
     if($('notice').hidden!==(now>=toastUntil||paused||finished))$('notice').hidden=now>=toastUntil||paused||finished;
     carModel.root.position.set(car.x,car.y,car.z);
-    carModel.root.rotation.y=car.heading;
+    carModel.root.rotation.set(freeDriving&&car.y>0?.34*Math.sin(Math.PI*clamp(car.y/32,0,1)):0,car.heading,0,'YXZ');
     for(const wheel of carModel.wheels) {
       wheel.spin.rotation.x=car.wheelAngle;
       if(wheel.front)wheel.root.rotation.y=car.steering;
@@ -8010,13 +8370,13 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     cameraTargets();
     // A world-space follow delay would leave the driver's eye behind the moving seat.
     for(const gate of exitGates)gate.children[1].material.uniforms.time.value=now/1000;
-    if(finished)walkPlaza(dt,Math.min(.25,wallDt));
+    if(finished&&!freeDriving)walkPlaza(dt,Math.min(.25,wallDt));
     else {
       if(cockpit)camera.position.copy(follow);
       else camera.position.lerp(follow,1-Math.exp(-dt*15));
       camera.lookAt(aim);
     }
-    const sceneZ=finished?walker.position.z:car.z;
+    const sceneZ=finished&&!freeDriving?walker.position.z:car.z;
     light.update(sceneZ,now/1000);
     backdrop.sea.uniforms.uTime.value=now/1000;
     shore.position.z=sceneZ;
@@ -8030,33 +8390,38 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
     const visiblePeers=finished?plazaState:networkState;
     updatePlayerCars(visiblePeers?.peers||[]);
     updatePlazaPlayers(visiblePeers?.walkers||[],dt);
-    if(finished){window.__G.fx?.update(dt);plazaSound?.update(dt);}
-    const shadowTarget=finished?walker.position:car;
-    const heading=finished?plazaYaw:car.heading;
+    if(finished&&!freeDriving){window.__G.fx?.update(dt);plazaSound?.update(dt);}
+    const shadowTarget=finished&&!freeDriving?walker.position:car;
+    const heading=finished&&!freeDriving?plazaYaw:car.heading;
     const moved=shadowTarget.x!==shadowX||sceneZ!==shadowZ||heading!==shadowHeading;
-    if(shadowDirty||((moved||driving&&trafficModels.size>0)&&presented % (mobile?5:3)===0)) {
+    if(quality.shadows&&!raceClock.behind&&(shadowDirty||((moved||driving&&trafficModels.size>0)&&presented%quality.shadows===0))) {
       renderer.shadowMap.needsUpdate=true;
       shadowX=shadowTarget.x;shadowZ=sceneZ;shadowHeading=heading;
       shadowDirty=false;
     }
-    if(!finished&&cockpit&&(mirrorIndex<mirrors.length||presented%(mobile?6:3)===0)) {
+    if(quality.mirrors&&!raceClock.behind&&(!finished||freeDriving)&&cockpit&&(mirrorIndex<mirrors.length||presented%quality.mirrors===0)) {
       renderMirror(mirrors[mirrorIndex%mirrors.length]);
       mirrorIndex++;
     }
     presented++;
     renderer.render(scene,camera);
-    if(finished&&!plazaRenderingThird)plazaCombat?.drawWeapon();
-    window.__ready=true;
+    if(finished&&!freeDriving&&!plazaRenderingThird)plazaCombat?.drawWeapon();
+    if(!window.__ready){
+      window.__ready=true;
+      if(parent!==window)parent.postMessage({type:'salt-race-ready'},location.origin);
+    }
     window.__G.captureScreenshotFrame?.();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 })().catch(error=>{
   console.error(error);
+  if(parent!==window)parent.postMessage({type:'salt-race-failed'},location.origin);
   document.getElementById('modal-title').textContent='跑道加载失败';
   document.getElementById('modal-body').textContent='请重新打开这个 HTML，或换用支持 WebGL 2 的浏览器。';
   document.getElementById('continue').hidden=true;
   document.getElementById('modal').hidden=false;
 });
 </script>
-</main></body></html>
+</main><script src="/js/gold-supply.js?v=<%= assetVersion %>"></script>
+</body></html>

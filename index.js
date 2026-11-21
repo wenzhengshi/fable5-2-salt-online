@@ -11,6 +11,8 @@ const raceLive = require('./realtime/race');
 const adminRouter = require('./routes/admin');
 const chatHistory = require('./services/chatHistory');
 const focusMode = require('./services/focusMode');
+const bulletMarks = require('./services/bulletMarks');
+const persistenceQueue = require('./services/persistenceQueue');
 const groupQr = require('./services/groupQr');
 const houndTuning = require('./services/houndTuning');
 const roadSigns = require('./services/roadSigns');
@@ -22,7 +24,7 @@ const PORT = process.env.PORT || 3000;
 // 托管平台的反向代理通常不在应用所在容器的回环命名空间内。
 // 默认监听所有网卡；预览网关会显式注入 HOST=127.0.0.1，仍按平台值启动。
 const HOST = process.env.HOST || '0.0.0.0';
-const ASSET_VERSION = '20261120-merge-flip-gfx-roster-wreck-selectui-tablang-houndfix-selectfit-v' + RELEASE_VERSION;
+const ASSET_VERSION = '20261121-impact-ammo-v' + RELEASE_VERSION;
 
 app.set('view engine', 'ejs');
 app.engine('html', ejs.renderFile);
@@ -111,17 +113,27 @@ function renderRace(req,res,plazaVisit) {
     plazaVisit
   });
 }
-app.get('/race/plaza',(req,res)=>{
-  roadSigns.issueCookie(req,res);
-  res.setHeader('Cache-Control','no-store');
-  renderRace(req,res,true);
-});
-app.get(['/race','/race/index.html'], (req,res) => {
-  const owner=roadSigns.ownerFromRequest({headers:{...req.headers,origin:'http://'+req.headers.host}});
-  res.setHeader('Cache-Control','no-store');
-  const ticket=typeof req.query.ticket==='string'?req.query.ticket:'';
-  if(!owner||!race.canLoad(owner,ticket))return res.redirect('/?raceEntry=1');
-  renderRace(req,res,false);
+function renderRaceEntry(req, res, plazaVisit, sceneOnly) {
+  if (!plazaVisit) {
+    const owner = roadSigns.ownerFromRequest({ headers: { ...req.headers, origin: 'http://' + req.headers.host } });
+    const ticket = typeof req.query.ticket === 'string' ? req.query.ticket : '';
+    if (!owner || !race.canLoad(owner, ticket)) {
+      if (sceneOnly) return res.sendStatus(403);
+      return res.redirect('/');
+    }
+  }
+  if (sceneOnly) {
+    roadSigns.issueCookie(req, res);
+    res.setHeader('Cache-Control', 'no-store');
+    return renderRace(req, res, plazaVisit);
+  }
+  return renderGame(req, res, '', plazaVisit ? 'plaza' : 'challenge');
+}
+app.get('/race/plaza', (req, res) => renderRaceEntry(req, res, true, false));
+app.get(['/race','/race/index.html'], (req, res) => renderRaceEntry(req, res, false, false));
+app.get('/race/scene/:mode', (req, res, next) => {
+  if (!['plaza', 'challenge'].includes(req.params.mode)) return next();
+  return renderRaceEntry(req, res, req.params.mode === 'plaza', true);
 });
 app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -160,6 +172,9 @@ app.get(['/','/race/transfer/:map'], (req, res, next) => {
   const destination = req.params.map || req.query.raceExit;
   const raceTransfer = raceDestinations.has(destination) ? destination : '';
   if (req.params.map && !raceTransfer) return next();
+  return renderGame(req, res, raceTransfer);
+});
+function renderGame(req, res, raceTransfer, raceStart = '') {
   roadSigns.issueCookie(req, res);
   const queryLang = req.query && req.query.lang;
   const lang = queryLang === 'en-US' || queryLang === 'zh-CN' ? queryLang : req.lang;
@@ -176,11 +191,12 @@ app.get(['/','/race/transfer/:map'], (req, res, next) => {
     messages: locales[lang] || locales['zh-CN'],
     groupQr: groupQr.info(),
     raceTransfer,
+    raceStart,
     preloadQingyun: raceTransfer === 'qingyun',
     houndFlipChance: houndTuning.read().chance,
     assetVersion: ASSET_VERSION
   });
-});
+}
 
 app.use('/api', (req, res) => {
   res.status(404).json({ ok: false, message: req.t('msg.apiNotFound') });
@@ -230,6 +246,13 @@ server.listen(PORT, HOST, () => {
     ' (' + focusStorage.dataSource + ')' +
     ' · pending=' + focusStorage.pending +
     ' · writable=' + focusStorage.writable);
+  const bulletMarkStorage = bulletMarks.status();
+  console.log('[bullet-marks] history file data/' + bulletMarks.FILE +
+    ' · dataDir=' + bulletMarkStorage.dataDir +
+    ' (' + bulletMarkStorage.dataSource + ')' +
+    ' · records=' + bulletMarkStorage.records +
+    ' · pending=' + bulletMarkStorage.pending +
+    ' · writable=' + bulletMarkStorage.writable);
 });
 
 let shuttingDown = false;
@@ -245,7 +268,10 @@ function shutdown(signal) {
   }
   chatHistory.flush();
   focusMode.flush();
+  bulletMarks.flush();
   groupQr.flush();
+  persistenceQueue.flush();
+  persistenceQueue.shutdown();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref();
 }

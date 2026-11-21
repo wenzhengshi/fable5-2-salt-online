@@ -9,7 +9,7 @@
       ...style, key: 'sign:' + style.id, kind: 'sign', price: i < 5 ? 250000 : 400000
     })),
     ...Object.values(outfits).map((outfit, i) => ({
-      ...outfit, key: 'outfit:' + outfit.id, kind: 'outfit', price: i < 5 ? 500000 : 750000
+      ...outfit, key: 'outfit:' + outfit.id, kind: 'outfit', price: outfit.id === 'lunar-suit' ? 1000000 : i < 5 ? 500000 : 750000
     })),
     { key: pass, kind: 'pass', id: 'lunar', zh: '月球通行证', en: 'Lunar Pass', price: 1000000 }
   ].map(product => [product.key, Object.freeze(product)])));

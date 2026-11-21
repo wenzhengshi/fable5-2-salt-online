@@ -56,7 +56,10 @@
     const exitPoint = {};
     const exitGate = portal('expedition.returnToQingyun', { x: 0, y: 0, z: 0 }, 0x87eeff);
     exitGate.name = 'expedition-return-tunnel';
-    const raceGate = portal('deployment.racePortal', { x: 0, y: 0, z: 0 }, 0x56e5ff);
+    const raceGate = game.qingyun.createTunnel(t('deployment.racePortal'), 0x56e5ff, true, .82);
+    raceGate.position.set(0, 0, 0);
+    raceGate.visible = false;
+    scene.add(raceGate);
     raceGate.name = 'saltport-race-tunnel';
     let raceArea = '', racePoint, raceAttempted = false;
 
@@ -66,12 +69,12 @@
         const promise = (zone.id === 'mothlight'
           ? new Promise((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = '/maps/mothlight-environment.js';
+            script.src = '/maps/mothlight-environment.js?v=3';
             script.onload = () => resolve(window.createMothlightEnvironment());
             script.onerror = () => { script.remove(); reject(new Error('Mothlight load failed')); };
             document.head.append(script);
           })
-          : import('/maps/' + zone.id + '-environment.mjs?v=2').then(module => module.createEnvironment()))
+          : import('/maps/' + zone.id + '-environment.mjs?v=3').then(module => module.createEnvironment()))
           .catch(error => { loads.delete(zone.id); throw error; });
         loads.set(zone.id, promise);
       }
@@ -355,6 +358,9 @@
         return !liftRules.overlaps(point.x, z) || point.y < liftRules.BASE - .09 ||
           liftRules.floorFor(point.x, point.y, z, .10) !== null;
       },
+      waterLevelAt(x, z) {
+        return environment?.waterLevelAt?.(x, z - active.offset) ?? null;
+      },
       terrainHeight(x, z) {
         if (!active) return null;
         const height = Number(environment.heightAt(x, z - active.offset));
@@ -440,12 +446,12 @@
         const area = active?.id || (inHub ? 'qingyun' : 'port');
         if (playing && raceArea !== area) {
           raceArea = area;
-          const point = active ? { x:exitPoint.x+3.5, z:exitPoint.z, y:exitPoint.y }
-            : inHub ? { x:-7.4, z:window.SaltQingyunZone.offsetZ-5.5, y:1.5 }
-            : { x:window.SaltQingyunZone.gate.x+3.5, z:window.SaltQingyunZone.gate.z, y:window.SaltQingyunZone.gate.y };
-          point.y = active ? ground(point.x,point.z,point.y+3) : physics.groundHeight(point.x,point.z,point.y+3);
+          const point = window.SaltSedanRules.raceGate(area);
+          point.y = active ? ground(point.x,point.z,point.y+3)
+            : area === 'port' ? window.SaltQingyunZone.gate.y
+              : physics.groundHeight(point.x,point.z,point.y+3);
           racePoint = point;
-          raceGate.position.set(point.x,point.y+.06,point.z);
+          raceGate.position.set(point.x, area === 'port' ? point.y : point.y+.06, point.z);
           raceAttempted = false;
         }
         raceGate.visible = playing;
@@ -464,7 +470,10 @@
           if (!raceAttempted && hold('race',game.time.t,standing)) {
             raceAttempted = true;
             hold(null);
-            window.location.assign('/race/plaza');
+            window.SaltMapShell.openRace('plaza').catch(() => {
+              status.textContent = t('expedition.loadFailed');
+              status.style.display = 'block';
+            });
           }
           return;
         }

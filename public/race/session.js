@@ -235,6 +235,62 @@ const raceSession=(()=>{
     if(badge().textContent!==message)badge().textContent=message;
     badge().hidden=!message;
   }
+  const rosterDialog=el('race-roster');
+  const rosterButton=el('race-roster-open');
+  const mapLabels=new Map(destinations);
+  let presence=null;
+  let shownRoster='';
+  function renderPresence(){
+    const online=presence?.online??'—', local=presence?.local??'—';
+    el('race-total-online').textContent=online;
+    el('race-local-online').textContent=local;
+    if(!rosterDialog.open)return;
+    el('race-roster-counts').textContent=t('mp.titleOnline',{n:online})+' · '+t('mp.mapOnline')+' '+local;
+    el('race-roster-empty').hidden=!!presence?.rows.length;
+    el('race-roster-empty').textContent=t(presence?'raceResult.rosterEmpty':'mp.reconnecting');
+    const rows=presence?.rows??[];
+    const serialized=JSON.stringify(rows);
+    if(serialized===shownRoster)return;
+    shownRoster=serialized;
+    const items=[...rows].sort((a,b)=>Number(b.map==='race')-Number(a.map==='race')||
+      (a.name||a.id).localeCompare(b.name||b.id,document.documentElement.lang));
+    el('race-roster-list').replaceChildren(...items.map(player=>{
+      const row=document.createElement('li');
+      row.dataset.local=String(player.map==='race');
+      const name=document.createElement('span');
+      const location=document.createElement('span');
+      name.textContent=player.name||player.id;
+      location.textContent=player.map==='race'?t(({racing:'raceResult.rosterRacing',free:'raceResult.rosterFree'})[player.status]||'raceResult.rosterPlaza'):
+        player.status==='home'?t('mp.statusHome'):player.status==='focus'?t('mp.statusFocus'):
+        mapLabels.get(player.map)||t('mp.statusMap');
+      row.append(name,location);
+      return row;
+    }));
+  }
+  function updatePresence(message){
+    presence=message;
+    renderPresence();
+  }
+  function openRoster(){
+    if(rosterDialog.open)return;
+    rosterDialog.dispatchEvent(new Event('race:open'));
+    rosterDialog.showModal();
+    renderPresence();
+  }
+  rosterButton.addEventListener('click',openRoster);
+  rosterDialog.addEventListener('click',event=>{
+    if(event.target!==rosterDialog)return;
+    const rect=rosterDialog.getBoundingClientRect();
+    if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)rosterDialog.close();
+  });
+  document.addEventListener('keydown',event=>{
+    if(event.key!=='Tab'||event.repeat||event.shiftKey||event.defaultPrevented||rosterDialog.open||
+       el('race-presence').hidden||!el('race-history').hidden||!el('modal').hidden||
+       document.querySelector('dialog[open]')||window.SaltModal?.isOpen||
+       event.target?.closest?.('input, textarea, select, button, a, [contenteditable]'))return;
+    event.preventDefault();
+    openRoster();
+  });
   function acknowledge(message) {
     accepted=message.accepted;
     verified=message.tick;
@@ -268,13 +324,15 @@ const raceSession=(()=>{
         acknowledge(message);
         if(message.podium)change(message.podium);
         sentUntil=accepted;
-        displayConnection(crossed?'':'同场 1 人');
+        el('race-presence').hidden=false;
+        displayConnection('');
       } else if(message.type==='state'){
         previous=current;
         current=message;
         receivedAt=performance.now();
         acknowledge(message);
-        displayConnection(crossed?'':'同场 '+message.count+' 人');
+      } else if(message.type==='presence'){
+        if(!crossed)updatePresence(message);
       } else if(message.type==='podium')change(message.rows);
       else if(message.type==='boss'){
         showBoss(message.boss);
@@ -290,6 +348,7 @@ const raceSession=(()=>{
       clearTimeout(timeout);
       if(socket!==ws||finished||result)return;
       connected=false;
+      if(!crossed)updatePresence(null);
       if(!localReady){
         tell('暂时无法连接赛道，请重试。');
         return;
@@ -330,7 +389,7 @@ const raceSession=(()=>{
     el('race-history-open').hidden=false;
   }
   el('race-enter').addEventListener('click',()=>run(async()=>{
-    if(finished){location.assign('/?raceEntry=1');return;}
+    if(finished){window.top.location.assign('/');return;}
     await activate();
   }));
   for(const [id,label] of destinations){
@@ -340,17 +399,38 @@ const raceSession=(()=>{
     link.textContent=label;
     el('race-exits').append(link);
   }
-  function travel(id) {
-    if(!crossed||portalRequest)return;
-    const target='/race/transfer/'+id;
-    if(id==='qingyun')prefetchQingyun();
-    if(finished){location.assign(target);return;}
-    portalRequest=target;
-    // Give the last input batch and receipt a short opportunity to arrive before navigating.
+  let nextPortalId = 0;
+  function sendPortalRequest() {
+    if (!portalRequest || portalRequest.sent) return;
+    portalRequest.sent = true;
+    if (parent === window) {
+      const { map, vehicle } = portalRequest;
+      location.assign('/race/transfer/' + map + (vehicle ? '?vehicle=' + encodeURIComponent(vehicle) : ''));
+      return;
+    }
+    parent.postMessage({ type: 'salt-race-return', ...portalRequest, unit }, location.origin);
+  }
+
+  window.addEventListener('message', event => {
+    if (event.origin !== location.origin || event.source !== parent ||
+        event.data?.type !== 'salt-race-return-failed' || event.data.id !== portalRequest?.id) return;
+    if (portalRequest.vehicle && plazaSocket?.readyState === WebSocket.OPEN) {
+      plazaSocket.send(JSON.stringify({ type: 'vehicleCancelTravel', transfer: portalRequest.vehicle }));
+    }
+    portalRequest = null;
+  });
+
+  function travel(id, transfer) {
+    if (!crossed || portalRequest || !destinations.some(([map]) => map === id)) return;
+    portalRequest = { id: ++nextPortalId, map: id, vehicle: transfer };
+    if (finished) { sendPortalRequest(); return; }
+    // Give the last input batch and receipt a short opportunity to arrive.
     tell('传送门已启动，正在提交最后一段成绩…');
-    setTimeout(()=>{if(portalRequest)location.assign(portalRequest);},3500);
+    setTimeout(sendPortalRequest, 3500);
   }
   let plazaSocket, plazaId, plazaPrevious, plazaCurrent, plazaSpawn;
+  let freeCar, freeCarReceivedAt=0, freeInputAt=0;
+  let vehicleTransfer=new URLSearchParams(location.search).get('vehicle');
   let plazaReceivedAt=0, plazaSentAt=-Infinity, plazaOutfit;
   let plazaRetry=1000, gotPlazaSpawn=false, leavingPlaza=false;
   window.addEventListener('pagehide',()=>{
@@ -373,6 +453,7 @@ const raceSession=(()=>{
     const url=new URL('/ws',location.href);
     url.protocol=location.protocol==='https:'?'wss:':'ws:';
     url.search=new URLSearchParams({race:'1',plaza:'1',name:currentName(),unit,outfit:plazaOutfit});
+    if(vehicleTransfer)url.searchParams.set('vehicle',vehicleTransfer);
     const ws=new WebSocket(url);
     plazaSocket=ws;
     summary.textContent=t('raceResult.plazaConnecting');
@@ -384,10 +465,24 @@ const raceSession=(()=>{
       if(message.type==='plazaJoined'){
         clearTimeout(timeout);
         plazaId=message.id;
+        if(vehicleTransfer){
+          vehicleTransfer=null;
+          history.replaceState(null,'',location.pathname);
+        }
         plazaInventory=message.inventory;
         plazaRetry=1000;
         if(visiting&&!gotPlazaSpawn)plazaSpawn=message.spawn;
         gotPlazaSpawn=true;
+        el('race-presence').hidden=false;
+      }else if(message.type==='presence'){
+        updatePresence(message);
+      }else if(message.type==='freeVehicle'){
+        freeCar=message.car;
+        freeCarReceivedAt=performance.now();
+      }else if(message.type==='vehicleTravel'){
+        if(destinations.some(([id])=>id===message.map)){
+          travel(message.map,message.transfer);
+        }
       }else if(message.type==='plazaState'){
         plazaPrevious=plazaCurrent;
         plazaCurrent=message;
@@ -418,7 +513,9 @@ const raceSession=(()=>{
       plazaSocket=null;
       plazaPrevious=plazaCurrent=null;
       plazaId=null;
+      freeCar=null;
       if(leavingPlaza)return;
+      updatePresence(null);
       summary.textContent=t('raceResult.plazaDisconnected');
       el('race-plaza-drivers').replaceChildren();
       setTimeout(connectPlaza,plazaRetry);
@@ -486,8 +583,20 @@ const raceSession=(()=>{
       const lead=Math.min(.15,Math.max(0,(delta-100)/1000));
       return {
         walkers:blendList(plazaPrevious?.walkers||[],plazaCurrent.walkers,mix,0).filter(peer=>peer.id!==plazaId),
-        peers:blendList(plazaPrevious?.cars||[],plazaCurrent.cars,mix,lead)
+        peers:blendList(plazaPrevious?.cars||[],plazaCurrent.cars,mix,lead).filter(peer=>peer.id!==plazaId)
       };
+    },
+    get freeCar(){return freeCar;},
+    get freeCarAge(){return Math.min(.12,Math.max(0,(performance.now()-freeCarReceivedAt)/1000));},
+    sendVehicle(message){
+      if(plazaSocket?.readyState!==WebSocket.OPEN||plazaSocket.bufferedAmount>4096)return false;
+      if(message.type==='vehicleInput'){
+        const now=performance.now();
+        if(now-freeInputAt<55)return false;
+        freeInputAt=now;
+      }
+      plazaSocket.send(JSON.stringify(message));
+      return true;
     },
     takeLaunch(){const pose=launch;launch=null;return pose;},
     record(command,car,previousSpeed){
@@ -564,7 +673,7 @@ const raceSession=(()=>{
       if(receipt.bossClaim?.amount)segments.push(t('raceBoss.defeatedShort',{amount:coins(receipt.bossClaim.amount)}));
       if(receipt.bossSpawned?.active)segments.push(t('raceBoss.spawned',{amount:coins(receipt.bossSpawned.amount)}));
       tell(segments.join(' · '));
-      if(portalRequest)location.assign(portalRequest);
+      sendPortalRequest();
       el('race-exit-panel').hidden=false;
     },
     restart(){
@@ -575,7 +684,7 @@ const raceSession=(()=>{
         });
         if(!confirmed||finished)return;
         await call('abandon',{id:ticket});
-        location.assign('/?raceEntry=1');
+        window.top.location.assign('/');
       });
     },
     get unit(){return unit;},

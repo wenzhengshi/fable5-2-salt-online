@@ -74,6 +74,7 @@ module.exports = {
         deathReplayAuthoritative: true,
         deathReplayRateHz: 10,
         deathReplayWindowMs: deathReplay.WINDOW_MS,
+        sharedBulletMarks: true,
         multiplayerBoat: true,
         boatSeats: 4,
         boatMissionRequired: false,

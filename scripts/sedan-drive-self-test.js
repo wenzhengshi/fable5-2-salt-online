@@ -37,6 +37,16 @@ assert.ok(rules.turnRate(.5, -10) < 0, '倒车时转向方向应随车速反向'
 assert.ok(Math.abs(rules.turnRate(-rules.steerLimit(rules.maxSpeed), rules.maxSpeed)) <= 1.9 + .12 / .28,
   '高速最大转向角速度不得超出服务端单帧校验');
 
+assert.equal(rules.hudVisible({ present: true, alive: true }), true, '地面驾驶时应显示轿车 HUD');
+assert.equal(rules.hudVisible({ present: true, alive: true, portalFall: true }), false,
+  '角色传送下落时不应显示刹车按钮和旁边的空按钮');
+assert.equal(rules.hudVisible({ present: true, alive: true, airborne: true }), false,
+  '运输机跳伞时应隐藏轿车 HUD');
+assert.equal(rules.hudVisible({ present: true, alive: true, carFall: true }), false,
+  '轿车空降动画期间应隐藏轿车 HUD');
+assert.equal(rules.hudVisible({ present: false, alive: true }), false, '没有车辆状态时不应显示 HUD');
+assert.equal(rules.hudVisible({ present: true, alive: false }), false, '阵亡后不应显示 HUD');
+
 const players = new Map();
 const sent = [];
 const driver = {

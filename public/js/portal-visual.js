@@ -15,12 +15,12 @@
     return new THREE.CanvasTexture(sign);
   }
 
-  function create(THREE,title,color=0x56e5ff,ellipse=.68) {
+  function create(THREE,title,color=0x56e5ff,ellipse=.68,upright=false) {
     const gate=new THREE.Group();
     const tint=new THREE.Color(color);
     const ringMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.25) });
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, .095, 12, 80), ringMaterial);
-    ring.rotation.x = -Math.PI / 2;
+    ring.rotation.x = upright ? 0 : -Math.PI / 2;
     ring.scale.y = ellipse;
     gate.add(ring);
     const vortex = new THREE.Mesh(new THREE.CircleGeometry(1.23, 80), new THREE.ShaderMaterial({
@@ -51,15 +51,15 @@
         }
       `
     }));
-    vortex.rotation.x = -Math.PI / 2;
+    vortex.rotation.x = upright ? 0 : -Math.PI / 2;
     vortex.scale.y = ellipse;
-    vortex.position.y = .012;
+    vortex.position.y = upright ? 0 : .012;
     gate.add(vortex);
 
     const label = new THREE.Sprite(new THREE.SpriteMaterial({
       map: signTexture(THREE,title), color:tint.clone().lerp(new THREE.Color(0xffffff), .55), depthWrite: false
     }));
-    label.position.y = .72;
+    label.position.y = upright ? 1.28 : .72;
     label.scale.set(3.6, .675, 1);
     gate.add(label);
     return gate;

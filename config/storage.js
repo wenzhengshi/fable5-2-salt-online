@@ -259,10 +259,47 @@ function updateJson(file, updater) {
   }
 }
 
-function appendJsonl(file, record) {
+function writeJsonl(file, rows) {
   ensureDir(DATA_DIR);
   const full = path.join(DATA_DIR, file);
-  const buffer = Buffer.from(JSON.stringify(record) + '\n', 'utf8');
+  const release = acquireFileLock(full);
+  try {
+    const text = (Array.isArray(rows) ? rows : [])
+      .map((row) => JSON.stringify(row))
+      .filter(Boolean)
+      .join('\n');
+    const buffer = Buffer.from(text ? text + '\n' : '', 'utf8');
+    const tmp = full + '.' + process.pid + '.' + Date.now() + '.' + (++tempCounter) + '.tmp';
+    let fd;
+    try {
+      fd = fs.openSync(tmp, 'wx', DATA_FILE_MODE);
+      relaxProjectDataFile(fd);
+      writeAll(fd, buffer);
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+      fs.renameSync(tmp, full);
+      fsyncDir(DATA_DIR);
+      writable = true;
+      lastProbeError = null;
+    } catch (err) {
+      if (fd !== undefined) {
+        try { fs.closeSync(fd); } catch (closeErr) { /* ignore */ }
+      }
+      try { fs.unlinkSync(tmp); } catch (unlinkErr) { /* ignore */ }
+      throw err;
+    }
+  } finally {
+    release();
+  }
+}
+
+function appendJsonlBatch(file, records) {
+  const rows = Array.isArray(records) ? records : [records];
+  const lines = rows.map((row) => JSON.stringify(row)).filter(Boolean).join('\n');
+  if (!lines) return;
+  ensureDir(DATA_DIR);
+  const full = path.join(DATA_DIR, file);
   const release = acquireFileLock(full);
   try {
     let needsSeparator = false;
@@ -286,7 +323,7 @@ function appendJsonl(file, record) {
     const fd = openAppendFile(full);
     try {
       if (needsSeparator) fs.writeSync(fd, '\n');
-      writeAll(fd, buffer);
+      writeAll(fd, Buffer.from(lines + '\n', 'utf8'));
       fs.fsyncSync(fd);
     } finally {
       fs.closeSync(fd);
@@ -297,6 +334,10 @@ function appendJsonl(file, record) {
   } finally {
     release();
   }
+}
+
+function appendJsonl(file, record) {
+  appendJsonlBatch(file, [record]);
 }
 
 function readJsonl(file) {
@@ -367,6 +408,8 @@ module.exports = {
   readJson,
   writeJson,
   updateJson,
+  writeJsonl,
+  appendJsonlBatch,
   appendJsonl,
   readJsonl,
   ensureFile,

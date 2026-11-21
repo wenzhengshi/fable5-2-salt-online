@@ -6,7 +6,7 @@
   const zone = {
     offsetZ,
     bounds: { minX: -175, maxX: 175, minZ: offsetZ - 120, maxZ: offsetZ + 228 },
-    gate: { x: 28.1, y: 1.45, z: 24.7 },
+    gate: { x: 94.5, y: 1.42, z: 2 },
     landing: { x: 0, y: 7.1, z: offsetZ - 35.05 },
     hubReturnGate: { x: 0, y: 7.1, z: offsetZ - 36.3 },
     returnGate: { x: -12, y: 3.37, z: offsetZ - 14 },

@@ -298,7 +298,9 @@
       parent.append(element);
       return element;
     }
+    let passwordBookOpen = false;
     function reset(title) {
+      passwordBookOpen = false;
       heading.textContent = title;
       notice.textContent = '';
       content.replaceChildren();
@@ -347,6 +349,121 @@
         if (relock && !force) input.requestLock();
       }
     }
+    const passwordBookKey = 'saltline.password-book.v1';
+    const bookTitle = tr('密码本', 'Password book');
+    function readBook() {
+      const value = JSON.parse(localStorage.getItem(passwordBookKey) || '[]');
+      return Array.isArray(value) ? value.filter(row =>
+        typeof row?.label === 'string' && typeof row?.password === 'string') : [];
+    }
+    function passwordBook(initial = '', back = menu) {
+      reset(bookTitle);
+      passwordBookOpen = true;
+      notice.textContent = tr(
+        '密码只保存在当前浏览器本地，不上传云端，也不会同步到其他设备。清除本站数据会删除记录。',
+        'Passwords are stored only in this browser. They are not uploaded or synced. Clearing this site’s data removes the entries.'
+      );
+      const status = document.createElement('p');
+      status.setAttribute('role', 'status');
+      const form = document.createElement('form');
+      const label = document.createElement('input');
+      label.maxLength = 48;
+      label.placeholder = tr('备注，如「湾城仓库」', 'Label, e.g. Bayhaven storage');
+      label.setAttribute('aria-label', tr('备注', 'Label'));
+      const password = document.createElement('input');
+      password.type = 'password';
+      password.autocomplete = 'off';
+      password.spellcheck = false;
+      password.maxLength = 120;
+      password.required = true;
+      password.placeholder = tr('输入密码', 'Enter password');
+      password.setAttribute('aria-label', tr('密码', 'Password'));
+      password.value = initial;
+      const save = document.createElement('button');
+      save.type = 'submit';
+      save.textContent = tr('保存到本机', 'Save on this device');
+      form.append(label, password, save);
+      const list = document.createElement('ul');
+      list.className = 'container-password-book';
+      list.setAttribute('aria-label', tr('已保存的密码', 'Saved passwords'));
+      const manualCopy = document.createElement('input');
+      manualCopy.readOnly = true;
+      manualCopy.hidden = true;
+      manualCopy.setAttribute('aria-label', tr('手动复制密码', 'Copy password manually'));
+      function clearManualCopy() {
+        manualCopy.value = '';
+        manualCopy.hidden = true;
+      }
+      manualCopy.addEventListener('blur', clearManualCopy);
+      content.append(form, list, status, manualCopy);
+      const storageError = () => { status.textContent = tr('无法访问浏览器本地存储。', 'Browser storage is unavailable.'); };
+
+      function render() {
+        list.replaceChildren();
+        let rows;
+        try { rows = readBook(); } catch { storageError(); return; }
+        for (const row of rows) {
+          const item = document.createElement('li');
+          const name = document.createElement('b');
+          name.textContent = row.label;
+          item.append(name);
+          button(item, tr('复制', 'Copy'), async () => {
+            clearManualCopy();
+            try {
+              await navigator.clipboard.writeText(row.password);
+              status.textContent = tr('已复制密码。', 'Password copied.');
+            } catch {
+              manualCopy.hidden = false;
+              manualCopy.value = row.password;
+              manualCopy.focus();
+              manualCopy.select();
+              status.textContent = tr('已选中密码，可手动复制。', 'Password selected for manual copying.');
+            }
+          });
+          let confirmed = false;
+          const remove = button(item, tr('删除', 'Delete'), () => {
+            if (!confirmed) {
+              confirmed = true;
+              remove.textContent = tr('确认删除', 'Confirm delete');
+              return;
+            }
+            try {
+              localStorage.setItem(passwordBookKey, JSON.stringify(readBook().filter(
+                entry => entry.password !== row.password
+              )));
+              render();
+              status.textContent = tr('已删除本地记录。', 'Local entry deleted.');
+            } catch { storageError(); }
+          });
+          list.append(item);
+        }
+        if (!rows.length) {
+          const empty = document.createElement('li');
+          empty.textContent = tr('还没有保存密码。', 'No passwords saved yet.');
+          list.append(empty);
+        }
+      }
+
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const value = password.value;
+        if (!value.trim()) return;
+        try {
+          const rows = readBook();
+          const existing = rows.find(entry => entry.password === value);
+          localStorage.setItem(passwordBookKey, JSON.stringify([
+            { label: label.value.trim() || existing?.label || tr('集装箱密码', 'Container password'), password: value },
+            ...rows.filter(entry => entry.password !== value)
+          ]));
+          label.value = password.value = '';
+          render();
+          status.textContent = tr('已保存到当前浏览器。', 'Saved in this browser.');
+        } catch { storageError(); }
+      });
+      button(footer, tr('返回', 'Back'), back);
+      render();
+    }
+
     function menu() {
       reset(tr('个人集装箱', 'Personal container'));
       const list = document.createElement('div');
@@ -359,6 +476,7 @@
       button(list, tr('创建集装箱', 'Create container'), () => form('create'));
       button(list, tr('搬到这里', 'Move here'), () => form('move'));
       button(list, tr('查找我的集装箱', 'Find my container'), () => form('locate'));
+      button(list, bookTitle, () => passwordBook());
       button(footer, tr('返回游戏', 'Back to game'), () => dismiss());
     }
     function form(action) {
@@ -591,6 +709,7 @@
       options.className = 'container-password-options';
       content.append(options);
       button(options, tr('复制密码', 'Copy password'), () => copyText(code.value, code));
+      button(options, tr('存进密码本', 'Save to password book'), () => passwordBook(issued, showPassword));
       const phrase = document.createElement('textarea');
       phrase.rows = 3;
       phrase.readOnly = true;
@@ -620,21 +739,22 @@
       code.select();
     }
     function openMenu() {
-      if (dialog.open || !map || !player.alive || game.game.state !== 'playing' ||
+      if (dialog.open || !player.alive || game.game.state !== 'playing' ||
           document.querySelector('dialog[open]')) return;
       menuTarget = target;
       relock = !!document.pointerLockElement;
       input.setGameplay(false);
       input.exitLock();
       dialog.showModal();
-      if (issued) { reveal = true; showPassword(); }
+      if (!map || !mp?.connected) passwordBook('', () => dismiss());
+      else if (issued) { reveal = true; showPassword(); }
       else if (openedId) inventory();
       else menu();
     }
     control.addEventListener('click', openMenu);
     dialog.addEventListener('cancel', event => {
       event.preventDefault();
-      if (!reveal) dismiss(false, !!openedId);
+      if (!reveal || passwordBookOpen) dismiss(false, !!openedId);
     });
     window.addEventListener('keydown', event => {
       if (dialog.open) { event.stopImmediatePropagation(); return; }
@@ -753,9 +873,17 @@
           map = nextMap;
           listAt = -Infinity;
         }
-        const playing = !!map && mp?.connected && player.alive && game.game.state === 'playing' &&
-          !game.frontier?.airborne && !game.sedan?.riding;
-        toolbar.hidden = !playing;
+        const canOpenBook = player.alive && game.game.state === 'playing' &&
+          !game.frontier?.airborne && !game.portalArrival?.active && !game.sedan?.riding;
+        const playing = !!map && mp?.connected && canOpenBook;
+        toolbar.hidden = !canOpenBook;
+        if (!playing) {
+          setText(control, bookTitle);
+          if (control.getAttribute('aria-label') !== bookTitle) {
+            control.setAttribute('aria-label', bookTitle);
+            control.title = bookTitle;
+          }
+        }
         const depositRow = openedId ? models.get(openedId)?.row : null;
         const showDeposit = playing && nearbyBox(depositRow);
         depositHud.hidden = !showDeposit;
@@ -768,7 +896,7 @@
           setText(depositButton, label);
           depositButton.disabled = !inside || !carried || !!pending;
         }
-        if (!playing && dialog.open) {
+        if (dialog.open && (!canOpenBook || !playing && !passwordBookOpen)) {
           pending = null;
           dismiss(true);
         }

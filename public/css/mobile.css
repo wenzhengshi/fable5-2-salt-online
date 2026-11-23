@@ -56,8 +56,8 @@ body.is-touch:not(:has(.menu[data-screen="title"])) .vc-rail :is(.vc-mic-copy, .
 body.is-touch:not(:has(.menu[data-screen="title"])) #sr-tools { left: var(--gl); }
 body.is-touch:not(:has(.menu[data-screen="title"])) #sr-tools button { min-width: 44px; min-height: 44px; }
 body.is-touch:not(:has(.menu[data-screen="title"])) #sr-tools button em { display: none; }
-.is-touch .seg { flex-wrap: wrap; }
-.is-touch .seg button { flex-basis: 33.33%; min-height: 44px; white-space: normal; padding-inline: 2px; }
+.is-touch .seg { flex-wrap: nowrap; }
+.is-touch .seg button { flex: 1 1 0; min-height: 44px; white-space: nowrap; padding-inline: 0; }
 
 @media (max-width: 760px), (pointer: coarse) {
   :root {
@@ -112,6 +112,7 @@ body.is-touch:not(:has(.menu[data-screen="title"])) #sr-tools button em { displa
   .mp-kd i, .mp-net { font-size: 8px !important; }
   .mp-kd b { font-size: 10.5px !important; }
   .mp-ping { font-size: 9px !important; }
+  .mp-ping[data-queue]::after { content: none; }
   .mp-roster-btn { font-size: 8.5px !important; }
   .mp-fl { font-size: 10px !important; letter-spacing: 0.1em !important; }
   .mp-unit, .mp-unit b { font-size: 9.5px !important; }

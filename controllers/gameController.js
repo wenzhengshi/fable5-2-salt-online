@@ -10,6 +10,7 @@ const focusMode = require('../services/focusMode');
 const deathReplay = require('../services/deathReplay');
 const goldPickupLog = require('../services/goldPickups');
 const goldLedger = require('../services/goldLedger');
+const playSchedule = require('../services/playSchedule');
 const { version: RELEASE_VERSION } = require('../package.json');
 
 const GOLD_PICKUP_MAP_KEYS = {
@@ -103,6 +104,10 @@ module.exports = {
         statusEndpoint: '/api/focus/status',
         startEndpoint: '/api/focus/start'
       },
+      playSchedule: {
+        ...playSchedule.descriptor(),
+        statusEndpoint: '/api/game/play-schedule'
+      },
       comms: {
         voice: 'server-pcm-relay',
         sampleRate: 16000,
@@ -184,6 +189,14 @@ module.exports = {
       players: online,
       respawnSeconds: Math.round(RESPAWN_MS / 1000),
       leaderboard: getLeaderboard(req.query && req.query.limit)
+    });
+  },
+
+  playSchedule(req, res) {
+    res.json({
+      ...playSchedule.status(),
+      lang: req.lang,
+      schedule: playSchedule.descriptor()
     });
   },
 

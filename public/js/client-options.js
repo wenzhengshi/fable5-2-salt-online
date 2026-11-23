@@ -1,23 +1,18 @@
 /*
- * client-options.js — client-side quality, graphics and benchmark options
+ * client-options.js — client-side quality and display options
  *
- * Adds:
- *   1. "Auto" quality tier (default when no saved preference): picks a device
- *      preset at boot, then only downgrades at runtime when FPS stays low.
- *   2. A grouped settings pane with a compact quality entry. Quality tiers and
- *      render controls live in a right-side "Advanced graphics" drawer that
- *      slides in at the same width as the settings panel.
- *   3. Live per-tier effect controls: shadows, bloom, planar reflection,
- *      volumetric light, MSAA and AO. Render scale is also live but applies to
- *      all tiers.
- *   4. A bottom advanced box (save + reload): dynamic resolution, motion blur,
- *      rain density, texture size, anisotropy and frame-rate cap. Vertical sync
- *      is intentionally not offered. Only this box needs a reload; tier,
- *      effects and render scale apply live.
+ * The quality control mirrors the standalone Saltline build:
+ *   1. Four manual presets (low / medium / high / ultra) with the exact same
+ *      renderer values and device auto-detection as the standalone HTML.
+ *   2. The saved value defaults to "auto" but the panel only shows the four
+ *      buttons; the detected tier is highlighted until the player picks one.
+ *   3. A click applies the full preset immediately and persists the choice.
+ *   4. Per-tier effects and global advanced values are merged into the preset
+ *      sent to the renderer; the smart resolution governor only changes
+ *      internal pixels and never silently changes a manual tier.
  *   5. A bilingual SALTLINE BENCH overlay with a small visibility toggle.
  *   6. Banner text/backdrop opacity and text size (localStorage, not on the
- *      server). The opacity slider fades the message text and its dark card
- *      together; text size scales the message and the card padding.
+ *      server).
  *
  * The engine hooks used here are deliberately limited and documented in
  * game.bundle.js: setDynamicResolution, setRainDensity and the animation-loop
@@ -43,39 +38,34 @@
   const BANNER_FONT_MAX = 130;
   const BANNER_FONT_STEP = 5;
   const GRAPHICS_KEY = 'saltline.graphics.v1';
+  const GRAPHICS_PROFILE_VERSION = 2;
   const GRAPHICS_CAP_KEY = 'saltline.graphics.tierCaps.v1';
-  const VOLUME_OFF_MIGRATION_KEY = 'saltline.volumetricOff.v1';
   const AUTO_TIER = 'auto';
+  const QUALITY_TIERS = ['low', 'medium', 'high', 'ultra'];
+  const LEGACY_QUALITY_TIERS = { minimal: 'low', smooth: 'low' };
   const RANK = { minimal: 0, smooth: 1, low: 2, medium: 3, high: 4, ultra: 5 };
-  const NEXT_TIER = { ultra: 'high', high: 'medium', medium: 'low', low: 'smooth', smooth: 'minimal' };
+  const NEXT_TIER = { ultra: 'high', high: 'medium', medium: 'low' };
 
-  // Auto only. Manual tiers are never touched by this table. Expedition maps
-  // have very different static-scene budgets (Bayhaven streams 40 m chunks,
-  // Dustfall/Mothlight build a full city in one scene), so Auto must not start
-  // every map at the same tier. This is a starting budget, not a silent cap on
-  // a user-selected tier; autoTick may still lower further after sustained low FPS.
+  // Auto only. Manual tiers are never touched by this table. The smart
+  // resolution governor keeps the selected tier's look while reducing only
+  // internal pixels, so dense maps can start one step higher than before.
   const MAP_AUTO_CAP = {
-    bayhaven: 'medium',
-    dustfall: 'low',
-    mothlight: 'low',
-    lunar: 'low'
+    bayhaven: 'high',
+    dustfall: 'medium',
+    mothlight: 'medium',
+    lunar: 'medium'
   };
   const TIERS = ['minimal', 'smooth', 'low', 'medium', 'high', 'ultra'];
   const TIER_CN = { minimal: '极低', smooth: '流畅', low: '低', medium: '中', high: '高', ultra: '极高' };
   const TIER_EN = { minimal: 'Minimal', smooth: 'Smooth', low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' };
 
-  // Keep these in sync with Pr in game.bundle.js. PRESETS are the new-tier
-  // defaults; TIER_CAPS below is the hard ceiling applied on top.
+  // Nominal presets. Player-editable tier effects and global advanced values
+  // are merged into these by effectivePreset() before render.setQuality().
   const PRESETS = {
-    minimal: { name: 'minimal', scale: .5, msaa: 0, shadow: 0, tex: 256, volSteps: 0, ao: false, planar: 0, bloom: false, motionBlur: false, rain: .2, maxDpr: 1 },
-    smooth: { name: 'smooth', scale: .74, msaa: 0, shadow: 0, tex: 512, volSteps: 0, ao: false, planar: 0, bloom: false, motionBlur: false, rain: 0, maxDpr: 1 },
-    // Low and Medium start with every optional effect off. The caps below
-    // still allow the user to turn a cheap version back on (shadow <=512,
-    // volume <=4/8, etc.); starting them on was the hidden 12–15 fps cost.
-    low: { name: 'low', scale: .65, msaa: 0, shadow: 0, tex: 512, volSteps: 0, ao: false, planar: 0, bloom: false, motionBlur: false, rain: .35 },
-    medium: { name: 'medium', scale: .65, msaa: 0, shadow: 0, tex: 1024, volSteps: 0, ao: false, planar: 0, bloom: false, motionBlur: false, rain: .6 },
-    high: { name: 'high', scale: .9, msaa: 2, shadow: 2048, tex: 1024, volSteps: 16, ao: true, planar: .5, bloom: true, motionBlur: true, rain: .8 },
-    ultra: { name: 'ultra', scale: 1, msaa: 4, shadow: 4096, tex: 1024, volSteps: 40, ao: true, planar: 1, bloom: true, motionBlur: true, rain: 1 }
+    low: { name: 'low', scale: .7, maxDpr: 1.25, msaa: 0, shadow: 1024, tex: 512, volSteps: 12, ao: false, planar: 0, bloom: true, motionBlur: false, rain: .5 },
+    medium: { name: 'medium', scale: .85, maxDpr: 1.5, msaa: 2, shadow: 2048, tex: 1024, volSteps: 16, ao: true, planar: .5, bloom: true, motionBlur: false, rain: .8 },
+    high: { name: 'high', scale: 1, maxDpr: 2, msaa: 4, shadow: 4096, tex: 1024, volSteps: 24, ao: true, planar: .5, bloom: true, motionBlur: true, rain: 1 },
+    ultra: { name: 'ultra', scale: 1, maxDpr: 3, msaa: 4, shadow: 4096, tex: 2048, volSteps: 40, ao: true, planar: 1, bloom: true, motionBlur: true, rain: 1 }
   };
 
   // Hard budgets for each tier. PRESETS describe the nominal look; these
@@ -89,10 +79,10 @@
   const TIER_CAPS = {
     minimal: { scale: 50, shadow: 0, bloom: false, planar: 0, volSteps: 0, msaa: 0, ao: false, texture: 256, anisotropy: 1, rain: .2, motionBlur: false },
     smooth: { scale: 74, shadow: 0, bloom: false, planar: 0, volSteps: 0, msaa: 0, ao: false, texture: 512, anisotropy: 2, rain: 0, motionBlur: false },
-    low: { scale: 65, shadow: 512, bloom: false, planar: 0, volSteps: 4, msaa: 0, ao: false, texture: 512, anisotropy: 2, rain: .35, motionBlur: false },
-    medium: { scale: 75, shadow: 1024, bloom: true, planar: 0, volSteps: 8, msaa: 0, ao: false, texture: 1024, anisotropy: 4, rain: .6, motionBlur: false },
-    high: { scale: 90, shadow: 2048, bloom: true, planar: .5, volSteps: 16, msaa: 2, ao: true, texture: 1024, anisotropy: 8, rain: .8, motionBlur: true },
-    ultra: { scale: 100, shadow: 4096, bloom: true, planar: 1, volSteps: 40, msaa: 4, ao: true, texture: 1024, anisotropy: 8, rain: 1, motionBlur: true }
+    low: { scale: 70, shadow: 1024, bloom: true, planar: 0, volSteps: 12, msaa: 0, ao: false, texture: 512, anisotropy: 4, rain: .5, motionBlur: false },
+    medium: { scale: 85, shadow: 2048, bloom: true, planar: .5, volSteps: 16, msaa: 2, ao: true, texture: 1024, anisotropy: 8, rain: .8, motionBlur: false },
+    high: { scale: 100, shadow: 4096, bloom: true, planar: .5, volSteps: 24, msaa: 4, ao: true, texture: 1024, anisotropy: 16, rain: 1, motionBlur: true },
+    ultra: { scale: 100, shadow: 4096, bloom: true, planar: 1, volSteps: 40, msaa: 4, ao: true, texture: 1024, anisotropy: 16, rain: 1, motionBlur: true }
   };
 
   let G = null;
@@ -124,6 +114,17 @@
   let savedFlashTimer = 0;
   let gfxCloseTimer = 0;
   let lastAppliedSignature = '';
+  let adaptiveRatio = 1;
+  let adaptiveBaseScale = 1;
+  let adaptiveAccum = 0;
+  let adaptiveFrames = 0;
+  let adaptiveSlowWindows = 0;
+  let adaptiveFastWindows = 0;
+  let adaptiveCooldown = 0;
+
+  const SMART_FLOOR = { low: .62, medium: .72, high: .82, ultra: .88 };
+  const SMART_RAISE_DELAY = 1800;
+  const SMART_LOWER_DELAY = 900;
 
   const EFFECTS = {
     shadow: { zh: '阴影', en: 'Shadows' },
@@ -140,6 +141,17 @@
   const UI_LANG = (window.__SALT_I18N__ && window.__SALT_I18N__.lang) === 'en-US' ? 'en-US' : 'zh-CN';
   const UI_EN = UI_LANG === 'en-US';
   const pick = (zh, en) => (UI_EN ? en : zh);
+  const messages = (window.__SALT_I18N__ && window.__SALT_I18N__.messages) || {};
+  const tr = (key, vars, fallback) => {
+    const value = String(key || '').split('.').reduce(
+      (acc, part) => (acc && typeof acc === 'object' ? acc[part] : undefined),
+      messages
+    );
+    const text = typeof value === 'string' ? value : (fallback || key);
+    return String(text).replace(/\{(\w+)\}/g, (match, name) => (
+      vars && Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match
+    ));
+  };
   const tierLabel = tier => (UI_EN ? TIER_EN[tier] : TIER_CN[tier]);
   const pair = (zh, en, secondaryTag) => {
     const tag = secondaryTag || 'em';
@@ -160,17 +172,29 @@
     }
   }
 
+  function normalizeQualityTier(value) {
+    const raw = String(value || '');
+    if (QUALITY_TIERS.includes(raw)) return raw;
+    return LEGACY_QUALITY_TIERS[raw] || '';
+  }
+
   function savedQuality() {
     const value = readSettings().quality;
-    return value === AUTO_TIER || RANK[value] != null ? value : AUTO_TIER;
+    if (value === AUTO_TIER) return AUTO_TIER;
+    return normalizeQualityTier(value) || AUTO_TIER;
   }
 
   function saveQuality(quality) {
+    window.__SALT_MANUAL_QUALITY__ = quality !== AUTO_TIER;
     try {
       const settings = readSettings();
       settings.quality = quality;
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     } catch (error) { /* storage may be blocked */ }
+  }
+
+  function syncManualQualityFlag() {
+    window.__SALT_MANUAL_QUALITY__ = savedQuality() !== AUTO_TIER || !!forcedQuality();
   }
 
   function readOverlay() {
@@ -199,6 +223,18 @@
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       }
       localStorage.setItem(MIGRATION_KEY, '1');
+    } catch (error) { /* ignore */ }
+  }
+
+  // Older builds stored two extra tiers. The standalone panel only knows the
+  // four buttons, so fold those saves into Low without touching sens/volume.
+  function migrateLegacyQuality() {
+    try {
+      const settings = readSettings();
+      if (settings.quality === 'minimal' || settings.quality === 'smooth') {
+        settings.quality = 'low';
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      }
     } catch (error) { /* ignore */ }
   }
 
@@ -347,12 +383,14 @@
     // Gg() in game.bundle.js hard-caps the generated atlas at 1024 px. Keeping
     // 2048 in the UI would be a lie, so the model stops at 1024 as well.
     const textureValues = [0, 256, 512, 1024];
-    const anisoValues = [0, 1, 2, 4, 8];
+    const anisoValues = [0, 1, 2, 4, 8, 16];
     const texture = clampNumber(source.texture, 0, 1024, 256, 0);
-    const anisotropy = clampNumber(source.anisotropy, 0, 8, 1, 0);
+    const anisotropy = clampNumber(source.anisotropy, 0, 16, 1, 0);
     return {
       renderScale: source.renderScale == null ? null : clampNumber(source.renderScale, 50, 100, 5, 100),
-      dynamic: typeof source.dynamic === 'boolean' ? source.dynamic : null,
+      // Smart resolution is on by default. It only scales internal pixels and
+      // never changes a manually selected quality tier.
+      dynamic: typeof source.dynamic === 'boolean' ? source.dynamic : true,
       motionBlur: typeof source.motionBlur === 'boolean' ? source.motionBlur : null,
       rain: source.rain == null ? null : clampNumber(source.rain, 0, 1, .05, null),
       texture: textureValues.includes(texture) ? texture : 0,
@@ -363,7 +401,7 @@
 
   function readGraphics() {
     const result = {
-      version: 1,
+      version: GRAPHICS_PROFILE_VERSION,
       tiers: {},
       advanced: normalizeAdvanced(null)
     };
@@ -372,8 +410,13 @@
       const raw = localStorage.getItem(GRAPHICS_KEY);
       const parsed = raw ? JSON.parse(raw) : null;
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        for (const name of TIERS) {
-          result.tiers[name] = normalizeTier(name, parsed.tiers && parsed.tiers[name]);
+        // v1 capped Low/Medium with effects that were never connected to the
+        // renderer. v2 keeps the player's advanced values and quality choice,
+        // but rebuilds tier defaults from the real renderer presets.
+        if (Number(parsed.version) >= GRAPHICS_PROFILE_VERSION) {
+          for (const name of TIERS) {
+            result.tiers[name] = normalizeTier(name, parsed.tiers && parsed.tiers[name]);
+          }
         }
         result.advanced = normalizeAdvanced(parsed.advanced);
       } else {
@@ -390,55 +433,14 @@
         }
       }
     } catch (error) { /* storage may be blocked */ }
-    // One-time cleanup of the old nominal Medium/Low presets. Older saved
-    // files kept shadow and bloom ON for both tiers, so without this a user
-    // who upgrades still looks like the slow 10–15 fps screenshot even though
-    // the new defaults are lighter. This runs once; later manual toggles win.
-    try {
-      if (!localStorage.getItem(GRAPHICS_CAP_KEY)) {
-        for (const name of ['low', 'medium']) {
-          if (result.tiers[name]) {
-            result.tiers[name].shadow.on = false;
-            result.tiers[name].bloom.on = false;
-            // Older builds also kept the volumetric light path running on
-            // low/medium; it is an expensive full-screen pass even when the
-            // other five switches were off.
-            if (result.tiers[name].volumetric) result.tiers[name].volumetric.on = false;
-          }
-        }
-        localStorage.setItem(GRAPHICS_KEY, JSON.stringify({
-          version: 1,
-          tiers: result.tiers,
-          advanced: result.advanced
-        }));
-        localStorage.setItem(GRAPHICS_CAP_KEY, '1');
-      }
-    } catch (error) { /* storage may be blocked */ }
-    // This key is intentionally independent from GRAPHICS_CAP_KEY. Existing
-    // installs already have the older cap key set, so the previous migration
-    // below would be skipped forever and their saved Low/Medium tier would
-    // keep volumetric=ON. Run a separate one-shot cleanup so an upgrade fixes
-    // the hidden full-screen pass even before the user presses Reset.
-    try {
-      if (!localStorage.getItem(VOLUME_OFF_MIGRATION_KEY)) {
-        for (const name of ['low', 'medium']) {
-          if (result.tiers[name]?.volumetric) result.tiers[name].volumetric.on = false;
-        }
-        localStorage.setItem(GRAPHICS_KEY, JSON.stringify({
-          version: 1,
-          tiers: result.tiers,
-          advanced: result.advanced
-        }));
-        localStorage.setItem(VOLUME_OFF_MIGRATION_KEY, '1');
-      }
-    } catch (error) { /* storage may be blocked */ }
+    try { localStorage.setItem(GRAPHICS_CAP_KEY, '2'); } catch (error) { /* storage may be blocked */ }
     return result;
   }
 
   function saveGraphics() {
     try {
       localStorage.setItem(GRAPHICS_KEY, JSON.stringify({
-        version: 1,
+        version: GRAPHICS_PROFILE_VERSION,
         tiers: graphics.tiers,
         advanced: graphics.advanced
       }));
@@ -451,33 +453,31 @@
   function effectivePreset(name) {
     const preset = PRESETS[name];
     if (!preset) return null;
+    const state = graphics && graphics.tiers && graphics.tiers[name]
+      ? normalizeTier(name, graphics.tiers[name])
+      : defaultTier(name);
+    const advanced = graphics && graphics.advanced ? graphics.advanced : normalizeAdvanced(null);
     const cap = tierCap(name);
-    const state = graphics.tiers[name] || defaultTier(name);
-    const advanced = graphics.advanced;
-    const shadow = state.shadow.on ? Math.min(state.shadow.value, cap.shadow) : 0;
-    const planar = state.planar.on ? Math.min(state.planar.value, cap.planar) : 0;
-    const volSteps = state.volumetric.on ? Math.min(state.volumetric.value, cap.volSteps) : 0;
-    const msaa = state.msaa.on ? Math.min(state.msaa.value, cap.msaa) : 0;
-    const requestedScale = advanced.renderScale == null ? preset.scale : advanced.renderScale / 100;
+    const requestedScale = advanced.renderScale == null ? preset.scale * 100 : advanced.renderScale;
+    const rain = advanced.rain == null ? preset.rain : advanced.rain;
     return {
       ...preset,
-      scale: Math.min(requestedScale, cap.scale / 100),
-      tex: Math.min(preset.tex || cap.texture, cap.texture),
-      shadow,
-      planar,
-      volSteps,
-      msaa,
-      bloom: cap.bloom && !!state.bloom.on,
-      ao: cap.ao && !!state.ao.on,
-      water: state.water ? state.water.on !== false : true,
-      motionBlur: cap.motionBlur && (advanced.motionBlur == null ? !!preset.motionBlur : !!advanced.motionBlur)
+      tex: advanced.texture || preset.tex,
+      scale: Math.max(.5, Math.min(cap.scale, requestedScale) / 100),
+      shadow: state.shadow.on ? state.shadow.value : 0,
+      msaa: state.msaa.on ? state.msaa.value : 0,
+      volSteps: state.volumetric.on ? state.volumetric.value : 0,
+      ao: !!state.ao.on,
+      planar: state.planar.on ? state.planar.value : 0,
+      bloom: !!state.bloom.on,
+      motionBlur: !!(cap.motionBlur && (advanced.motionBlur == null ? preset.motionBlur : advanced.motionBlur)),
+      rain: Math.max(0, Math.min(cap.rain, rain))
     };
   }
 
   function effectiveRain(name) {
-    const preset = PRESETS[name] || PRESETS.medium;
-    const cap = tierCap(name);
-    return Math.min(cap.rain, graphics.advanced.rain == null ? preset.rain : graphics.advanced.rain);
+    const preset = effectivePreset(name) || PRESETS.medium;
+    return preset.rain;
   }
 
   function gpuName() {
@@ -500,15 +500,15 @@
     const touch = Number(navigator.maxTouchPoints) > 1;
     const shortSide = Math.min(Number(screen.width) || 0, Number(screen.height) || 0);
     const mobile = /Android|iPhone|iPad|Mobile/i.test(ua) || (touch && shortSide > 0 && shortSide < 900);
-    const memory = Number(navigator.deviceMemory) || 0;
-    const cores = Number(navigator.hardwareConcurrency) || 0;
-    if (mobile) {
-      const minimal = (memory > 0 && memory <= 3) || (cores > 0 && cores <= 4) || (shortSide > 0 && shortSide < 380);
-      return minimal ? 'minimal' : 'low';
-    }
     const renderer = gpuName();
-    if (/SwiftShader|llvmpipe|Software/i.test(renderer)) return 'minimal';
-    if (/Mali|Adreno|PowerVR/i.test(renderer)) return 'low';
+    if (/SwiftShader|llvmpipe|Software/i.test(renderer)) return 'low';
+    if (mobile) {
+      // Recent flagship mobile GPUs can hold Medium at the adaptive tier's
+      // 0.72 resolution floor; older Mali/Adreno/PowerVR parts stay on Low.
+      if (/Apple GPU|Adreno \(TM\) (?:6[5-9][0-9]|7[0-9][0-9]|8[0-9][0-9])|Mali-G(?:7[0-9]|8[0-9]|9[0-9])/i.test(renderer)) return 'medium';
+      return 'low';
+    }
+    if (/Mali|Adreno|PowerVR/i.test(renderer)) return 'medium';
     if (/Intel/i.test(renderer) && !/Arc/i.test(renderer)) return 'medium';
     return 'high';
   }
@@ -529,15 +529,21 @@
   }
 
   function displayTier() {
-    if (raceGraphics) return raceGraphics.getTier();
-    if (forcedQuality()) return forcedQuality();
-    if (G && G.quality && RANK[G.quality.name] != null) return G.quality.name;
+    if (raceGraphics) return normalizeQualityTier(raceGraphics.getTier()) || 'medium';
+    if (forcedQuality()) return normalizeQualityTier(forcedQuality()) || 'medium';
     const saved = savedQuality();
-    return saved === AUTO_TIER ? recommendedTier() : saved;
+    if (saved === AUTO_TIER) {
+      if (G && G.quality && RANK[G.quality.name] != null) {
+        return normalizeQualityTier(G.quality.name) || recommendedTier();
+      }
+      return recommendedTier();
+    }
+    return normalizeQualityTier(saved) || recommendedTier();
   }
 
   function forcedQuality() {
-    return G && G.params && RANK[G.params.q] != null ? G.params.q : '';
+    const requested = normalizeQualityTier(G && G.params && G.params.q);
+    return QUALITY_TIERS.includes(requested) ? requested : '';
   }
 
   function applyTier(name) {
@@ -546,44 +552,33 @@
     if (!preset) return false;
     const rain = effectiveRain(name);
     const signature = JSON.stringify(preset) + '|rain:' + rain;
-    const current = G.quality || {};
-    const sameQuality = current.name === preset.name
-      && Number(current.scale) === Number(preset.scale)
-      && Number(current.shadow || 0) === Number(preset.shadow || 0)
-      && Number(current.msaa || 0) === Number(preset.msaa || 0)
-      && Number(current.volSteps || 0) === Number(preset.volSteps || 0)
-      && Number(current.planar || 0) === Number(preset.planar || 0)
-      && !!current.bloom === !!preset.bloom
-      && !!current.ao === !!preset.ao
-      && !!current.motionBlur === !!preset.motionBlur;
-    if (sameQuality && lastAppliedSignature === signature) {
-      applyWaterSurface(preset.water !== false);
-      return true;
-    }
+    if (lastAppliedSignature === signature && G.quality && G.quality.name === preset.name) return true;
     try {
       G.render.setQuality({ ...preset });
+      adaptiveBaseScale = Number(preset.scale) || 1;
+      resetAdaptiveScale();
       // setQuality() intentionally resets the rain binary. Re-apply the
       // requested density after every quality change.
       if (typeof G.render.setRainDensity === 'function') {
         G.render.setRainDensity(rain);
       }
-      applyWaterSurface(preset.water !== false);
       lastAppliedSignature = signature;
       return true;
     } catch (error) {
-      // Never leave the client on a broken half-applied tier. Switching to
-      // minimal is recoverable; retrying the same bad combination is not.
+      // Never leave the client on a broken half-applied tier.
       console.warn('[client-options] setQuality failed', error);
       lastAppliedSignature = '';
       window.__SALT_GRAPHICS_SAFE__ = true;
       try {
-        const fallback = effectivePreset('minimal');
+        const fallback = effectivePreset('low');
         if (fallback) {
           G.render.setQuality({ ...fallback });
-          if (typeof G.render.setRainDensity === 'function') G.render.setRainDensity(effectiveRain('minimal'));
+          adaptiveBaseScale = Number(fallback.scale) || 1;
+          resetAdaptiveScale();
+          if (typeof G.render.setRainDensity === 'function') G.render.setRainDensity(effectiveRain('low'));
         }
       } catch (fallbackError) {
-        console.warn('[client-options] minimal fallback failed', fallbackError);
+        console.warn('[client-options] low fallback failed', fallbackError);
       }
       return false;
     }
@@ -606,14 +601,92 @@
     window.__SALT_FRAME_LAST__ = undefined;
   }
 
-  // Dynamic resolution is opt-in, never the default. If this is null (fresh
-  // install or Reset), the engine's own dynamic-resolution switch stays OFF.
-  // Otherwise S.scale starts at 1 and multiplies the tier's render scale; on
-  // Medium that made .75 × .55 ≈ .41, i.e. the blurry 634×289 screenshots.
+  // Smart resolution is on by default. It replaces the engine's coarse
+  // governor with a tier-aware floor and hysteresis, so high/ultra keep far
+  // more pixels before resolving downward.
   function applyDynamicResolution() {
-    if (!G || !G.render || typeof G.render.setDynamicResolution !== 'function') return;
-    const enabled = graphics.advanced.dynamic === true;
-    try { G.render.setDynamicResolution(enabled); } catch (error) { /* ignore */ }
+    if (!G || !G.render) return;
+    const enabled = graphics.advanced.dynamic !== false;
+    // The engine's original governor has a fixed 0.85 floor and coarse
+    // thresholds. Keep it disabled and run the smoother, tier-aware governor
+    // below instead.
+    try {
+      if (typeof G.render.setDynamicResolution === 'function') G.render.setDynamicResolution(false);
+    } catch (error) { /* ignore */ }
+    adaptiveBaseScale = Number(G.quality && G.quality.scale) || 1;
+    adaptiveRatio = 1;
+    adaptiveSlowWindows = 0;
+    adaptiveFastWindows = 0;
+    adaptiveCooldown = 0;
+    adaptiveAccum = 0;
+    adaptiveFrames = 0;
+    resetAdaptiveScale();
+    window.__SALT_SMART_RESOLUTION__ = { enabled, ratio: adaptiveRatio };
+  }
+
+  function resetAdaptiveScale() {
+    if (!G || !G.render || !G.quality) return;
+    adaptiveRatio = 1;
+    const next = adaptiveBaseScale * adaptiveRatio;
+    if (Math.abs((Number(G.quality.scale) || 1) - next) > 1e-4) {
+      G.quality.scale = next;
+      try { G.render.resize(); } catch (error) { /* ignore */ }
+    }
+    if (window.__SALT_SMART_RESOLUTION__) window.__SALT_SMART_RESOLUTION__.ratio = adaptiveRatio;
+  }
+
+  function setAdaptiveScale(ratio) {
+    if (!G || !G.render || !G.quality) return false;
+    const tier = G.quality.name || 'medium';
+    const floor = SMART_FLOOR[tier] || .72;
+    const next = Math.max(floor, Math.min(1, Math.round(ratio * 50) / 50));
+    if (Math.abs(next - adaptiveRatio) < .009) return false;
+    adaptiveRatio = next;
+    G.quality.scale = adaptiveBaseScale * adaptiveRatio;
+    try { G.render.resize(); } catch (error) { /* ignore */ }
+    if (window.__SALT_SMART_RESOLUTION__) window.__SALT_SMART_RESOLUTION__.ratio = adaptiveRatio;
+    return true;
+  }
+
+  function smartResolutionTick(ms) {
+    const smart = window.__SALT_SMART_RESOLUTION__;
+    if (!smart || !smart.enabled || !G || !G.render || !G.quality || document.hidden) return;
+    if (G.game && G.game.state !== 'playing') {
+      adaptiveAccum = 0;
+      adaptiveFrames = 0;
+      return;
+    }
+    const frameMs = Number(ms);
+    if (!Number.isFinite(frameMs) || frameMs <= 0 || frameMs > 500) return;
+    if (adaptiveCooldown > 0) adaptiveCooldown = Math.max(0, adaptiveCooldown - frameMs);
+    adaptiveAccum += frameMs;
+    adaptiveFrames += 1;
+    if (adaptiveFrames < 90 && adaptiveAccum < 1500) return;
+    const average = adaptiveAccum / adaptiveFrames;
+    adaptiveAccum = 0;
+    adaptiveFrames = 0;
+
+    // Two consecutive slow windows avoid reacting to a single loading hitch.
+    // Recovery is slower than reduction, which prevents visible scale pumping.
+    adaptiveSlowWindows = average > 19.2 ? adaptiveSlowWindows + 1 : 0;
+    adaptiveFastWindows = average < 17.2 ? adaptiveFastWindows + 1 : 0;
+    if (adaptiveCooldown > 0) return;
+    if (adaptiveSlowWindows >= 2 && adaptiveRatio > (SMART_FLOOR[G.quality.name] || .72)) {
+      const severity = average > 30 ? 2 : 1;
+      if (setAdaptiveScale(adaptiveRatio - .05 * severity)) {
+        adaptiveSlowWindows = 0;
+        adaptiveFastWindows = 0;
+        adaptiveCooldown = SMART_LOWER_DELAY;
+      }
+      return;
+    }
+    if (adaptiveFastWindows >= 3 && adaptiveRatio < 1) {
+      if (setAdaptiveScale(adaptiveRatio + .04)) {
+        adaptiveSlowWindows = 0;
+        adaptiveFastWindows = 0;
+        adaptiveCooldown = SMART_RAISE_DELAY;
+      }
+    }
   }
 
   // The port sea is a real mesh (O1() -> ground.sea in game.bundle.js). The
@@ -627,15 +700,21 @@
   }
 
   function applySavedGraphics() {
+    if (!G || !G.render) return;
     applyFrameCap();
     applyDynamicResolution();
-    if (!G || !G.render) return;
     const forced = forcedQuality();
+    // A debug ?q= tier keeps the requested tier, but still receives the
+    // player's merged effect values.
+    if (forced) return void applyTier(forced);
     const saved = savedQuality();
-    const target = forced
-      ? forced
-      : (saved === AUTO_TIER ? autoTargetTier() : saved);
-    applyTier(target);
+    if (saved === AUTO_TIER) {
+      // Re-apply through the merged preset so advanced effects are live even
+      // in Auto mode; the map-aware cap picks the starting tier.
+      applyTier(autoTargetTier());
+    } else {
+      applyTier(saved);
+    }
   }
 
   // One-click restore for the whole graphics page: every tier, the advanced
@@ -714,7 +793,7 @@
     // Mothlight (full city scene) used to keep the same Auto tier and fall to
     // 12–16 fps. Lower only when the saved choice is Auto; a manual tier is
     // never changed here.
-    if (savedQuality() === AUTO_TIER && !forcedQuality()) {
+    if (autoMode && !forcedQuality()) {
       const mapId = zone || currentMapId();
       if (mapId !== lastAutoZone) {
         lastAutoZone = mapId;
@@ -737,15 +816,9 @@
     const now = performance.now();
     if (!playStartedAt) playStartedAt = now;
     if (now - playStartedAt < 5000 || ms > 500 || ms <= 0) return;
-    if (!G.render || typeof G.render.stats !== 'function') return;
-
-    let stats;
-    try { stats = G.render.stats(); } catch (error) { return; }
-    if (!stats) return;
-
     // A sustained sub-25 FPS frame is below a comfortable playable rate.
-    // Do not gate this on the dynamic-resolution floor: if the user disables
-    // dynamic resolution, 19–24 FPS would otherwise never trigger a drop.
+    // Smart resolution usually recovers before this point; only a tier drop
+    // remains as the final guard for genuinely overloaded GPUs.
     const bad = ms > 40;
     const severe = ms > 100;
     if (!bad) {
@@ -757,6 +830,10 @@
     if (now - slowSince < hold) return;
     slowSince = 0;
     if (now - lastDropAt < 5000 || drops >= 4) return;
+    if (!G.render || typeof G.render.stats !== 'function') return;
+    let stats;
+    try { stats = G.render.stats(); } catch (error) { return; }
+    if (!stats) return;
 
     const current = currentTier();
     const next = NEXT_TIER[current];
@@ -787,6 +864,7 @@
       const result = original.apply(this, arguments);
       try {
         pushGameSample(ms);
+        smartResolutionTick(ms);
         autoTick(ms, zone);
       } catch (error) { console.warn('[auto-quality] tick failed', error); }
       return result;
@@ -977,10 +1055,8 @@
       .salt-gfx-badge { display: inline-block; margin-left: 5px; padding: 1px 4px; border: 1px solid rgba(216, 240, 208, .18); font-size: 8px; color: #9eb6a8; vertical-align: middle; }
 
       @media (max-width: 760px), (pointer: coarse) {
-        .seg.salt-quality-seg { flex-wrap: wrap; }
-        .seg.salt-quality-seg button { flex: 1 1 30%; min-height: 42px; }
-        .seg.salt-quality-seg #salt-auto-quality { flex: 1 1 30%; }
-        #salt-auto-quality { min-height: 42px; }
+        .seg.salt-quality-seg { flex-wrap: nowrap; }
+        .seg.salt-quality-seg button { flex: 1 1 0; min-height: 42px; }
         #salt-bench-overlay {
           left: 8px;
           top: 8px;
@@ -1364,63 +1440,52 @@
     document.head.appendChild(style);
   }
 
-  function ensureAutoButton() {
-    const label = document.getElementById('l-q');
-    if (!label) return null;
-    const row = label.parentElement;
-    const seg = row && row.querySelector('.seg');
-    if (!seg) return null;
-    seg.classList.add('salt-quality-seg');
-    let button = seg.querySelector('[data-q="auto"]');
-    if (!button) {
-      button = document.createElement('button');
-      button.type = 'button';
-      button.id = 'salt-auto-quality';
-      button.dataset.q = AUTO_TIER;
-      button.setAttribute('aria-label', pick('自动画质', 'Auto quality'));
-      button.title = pick('自动选择并保持流畅', 'Auto quality (recommended)');
-      button.innerHTML = UI_EN
-        ? '<span>Auto</span><span class="salt-auto-en" data-i18n-skip="1" lang="zh-CN">自动</span>'
-        : '<span>自动（推荐）</span><span class="salt-auto-en">Auto</span>';
-      seg.insertBefore(button, seg.firstChild);
-    }
-    return button;
+  function qualityRowNode() {
+    return document.getElementById('salt-quality-row') ||
+      (document.getElementById('l-q') && document.getElementById('l-q').parentElement);
   }
 
-  function syncAutoButton() {
-    const button = document.getElementById('salt-auto-quality');
-    if (!button) return;
-    const isAuto = savedQuality() === AUTO_TIER && !forcedQuality();
-    button.setAttribute('aria-pressed', String(isAuto));
-    if (isAuto) {
-      const seg = button.parentElement;
-      if (seg) {
-        for (const other of seg.querySelectorAll('button[data-q]')) {
-          if (other !== button) other.setAttribute('aria-pressed', 'false');
-        }
-      }
+  function qualityTierText(tier) {
+    const normalized = normalizeQualityTier(tier) || 'medium';
+    return tr('graphics.' + normalized, null, tierLabel(normalized) || normalized);
+  }
+
+  function ensureQualitySelector() {
+    const row = qualityRowNode();
+    if (!row || !row.parentElement) return null;
+    row.hidden = false;
+    row.classList.remove('salt-quality-original-hidden');
+    const seg = row.querySelector('.seg');
+    if (!seg) return null;
+    seg.classList.remove('salt-quality-original-hidden');
+    seg.classList.add('salt-quality-seg');
+    for (const button of [...seg.querySelectorAll('button[data-q]')]) {
+      if (!QUALITY_TIERS.includes(button.dataset.q)) button.remove();
     }
-    syncQualityEntry();
+    for (const old of document.querySelectorAll('#salt-auto-quality, #salt-quality-entry, button[data-q="auto"]')) {
+      old.remove();
+    }
+    for (const button of seg.querySelectorAll('button[data-q]')) {
+      button.type = 'button';
+      button.setAttribute('aria-label', qualityTierText(button.dataset.q));
+    }
+    return seg;
+  }
+
+  function syncQualitySelector() {
+    const tier = displayTier();
+    for (const button of document.querySelectorAll('#salt-quality-row .seg button[data-q], .salt-quality-seg button[data-q]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.q === tier));
+    }
     syncQualityNote();
   }
 
+  function syncAutoButton() {
+    syncQualitySelector();
+  }
+
   function syncQualityEntry() {
-    const button = document.getElementById('salt-open-graphics');
-    if (!button) return;
-    const tier = displayTier();
-    const auto = savedQuality() === AUTO_TIER && !forcedQuality();
-    const tierName = UI_EN ? TIER_EN[tier] : TIER_CN[tier];
-    const tierOther = UI_EN ? TIER_CN[tier] : TIER_EN[tier];
-    const tierText = (auto ? pick('自动（推荐）', 'Auto') + ' · ' : '') + tierName +
-      ' <span class="salt-en"' + (UI_EN ? ' data-i18n-skip="1" lang="zh-CN"' : '') + '>' + tierOther + '</span>';
-    const current = button.querySelector('.salt-entry-tier');
-    if (current && current.innerHTML !== tierText) current.innerHTML = tierText;
-    button.title = pick(
-      '打开高级画质设置（' + TIER_CN[tier] + '）',
-      'Open advanced graphics (' + TIER_EN[tier] + ')'
-    );
-    const seg = document.querySelector('.salt-quality-seg');
-    if (seg) seg.classList.add('salt-quality-original-hidden');
+    syncQualitySelector();
   }
 
   function syncQualityNote() {
@@ -1428,66 +1493,28 @@
     if (!note || raceGraphics) return;
     const forced = forcedQuality();
     if (forced) {
-      note.textContent = pick(
-        '画质由启动参数锁定：' + TIER_CN[forced],
-        'Quality is locked by the launch parameter: ' + TIER_EN[forced]
-      );
+      note.textContent = tr('graphics.noteLocked', { quality: qualityTierText(forced) });
       return;
     }
     if (savedQuality() === AUTO_TIER) {
-      const tier = currentTier();
-      if (!TIER_CN[tier]) return;
-      const text = pick(
-        '自动（推荐）：本机自动选择 ' + TIER_CN[tier] + '，帧率不足时自动降档。',
-        'Auto: this device uses ' + TIER_EN[tier] + '; it drops a tier if FPS stays low.'
-      );
-      if (note.textContent !== text) note.textContent = text;
+      note.textContent = tr('graphics.noteAuto', { quality: qualityTierText(displayTier()) });
       return;
     }
-    const text = savedQuality() === 'minimal'
-      ? pick(
-        '画质已设为极低：关闭阴影、泛光、反射与体积光，优先保证低配手机帧率。',
-        'Lowest quality: shadows, bloom, reflections and volumetric light are off to protect low-end FPS.'
-      )
-      : pick(
-        '手动画质：不会自动降档；修改立即生效，阴影与反射可能需要片刻重建。',
-        'Manual quality: auto downgrade is disabled; changes apply live, while shadows and reflections may rebuild.'
-      );
-    if (note.textContent !== text) note.textContent = text;
+    if (savedQuality() === 'ultra') {
+      note.textContent = tr('graphics.noteUltra');
+      return;
+    }
+    note.textContent = tr('graphics.noteLive');
   }
 
   function ensureQualityEntry() {
-    const label = document.getElementById('l-q');
-    const qualityRow = label && label.parentElement;
-    if (!qualityRow || !qualityRow.parentElement) return null;
-    qualityRow.classList.add('salt-quality-original-hidden');
-    const seg = qualityRow.querySelector('.seg');
-    if (seg) seg.classList.add('salt-quality-original-hidden');
-    let row = document.getElementById('salt-quality-entry');
-    if (!row) {
-      row = document.createElement('div');
-      row.id = 'salt-quality-entry';
-      row.className = 'row salt-quality-entry';
-      row.innerHTML = '<label>' + pair('画质', 'Graphics', 'span class="salt-en"') + '</label>' +
-        '<button class="btn small" type="button" id="salt-open-graphics" aria-haspopup="dialog" aria-controls="salt-graphics">' +
-          '<span class="salt-entry-tier">' + pick('自动（推荐）', 'Auto') + '</span>' +
-          '<span class="salt-entry-advanced">' + pick('高级', 'Advanced') + ' <span class="salt-entry-chevron" aria-hidden="true">›</span></span>' +
-          '<span class="salt-entry-note">' + pick('渲染效果即时生效 · 高级项保存后需重载', 'Effects apply live · advanced options need a reload after Save') + '</span>' +
-        '</button>';
-      qualityRow.parentElement.insertBefore(row, qualityRow.nextSibling);
-      row.querySelector('#salt-open-graphics').addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        openGraphics(event.currentTarget);
-      });
-    }
-    syncQualityEntry();
-    return row;
+    ensureQualitySelector();
+    return qualityRowNode();
   }
 
   function ensureBenchRow() {
-    const entry = document.getElementById('salt-quality-entry');
-    if (!entry || !entry.parentElement) return null;
+    const anchor = qualityRowNode();
+    if (!anchor || !anchor.parentElement) return null;
     let row = document.getElementById('salt-bench-row');
     if (!row) {
       row = document.createElement('div');
@@ -1495,7 +1522,7 @@
       row.className = 'row salt-bench-row';
       row.innerHTML = '<label id="salt-bench-label">' + pair('跑分显示', 'Bench overlay', 'span class="salt-en"') + '</label>' +
         '<button class="toggle" type="button" id="salt-bench-toggle" aria-labelledby="salt-bench-label" aria-pressed="false"><i></i><span>' + onOff(false) + '</span></button>';
-      entry.parentElement.insertBefore(row, entry.nextSibling);
+      anchor.parentElement.insertBefore(row, anchor.nextSibling);
       row.querySelector('#salt-bench-toggle').addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
@@ -1519,7 +1546,7 @@
   }
 
   function ensureBannerOpacityRow() {
-    const anchor = document.getElementById('salt-bench-row') || document.getElementById('salt-quality-entry');
+    const anchor = document.getElementById('salt-bench-row') || qualityRowNode();
     if (!anchor || !anchor.parentElement) return null;
     let row = document.getElementById('salt-banner-opacity-row');
     // Replace a row created by the previous build, which had only the opacity
@@ -1620,7 +1647,7 @@
             <p class="salt-gfx-section-note">即时生效；阴影/泛光等按当前档位保存，渲染比例全档位生效。 / Applies live; effects are stored per tier, render scale applies to all tiers.</p>
             <div class="salt-gfx-rows">
               <div class="salt-gfx-row">
-                <div class="salt-gfx-label"><b>渲染比例 <em>Render scale</em></b><em>全档位即时生效；50–100%。动态分辨率开启时会再叠加。 / Live for all tiers; dynamic resolution multiplies it.</em></div>
+                <div class="salt-gfx-label"><b>渲染比例 <em>Render scale</em></b><em>全档位即时生效；50–100%，智能分辨率在此基础上调整。 / Live for all tiers; smart resolution adjusts from this baseline.</em></div>
                 <div class="salt-gfx-control"><div class="salt-gfx-slider"><input id="salt-live-render-scale" type="range" min="50" max="100" step="5" aria-label="渲染比例 / Render scale"><output id="salt-live-render-scale-out">100%</output></div></div>
               </div>
               <div class="salt-gfx-row" data-gfx-effect="shadow">
@@ -1661,7 +1688,7 @@
               <div class="salt-gfx-reload-banner"><b>仅本节需要重载 / This section needs reload</b><span>档位和“渲染效果”即时生效；保存高级项后，点“立即重载”才会完全应用。 / Tier and effects are live; after saving advanced options, use “Reload now” to apply them fully.</span></div>
               <div class="salt-gfx-rows">
                 <div class="salt-gfx-row">
-                  <div class="salt-gfx-label"><b>动态分辨率 <em>Dynamic resolution</em></b><em>默认关闭；开启后与渲染比例相乘，逆风时会明显变糊 / Off by default; multiplies render scale when on</em></div>
+                  <div class="salt-gfx-label"><b>智能分辨率 <em>Smart resolution</em></b><em>默认开启；只降内部像素，高档最低保留 82–88%，不偷偷降档 / On by default; internal pixels only, with an 82–88% floor on high/ultra</em></div>
                   <div class="salt-gfx-control salt-gfx-control-solo"><button type="button" class="salt-gfx-switch" id="salt-adv-dynamic" aria-pressed="false"><span class="dot"></span><b>关 / Off</b></button></div>
                 </div>
                 <div class="salt-gfx-row">
@@ -1739,7 +1766,7 @@
       return zh && en ? { zh, en } : null;
     };
     const descPairs = {
-      '渲染比例': ['全档位即时生效；50–100%。动态分辨率开启时会再叠加。', 'Live for all tiers, 50–100%. Dynamic resolution multiplies it when enabled.'],
+      '渲染比例': ['全档位即时生效；50–100%，智能分辨率在此基础上调整。', 'Live for all tiers, 50–100%; smart resolution adjusts from this baseline.'],
       '阴影': ['阴影贴图分辨率。', 'Shadow map resolution.'],
       '泛光': ['高光向外溢出的辉光。', 'Highlight glow.'],
       '水面反射': ['水面和湿地面的屏幕空间反射；关闭可降低显卡负载。', 'Screen-space reflection on water and wet ground.'],
@@ -1747,7 +1774,7 @@
       '抗锯齿': ['2× / 4× 多重采样。', '2× / 4× multisampling.'],
       '环境光遮蔽': ['接触阴影。', 'Contact shadows.'],
       '水面渲染': ['仅盐港海面；远征地图湖面是静态合并几何，暂不单独隐藏。', 'Salt Port sea only; expedition lake water is baked into map chunks.'],
-      '动态分辨率': ['默认关闭；开启后与渲染比例相乘，逆风时会明显变糊。', 'Off by default; multiplies render scale when enabled.'],
+      '智能分辨率': ['默认开启；只降内部像素，高档最低保留 82–88%，不偷偷降档。', 'On by default; internal pixels only, with an 82–88% floor on high/ultra.'],
       '运动模糊': ['快速转动时的拖影；不会提升帧率。', 'Camera smear while turning; does not raise FPS.'],
       '雨/粒子密度': ['0% 关闭；完整增加需要重载。', '0% turns it off; a full increase needs a reload.'],
       '纹理质量': ['重载后重建纹理图集。', 'The texture atlas rebuilds on reload.'],
@@ -2468,7 +2495,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // Bind engine quality buttons (hidden in the main panel, used by the sub-page)
+  // Bind the four quality buttons rendered by settings-panel.ejs.
   // ---------------------------------------------------------------------
 
   function bindQualityClicks() {
@@ -2484,33 +2511,24 @@
     }
     panel.addEventListener('click', event => {
       const button = event.target.closest('button[data-q]');
-      if (!button) return;
+      if (!button || !panel.contains(button)) return;
       const quality = button.dataset.q;
-      if (quality === AUTO_TIER) {
-        autoMode = true;
-        lastAutoZone = '';
-        saveQuality(AUTO_TIER);
-        window.setTimeout(() => {
-          // Auto is an explicit choice: select the recommended tier now.
-          // Runtime autoTick still only lowers a tier, never raises it.
-          applyTier(autoTargetTier());
-          syncAutoButton();
-          syncGraphics();
-        }, 0);
-      } else {
-        autoMode = false;
-        // Persist the manual choice here as well as in the engine handler, so
-        // a reload still restores the selected tier.
-        saveQuality(quality);
-        window.setTimeout(() => {
-          if (autoMode) return;
-          // Apply saved per-tier effect values without changing the tier.
-          applyTier(currentTier());
-          syncAutoButton();
-          syncGraphics();
-        }, 0);
+      if (!QUALITY_TIERS.includes(quality)) return;
+      autoMode = false;
+      lastAutoZone = '';
+      saveQuality(quality);
+      if (raceGraphics) {
+        raceGraphics.setTier(quality);
+        window.setTimeout(syncQualitySelector, 0);
+        return;
       }
-      window.setTimeout(syncAutoButton, 50);
+      // The engine's own click handler runs on the same event and applies its
+      // base preset. Re-apply once the event finishes so the saved per-tier
+      // effects and the current render-scale caps always win.
+      window.setTimeout(() => {
+        applyTier(quality);
+        syncQualitySelector();
+      }, 0);
     }, true);
   }
 
@@ -2564,7 +2582,7 @@
     setLabel(document.querySelector('label[for="s-sens"]'), '鼠标灵敏度', 'Mouse sensitivity');
     setLabel(document.querySelector('label[for="s-fov"]'), '视野范围', 'Field of view');
     setLabel(document.querySelector('label[for="s-vol"]'), '主音量', 'Master volume');
-    setLabel(document.querySelector('#salt-quality-entry label'), '画质', 'Graphics');
+    setLabel(document.getElementById('l-q'), '画质', 'Graphics quality');
     setLabel(document.getElementById('salt-bench-label'), '跑分显示', 'Bench overlay');
     setLabel(document.getElementById('salt-banner-look-label'), '公屏外观', 'Banner appearance');
     setLabel(document.getElementById('salt-banner-opacity-label'), '文字与背景透明度', 'Text and backdrop opacity');
@@ -2619,7 +2637,7 @@
       groups[key] = section;
     }
     const rows = {
-      quality: rowOf('#salt-quality-entry'),
+      quality: rowOf('#salt-quality-row'),
       note: pane.querySelector('[data-f="qnote"]'),
       fullscreen: rowOf('[data-row="fs"]'),
       sens: rowOf('#s-sens'),
@@ -2646,21 +2664,17 @@
   }
 
   function ensureUi() {
-    const auto = ensureAutoButton();
-    if (auto) syncAutoButton();
-    ensureQualityEntry();
+    ensureQualitySelector();
     ensureBenchRow();
     ensureBannerOpacityRow();
     removeLegacyOverrideRows();
     groupSettingsRows();
     localizeSettingsShell();
     localizeBaseSettings();
-    syncQualityNote();
+    syncQualitySelector();
     observeSettingsPanel();
     bindQualityClicks();
     hideOriginalBench();
-    if (!gfxPage) buildGraphicsPage();
-    syncGraphics();
   }
 
   // Language switching uses a full reload so every module picks up the new
@@ -2679,8 +2693,8 @@
       const ready = window.__ready === true;
       const button = document.querySelector('#ui button[data-act="settings"]');
       const panel = document.querySelector('#ui .panel[role="dialog"]');
-      const entry = document.getElementById('salt-open-graphics');
-      if (ready && button && panel && entry) {
+      const qualityRow = document.getElementById('salt-quality-row');
+      if (ready && button && panel && qualityRow) {
         window.clearInterval(timer);
         try { sessionStorage.removeItem('salt-reopen-settings-after-lang'); } catch (error) { /* ignore */ }
         button.click();
@@ -2688,12 +2702,6 @@
           if (state.tab === 'controls') {
             const tab = panel.querySelector('.tab[data-tab="controls"]');
             if (tab) tab.click();
-          }
-          if (state.graphics) {
-            const open = () => {
-              if (!gfxOpen) entry.click();
-            };
-            window.setTimeout(open, 160);
           }
         }, 120);
         return;
@@ -2709,6 +2717,7 @@
     if (document.body.classList.contains('race-settings-page')) return;
     injectStyles();
     migrateAutoDefault();
+    migrateLegacyQuality();
     migrateBannerLookDefaults();
     graphics = readGraphics();
     advancedDraft = { ...graphics.advanced };
@@ -2718,6 +2727,7 @@
     applyBannerFontSize(bannerFontSize, false);
     overlayOn = readOverlay();
     autoMode = savedQuality() === AUTO_TIER;
+    syncManualQualityFlag();
     overlayStartedAt = performance.now();
     createOverlay();
     setOverlay(overlayOn, false);
@@ -2736,22 +2746,18 @@
       G = window.__G;
       if (!G.render || !G.render.stats) return;
       window.clearInterval(waitForGame);
+      syncManualQualityFlag();
       wrapSampleFrame();
       ensureUi();
       applySavedGraphics();
       syncAutoButton();
       syncGraphics();
       window.__saltAutoQuality = {
-        get auto() { return autoMode; },
-        get drops() { return drops; },
+        get auto() { return savedQuality() === AUTO_TIER; },
         get tier() { return currentTier(); },
         recommended: recommendedTier,
-        drop: next => applyTier(next),
-        openGraphics,
-        closeGraphics,
-        resetGraphicsDefaults,
-        get graphics() { return graphics; },
-        saveAdvanced
+        setTier: next => applyTier(next),
+        get graphics() { return graphics; }
       };
     }, 250);
 
@@ -2764,6 +2770,7 @@
     window.addEventListener('storage', event => {
       if (event.key === SETTINGS_KEY) {
         autoMode = savedQuality() === AUTO_TIER;
+        syncManualQualityFlag();
         syncAutoButton();
         syncGraphics();
       }
@@ -2797,21 +2804,22 @@
       mount(adapter) {
         raceGraphics = adapter;
         injectStyles();
+        migrateLegacyQuality();
         graphics = readGraphics();
         autoMode = savedQuality() === AUTO_TIER;
-        const entry = ensureQualityEntry();
-        entry.querySelector('.salt-entry-advanced').hidden = true;
-        entry.querySelector('.salt-entry-note').textContent = pick('即时生效 · 跨地图同步', 'Live · shared across maps');
+        syncManualQualityFlag();
+        ensureQualitySelector();
         groupSettingsRows();
         adapter.root.querySelector('[data-f="qnote"]').hidden = true;
         localizeSettingsShell();
         localizeBaseSettings();
+        bindQualityClicks();
+        syncQualitySelector();
         document.addEventListener('keydown', trapGraphicsKeys, true);
       },
       sync() {
         autoMode = savedQuality() === AUTO_TIER;
-        syncGraphics();
-        syncQualityEntry();
+        syncQualitySelector();
       },
       close: closeGraphics
     };

@@ -259,7 +259,7 @@ const raceSession=(()=>{
       row.dataset.local=String(player.map==='race');
       const name=document.createElement('span');
       const location=document.createElement('span');
-      name.textContent=player.name||player.id;
+      name.textContent=player.anonymous?t('mp.anonymousName'):(player.name||player.id);
       location.textContent=player.map==='race'?t(({racing:'raceResult.rosterRacing',free:'raceResult.rosterFree'})[player.status]||'raceResult.rosterPlaza'):
         player.status==='home'?t('mp.statusHome'):player.status==='focus'?t('mp.statusFocus'):
         mapLabels.get(player.map)||t('mp.statusMap');

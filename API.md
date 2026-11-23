@@ -6,14 +6,14 @@
 - 运行环境：Node.js 18+，CommonJS
 - 监听地址：从环境变量 `PORT` / `HOST` 读取；`HOST` 未设置时回退 `0.0.0.0`，确保托管反向代理可达
 - 页面地址：`http://$HOST:$PORT/`
-- 实时通信：同端口 WebSocket，玩家路径 `/ws`
+- 实时通信：同端口 WebSocket，玩家路径 `/ws`，延迟探测路径 `/ws?probe=1`
 - 数据格式：WebSocket 文本帧为 JSON；玩家语音为二进制 PCM 帧
 - 国际化：`lang` cookie，可选 `zh-CN` / `en-US`；接口提示文案随语言变化
-- 持久化目录：优先使用托管平台注入的 `JICREATE_DATA_DIR`，其次 `DATA_DIR`，本地开发回退到项目内 `data/`。排行榜写入 `data/leaderboard.json`，大字历史追加写入 `data/chat-history.jsonl`，专注记录写入 `data/focus-records.json`，金币拾取与互赠公示追加写入 `data/gold-ledger.jsonl`，盐港尸体追加写入 `data/corpse-field.jsonl`，并兼容读取历史 `data/gold-pickups.json`，后台上传的群聊二维码（base64）写入 `data/group-qr.json`，统一由 `config/storage.js` 原子读写。项目内 `data/` 会自动调整为 `2777` 目录权限，数据文件为 `0664`，避免临时托管重复测试时因跨服务账号无法清理运行数据而还原失败；外部 `JICREATE_DATA_DIR` 不改权。
-- 落盘策略：大字历史仍同步追加并 `fsync` 后再广播；盐港弹痕与尸体先更新内存并立即广播，再由独立 worker 线程异步追加 JSONL、重试和压缩，写回回调清除 `pending` 状态，因此广播与历史接口中的 `persisted` 可能短暂为 `false`。worker 不可用时回退主线程写入，异常退出时回放未确认记录，避免弹痕或尸体丢失。大字目录不可写时仍立即广播并进入进程内重试队列，每 4 秒自动重试并通过 `chatWarning` 提醒发送者。进程收到 `SIGTERM` / `SIGINT` 时会 flush 所有写入队列并同步排行榜与大字文件。
+- 持久化目录：优先使用托管平台注入的 `JICREATE_DATA_DIR`，其次 `DATA_DIR`，本地开发回退到项目内 `data/`。排行榜写入 `data/leaderboard.json`，大字历史追加写入 `data/chat-history.jsonl`，专注记录写入 `data/focus-records.json`，金币拾取与互赠公示追加写入 `data/gold-ledger.jsonl`，盐港尸体追加写入 `data/corpse-field.jsonl`，节假日表写入 `data/holidays.json`，并兼容读取历史 `data/gold-pickups.json`，后台上传的群聊二维码（base64）写入 `data/group-qr.json`，统一由 `config/storage.js` 原子读写。项目内 `data/` 会自动调整为 `2777` 目录权限，数据文件为 `0664`，避免临时托管重复测试时因跨服务账号无法清理运行数据而还原失败；外部 `JICREATE_DATA_DIR` 不改权。
+- 落盘策略：大字历史仍同步追加并 `fsync` 后再广播；盐港弹痕与尸体先更新内存，再由独立 worker 线程异步追加 JSONL、重试和压缩，写回回调清除 `pending` 状态，因此 HTTP 历史/增量接口中的 `persisted` 可能短暂为 `false`。worker 不可用时回退主线程写入，异常退出时回放未确认记录，避免弹痕或尸体丢失。大字目录不可写时仍立即广播并进入进程内重试队列，每 4 秒自动重试并通过 `chatWarning` 提醒发送者。进程收到 `SIGTERM` / `SIGINT` 时会 flush 所有写入队列并同步排行榜与大字文件。
 - API 缓存：`/api/*` 统一返回 `Cache-Control: no-store`，避免历史分页被浏览器或代理缓存成空列表。
 - 内容安全：玩家代号与全服大字在服务端统一做敏感词过滤；拆字、全角、零宽字符、符号替代与常见同形字规避同样会被识别。
-- 当前版本：`1.34.38`，视野范围设置默认值调整为滑杆最小值 60°；盐港机器狗尸体会采样死亡动画结束时的真实骨骼姿态、机身高度与朝向并随全服记录持久化，重建时不再是统一的侧躺模型，而是它最后倒在玩家面前的样子；没有姿态数据的旧记录也会按 ID 生成不同的侧倾、俯仰与朝向；角色传送下落、高空坠落与运输机跳伞期间不再残留轿车驾驶 HUD 的「刹车」按钮和旁边按钮，底部路牌工具方块也会在下落时隐藏并在落地后恢复；标题、暂停、阵亡和任务简报等全部游戏内菜单均提供商城入口；赛车与普通地图采用同一个游戏页面，地图切换在原页面中完成；设置页“操控单位 → 更换”选择页在 844×390 / 1128×478 等低高度横屏下改为卡片区与预览框纵向填满可用高度，5 张单位卡不再被压成窄条，左列与预览区下半部不再留白；TAB 实时名单的位置/状态提示按当前语言单语输出（中文界面不再附加英文，英文界面不再附加中文）；其他地图的共享巡逻机械狗击毁表现固定为 50% 复刻盐港本地猎犬（后空翻→倒地→残骸）、50% 直接消失；西部荒原固定为白昼，不再进入黑夜；金币 HUD 实时显示全服今日剩余派发金币额度、剩余目标数与进度；新增战场好友与自动跟随：名单内可发送好友请求，请求方收到接受结果后自动跟随对方，服务端每 100 ms 下发跟随落点并处理取消、倒下、跨图、专注与离线等终止条件；跟随落点按所在地图边界钳制，好友在轿车内也可被跟随并上车；仅保留 WebGL2 + Three.js 三维渲染；客户端会先在实际游戏画布上异步重试并预热 WebGL2 上下文，再加载游戏 bundle，成功上下文由 Three.js 主渲染器直接复用。渲染器、单位预览与死亡回放继续优先请求 `high-performance`，上下文创建失败时按兼容属性回退。画质提供五档：极低档将内部渲染比例降至 50%、手机 DPR 上限设为 1，并关闭阴影、泛光、体积光、环境光遮蔽和平面反射；低内存、少核心或小屏手机会自动进入极低档，动态降档链路也会从低档继续降至极低档。远端玩家操控的机器狗与无人机稳定复用游戏内骨骼单位模型，模型模块晚于首个快照加载时也会自动升级，不再永久回退为方块模型。撤离船升级为任务前置可用的四人多人载具，服务端同步船位、舵手、乘客、坐标、朝向和速度；外海新增带碰撞与复活点的交战平台。青云宗的三座传送门位于入口东西两侧草坡与正前方石阶平台，距落点约 31–32 米，并显示实时方位与距离；从传送门地图返回时会落在对应门户旁。路牌创建由服务端按身份、浏览器指纹与网络来源执行每日额度、短时冷却、突发限流、单地图容量和区域密度限制；拔除操作会在客户端即时移除牌面，并以服务端确认和列表重拉兜底，迟到的旧列表不会把已拔除路牌重新加回。西部荒原共享轿车离开地图时会继续载人前往目标地图，同时服务端立即在荒原出生点补充一辆空车，每张地图最多保留一辆可用车。轿车按 `H` 时驾驶员会带明确驻车意图请求下车，服务端直接归零车速并开门，不再依赖可能被 45 ms 节流丢弃的零速姿态；乘客仍需 1.8 米/秒以内的低速，非法落点自动回退到安全车门，下车后车辆保持驻车。驾驶席前进最高 22 米/秒、倒车最高 9 米/秒，松开油门自动驻车，低速转向更灵敏、高速转向更稳定；HUD 同步显示 D/R/N 挡位、实时 km/h 与可长按刹车按钮。手机竖屏默认显示四向手动转向键，设置面板可关闭该控件、调整转向速度、回正视角。横屏 / 竖屏由页面自身旋转布局实现，并同步修正游戏视口、触控坐标与 `body` 浮层，不依赖系统方向锁或全屏权限；强制横屏后左侧边缘按钮会变为「竖屏」，可随时恢复设备原生竖屏。该链路不依赖陀螺仪或设备方向传感器。桌面端拥有多把武器时可滚动鼠标滚轮循环切换，单武器时不拦截滚轮，开镜时滚轮继续调整瞄准镜倍率；切换会跳过载具、跳伞、背包与菜单状态。死亡回放仍由服务端以 10 Hz 录制双方真实轨迹、枪口弹道与命中事件，再通过 `youDied.replay` 下发给被击杀者。复活时若聊天面板打开或输入框聚焦，客户端会保留输入内容、光标位置与面板状态，不再自动请求鼠标锁定；指针锁定事件也不会抢走聊天输入焦点。专注模式开始与结束时，服务端会向全服公屏写入结构化系统播报并广播，实时名单显示“专注”徽章；在线玩家接口和 10 Hz 快照同时返回 `focused` 与 `focus` 详情，便于观战者和其他客户端识别专注玩家。专注观战层支持用上一位 / 下一位按钮、玩家列表和键盘方向键切换目标，手动锁定后保持视角，目标离开时回退自动轮播；该切换完全由客户端基于现有快照完成，不新增 WebSocket 消息。本地回放通过 WebAudio 分流同时录制游戏音效，音轨仅进入本机 `MediaRecorder`，不读取麦克风、不上传服务器；客户端会通过 UA 与微信 JS Bridge 自动识别微信内置浏览器，在回放面板显示下载限制提示、录制前二次确认，并拦截微信内下载，引导玩家改在系统浏览器中录制。录制提醒与删除回放均使用 `public/js/modal.js` 提供的自定义模态框，不再调用浏览器原生 `confirm`。群聊二维码可由管理员在后台上传并持久保存，游戏内标题页、暂停菜单与士兵选择页的入口统一读取当前二维码，客户端在打开弹窗或切回标签页时会重新校验版本。战场名单新增金币活动公示：拾取与互赠全部追加保存到 `data/gold-ledger.jsonl`，无条数上限，兼容读取历史 `data/gold-pickups.json`，名单内触底自动加载更早记录；版本 1.28.3 新增近距离互赠金币与从已打开箱体取出随身金币：玩家可在同地图 8 米内向其他玩家赠送随身金币，收款方实时收到提示；站在已打开的箱体内可指定数量或一次性取回箱内金币，两项操作均由服务端校验身份、位置与余额并原子记账。集装箱现已支持金币与物品的指定数量双向存取，所有数量均由服务端在同一份 JSON 事务中校验；沿用原有蓝色自定义牌和金色余额牌，两块牌均改为双面前置牌面，余额不再被立柱遮挡；版本号统一从 `package.json` 读取，发布前可运行 `npm run release:check` 检查托管完整性。盐港尸体与金币掉落物在新增、落点补报、历史加载、钱包刷新和客户端渲染时统一落地，已有悬空记录会在启动时校正并写回持久化文件。
+- 当前版本：`1.34.62`。工作时间段弹窗改为可关闭的横屏左右分栏卡片，关闭后可继续浏览主页；工作时间段内点击「开始行动」会重新校验开放时段并再次弹出倒计时。HUD 在线状态按其他玩家计数，只有自己在线时显示「无人在线」；战场名单自己的行可切换「匿名在线」，其他玩家只会收到匿名占位代号。北京时间周一至周五 `00:00–07:00`、`09:00–12:00`、`14:00–18:00` 为工作时间，首页会显示不可游玩倒计时；周末与落在周一至周五的节假日全天开放。
 
 ## 页面
 
@@ -29,8 +29,9 @@
 - 无人机空气墙：无人机水平位置限制为旧版 `x=-40…40、z=-30…30`，步兵、撤离船和外海交战区不受影响。
 - 输入可见性：聊天输入框或输入面板打开时，玩家保持在线可见，不因游戏暂停而从其他客户端消失。
 - 空中换兵：无人机在空中切换操作单位时先保存选择，再立即在随机地面点位复活。
+- 盐港随机复活：客户端在阵亡和请求复活前按 `G.physics.nav` 导航网格重新采样整张港口的可行走地面点，并校验碰撞盒净空；服务端过滤高空点与 Boss 危险区，在同样安全的候选点中随机选择。
 - 无限弹药：启用后备弹保持无限，但弹夹仍正常消耗，打空后必须等待自动或手动换弹。
-- 说明：多人 3D 港口枪战首页。玩家可直接部署，并通过“设置 → 操控单位”在男女士兵、机器狗、无人机和方块人之间切换；未主动选择时默认方块人。方块人沿用男士兵的移动、命中、伤害与复活参数。其他玩家看到的机器狗与无人机直接复用游戏内的骨骼单位模型；若首个快照早于模型模块加载，客户端会持续等待并自动替换临时兜底。页面提供社区二维码、1–6 连杀播报、含游戏音效的本地录制回放和 Three.js 三维死亡回放；本地回放通过 `audio-tap.js` 将游戏 WebAudio 主输出分流到录制流，视频与音轨均只保存在浏览器 IndexedDB，不读取麦克风。死亡回放使用服务端录制的双方权威轨迹与真实射击、命中事件重建港口集装箱、吊机、灯塔和击杀过程，并提供追踪镜头与播放进度。无人机近地搜索灯与机械单位坠毁均为客户端表现。游戏仅使用 WebGL2 + Three.js 三维渲染，不提供 Canvas 2D 兼容模式，也不再识别 `?gfx=2d` / `?render=2d`；WebGL2 不可用时显示启动错误。移动、命中、快照、限频、反作弊、语音、专注锁定和复活继续使用 v1.23.0 算法。游戏内标题页、暂停菜单与战场名单面板均提供 GitHub 仓库链接 `https://github.com/wenzhengshi/fable5-2-salt-online`。
+- 说明：多人 3D 港口枪战首页。玩家可直接部署，并通过“设置 → 操控单位”在男女士兵、机器狗、无人机和方块人之间切换；未主动选择时默认方块人。方块人沿用男士兵的移动、命中、伤害与复活参数。其他玩家看到的机器狗与无人机直接复用游戏内的骨骼单位模型；若首个快照早于模型模块加载，客户端会持续等待并自动替换临时兜底。页面提供社区二维码、1–6 连杀播报、含游戏音效的本地录制回放和 Three.js 三维死亡回放；本地回放通过 `audio-tap.js` 将游戏 WebAudio 主输出分流到录制流，视频与音轨均只保存在浏览器 IndexedDB，不读取麦克风。死亡回放使用服务端录制的双方权威轨迹与真实射击、命中事件重建港口集装箱、吊机、灯塔和击杀过程，并提供追踪镜头与播放进度。无人机近地搜索灯与机械单位坠毁均为客户端表现。游戏仅使用 WebGL2 + Three.js 三维渲染，不提供 Canvas 2D 兼容模式，也不再识别 `?gfx=2d` / `?render=2d`；WebGL2 不可用时显示启动错误。移动、命中、快照、限频、反作弊、语音与专注锁定继续使用 v1.23.0 算法。游戏内标题页、暂停菜单与战场名单面板均提供 GitHub 仓库链接 `https://github.com/wenzhengshi/fable5-2-salt-online`。
 - 缓存：`Cache-Control: no-store`
 
 ### 盐港赛车
@@ -138,6 +139,20 @@
 - 参数：无
 - 返回示例：`{"ok":true,"message":"服务正常","lang":"zh-CN","uptimeSeconds":12}`
 
+### 游玩开放时段
+
+- 方法：`GET`
+- 路径：`/api/game/play-schedule`
+- 参数：无
+- 时区：固定按北京时间 `Asia/Shanghai`（UTC+8）判断，不受访问者本机时区影响。
+- 规则：周一至周五 `00:00–07:00`、`09:00–12:00`、`14:00–18:00` 不可游玩；`07:00–09:00`、`12:00–14:00`、`18:00–次日 00:00` 可游玩。周六、周日全天可游玩；节假日若落在周一至周五，同样全天可游玩。
+- 节假日数据：首次读取时自动写入 `data/holidays.json`，格式为 `{"holidays":[{"date":"2026-10-01","name":"国庆节"}]}`；文件由 `config/storage.js` 原子写入，升级源码不会清空。服务端会把内置节假日与文件记录合并，文件可补充后续年份或临时假日。
+- 返回字段：`ok`、`lang`、`blocked`、`playableNow`、`reason`、`serverNow`、`serverNowLocal`、`date`、`weekday`、`weekdayLabel`、`weekend`、`holiday`、`holidayName`、`workday`、`activeWindow`、`windows[]`、`nextPlayableAt`、`nextPlayableLocal`、`remainingMs`、`holidayCount`、`schedule`。
+- `remainingMs` 是距离当前工作时段结束、可以重新游玩的毫秒数；非封锁状态为 `0`。`schedule` 重复给出时区、工作时段、节假日数量与 `storage` 文件名，便于客户端与运维核对。
+- 首页在服务端渲染时直接注入同一份状态；封锁期间先展示横屏开放时段弹窗与“天 / 小时 / 分 / 秒”倒计时。弹窗支持右上角关闭、点击遮罩关闭与 `Esc` 关闭；手机竖屏打开弹窗时会临时转为横屏显示，关闭后恢复原屏幕方向。关闭弹窗后启动并进入主页，但工作时间段内点击「开始行动」会再次打开弹窗，不会进入对局。页面打开期间每 5 秒重新校验；对局进行中进入工作时段会暂停并显示弹窗。
+- WebSocket：封锁期间发送 `join` 不建立入场合约，服务端返回 `{"type":"scheduleBlocked","blocked":true,"remainingMs":...,"nextPlayableAt":...,"serverNow":...,"timeZone":"Asia/Shanghai"}`，客户端据此显示同一倒计时层。
+- 返回示例：`{"ok":true,"lang":"zh-CN","blocked":true,"playableNow":false,"reason":"work-hours","timeZone":"Asia/Shanghai","serverNow":1795399200000,"serverNowLocal":"2026-11-23T10:00:00+08:00","date":"2026-11-23","weekday":1,"weekdayLabel":"周一","weekend":false,"holiday":false,"holidayName":"","workday":true,"activeWindow":{"start":"09:00","end":"12:00"},"windows":[{"start":"00:00","end":"07:00"},{"start":"09:00","end":"12:00"},{"start":"14:00","end":"18:00"}],"nextPlayableAt":1795406400000,"nextPlayableLocal":"2026-11-23T12:00:00+08:00","remainingMs":7200000,"holidayCount":92}`
+
 ### 游戏元信息
 
 - 方法：`GET`
@@ -146,8 +161,9 @@
   - `mode`：`free-for-all`
   - `respawnSeconds`：复活等待秒数，当前为 `5`
   - `characters`：可选操控单位列表，`id` 为 `male` / `female` / `hound` / `drone` / `classic`，`name` 与 `role` 随语言返回
-  - `online`：当前 WebSocket 在线连接数
+  - `online`：当前有效 WebSocket 在线连接数；匿名玩家仍计入总数，但公开玩家数据不会返回其真实代号
   - `websocket`：`/ws`
+  - `playSchedule`：开放时段描述，含 `timeZone`、`windows[]`、`workdays`、`weekendPlayable`、`weekdayHolidayPlayable`、`holidayCount`、`storage` 与 `endpoint`
   - `engine`：`WebGL2 / Three.js (bundled)`
   - `rendering.mode`：固定为 `3d`
   - `rendering.primary`：主渲染器 `webgl2`
@@ -196,7 +212,7 @@
 - 路径：`/api/game/leaderboard`
 - 参数：可选 `?limit=1..100`，默认 `20`
 - 返回字段：`online`、`respawnSeconds`、`players[]`、`leaderboard[]`
-- `players[]` 每项含 `focused`、`focusUntil`、`focusKind` 与 `focus`；`focus.active: true` 表示该玩家正在专注观战，`focus.kind` 为 `manual` 或 `auto`，并含剩余毫秒与时长。
+- `players[]` 每项含 `focused`、`focusUntil`、`focusKind`、`anonymous`、`nameHidden` 与 `focus`；`focus.active: true` 表示该玩家正在专注观战，`focus.kind` 为 `manual` 或 `auto`，并含剩余毫秒与时长。匿名在线玩家的 `name` 为空字符串、`nameHidden: true`，客户端按语言显示为「匿名玩家」。
 - 说明：战绩在击杀 / 死亡时累加，并异步写回 `data/leaderboard.json`（保留前 300 条）。命中敏感词的历史代号会被过滤，不会出现在在线列表或排行榜中。
 
 ### 金币活动公示
@@ -243,22 +259,29 @@
 
 - 方法：`GET`
 - 路径：`/api/game/bullet-marks`
-- 参数：`limit` 可选，返回条数，默认 `800`，范围 `1..800`
-- 返回字段：`ok`、`lang`、`map`、`total`、`limit`、`marks[]`
-- `marks[]` 按时间从旧到新排列，每项含 `id`、`map`、`point`、`normal`、`surface`、`shooterId`、`at`、`persisted`。`point` / `normal` 均为 `{x,y,z}`；`surface` 为命中材质；`persisted: false` 表示该条正在等待重试落盘。
-- 说明：仅记录盐港地图的子弹命中世界表面的弹痕；玩家、敌人与水面命中不会写入。服务端先更新内存并立即广播，再由独立 worker 线程加锁原子追加到 `data/bullet-marks.jsonl`，超过 `1200` 次追加后原子压缩为最新 `800` 条；写入与读取都不占用玩家网络线程，服务重启后自动读取。广播和接口中的 `persisted` 可能短暂为 `false`，写回成功后变为 `true`。客户端本地射击会立即渲染，服务端广播按客户端生成的 `id` 去重；入场历史按分片补发，网格分帧创建。
-- 返回示例：`{"ok":true,"lang":"zh-CN","map":"port","total":2,"limit":800,"marks":[{"id":"bd1","map":"port","point":{"x":12.4,"y":0.3,"z":-8.1},"normal":{"x":0,"y":1,"z":0},"surface":"concrete","shooterId":"p3","at":1794500000000,"persisted":true}]}`
+- 参数：普通读取时 `limit` 可选，返回最近 `limit` 条；不传时返回全部记录，不设总量上限。`sync=1&paged=1&since=<cursor>` 返回游标之后的新增弹痕；`sync=1&history=1&limit=<n>&before=<seq>&base=<cursor>` 分页读取完整历史，`limit` 默认 `120`、范围 `1..240`，`before` 为上一页返回的 `nextBefore`，`base` 为首次响应返回的 `baseCursor`。无变化时返回 HTTP 204；游标失效（例如服务重启换了 epoch）时返回 `reset: true`，客户端应重新分页。
+- 返回字段：`ok`、`lang`、`map`、`total`、`revision`、`cursor`、`limit`、`marks[]`；历史分页额外返回 `baseCursor`、`complete`、`nextBefore`，增量同步返回 `partial`、`reset`
+- `marks[]` 按时间从旧到新排列，每项含 `id`、`seq`、`map`、`point`、`normal`、`surface`、`shooterId`、`at`、`persisted`。`point` / `normal` 均为 `{x,y,z}`；`surface` 为命中材质；`persisted: false` 表示该条正在等待重试落盘。
+- 说明：仅记录盐港地图的子弹命中世界表面的弹痕；玩家、敌人与水面命中不会写入。服务端更新内存后由独立 worker 线程加锁原子追加到 `data/bullet-marks.jsonl`，文件保留所有已写入记录。弹痕历史与后续新增全部通过 HTTP 加载，不再通过 WebSocket 下发；客户端首次进入按页取回完整历史，取完后用首次响应的 `baseCursor` 做一次增量对账，之后定期以 `since=<cursor>` 拉取新增弹痕。客户端本地射击仍会立即渲染，HTTP 返回同 `id` 记录时自动确认；网格继续分帧创建。
+- 返回示例：`{"ok":true,"lang":"zh-CN","map":"port","total":2,"revision":2,"cursor":"e1:2","limit":120,"baseCursor":"e1:2","complete":true,"nextBefore":0,"marks":[{"id":"bd1","seq":1,"map":"port","point":{"x":12.4,"y":0.3,"z":-8.1},"normal":{"x":0,"y":1,"z":0},"surface":"concrete","shooterId":"p3","at":1794500000000,"persisted":true}]}`
 
 ### 盐港全服尸体历史
 
 - 方法：`GET`
 - 路径：`/api/game/corpse-field`
-- 参数：`limit` 可选，返回条数，默认 `240`，范围 `1..240`
-- 返回字段：`ok`、`lang`、`map`、`total`、`revision`、`limit`、`corpses[]`
+- 参数：普通读取时 `limit` 可选，返回最近 `limit` 条；不传时返回全部记录，不设总量上限。`sync=1&paged=1&since=<cursor>` 返回游标之后的新增及修改记录；`sync=1&history=1&limit=<n>&before=<seq>&base=<cursor>` 分页读取完整历史，`limit` 默认 `40`、范围 `1..120`，`before` 为上一页返回的 `nextBefore`，`base` 为首次响应返回的 `baseCursor`。无变化时返回 HTTP 204；游标失效（例如服务重启换了 epoch）时返回 `reset: true`，客户端应重新分页。
+- 返回字段：`ok`、`lang`、`map`、`total`、`revision`、`cursor`、`limit`、`corpses[]`；历史分页额外返回 `baseCursor`、`complete`、`nextBefore`，增量同步返回 `partial`、`reset`
 - `corpses[]` 按击毁时间从新到旧排列，每项含 `id`、`seq`、`at`、`settled`、`settledAt`、`surface`、`map`、`kind`、`pos`、`yaw`、`playerId`、`name`、`soldier`、`outfit`、`victimId`、`shooterId`、`shooterName`、`pose`、`persisted`。`kind` 为 `hound` / `drone` / `player`；`surface` 为 `ground` 或 `object`，表示尸体最终落在地面还是物体表面；`outfit` 是被击倒瞬间的皮肤，查看者不会因自身未拥有该皮肤而回退默认外观；`pos` 为最终落点 `{x,y,z}`，无人机爆炸后落在地面或物体上都按同一结构写入；`pose` 仅机器类尸体携带，为 `{yaw, bodyPos, bones}`，`bodyPos` 为机身骨骼局部位置，`bones` 为骨骼名到局部四元数 `[x,y,z,w]` 的映射；`settled: false` 表示仍在等待客户端上报最终落点；`persisted: false` 表示该条正在等待重试落盘。
-- 说明：仅记录盐港地图中被击毁的机器狗、无人机和死亡玩家。击毁时服务端依据地形高度与物体碰撞盒计算初始落点，并记录玩家击倒时穿戴的皮肤；客户端补报最终落点后先在内存中原地更新同一条记录并广播，再由 worker 线程异步追加更新行，皮肤保持不变；机器狗死亡动画结束后客户端会补报实际骨骼姿态与机身高度，服务端校验归属、时间窗与距离后更新同一条记录并广播 `corpseUpdated`，其他玩家与重启后的历史尸体按该姿态重建，不再统一侧躺。无论无人机落在地面还是物体上都会持久化，实时广播不等待 `fsync`。记录持久化为 `data/corpse-field.jsonl`；同一目标在 3 秒内于 4 米范围内重复上报会去重。超过 `1200` 次追加后原子压缩为最新 `600` 条，服务重启后自动读取并保留皮肤与姿态。客户端收到落点或姿态更新时直接更新现有尸体模型而不删除重建，尸体不会在落地瞬间从渲染中消失；旧客户端入场时仍会收到历史分片，模型分帧创建。
-- 新版游戏客户端通过 `?sync=1&since=<cursor>` 独立同步盐港最近 80 条尸体。首次进入或游标失效时返回完整列表，后续通过 `partial: true` 返回新增及修改记录。无变化时返回 HTTP 204。客户端发送 `join.corpseSync = "http"` 后，战斗 WebSocket 仍接收落点和姿态补报，尸体列表及更新由 HTTP 接口提供。
-- 返回示例：`{"ok":true,"lang":"zh-CN","map":"port","total":2,"revision":2,"limit":240,"corpses":[{"id":"c2","seq":2,"at":1794500000000,"map":"port","kind":"hound","pos":{"x":12.4,"y":0.1,"z":-8.1},"yaw":1.2,"playerId":"","name":"","soldier":"classic","outfit":"","victimId":"machine-4","shooterId":"p3","shooterName":"RAVEN-42","pose":{"yaw":1.2,"bodyPos":[0.01,0.36,0],"bones":{"body":[0,0.2,0,0.9798],"head":[0.05,0,0,0.9987]}},"persisted":true}]}`
+- 说明：仅记录盐港地图中被击毁的机器狗、无人机和死亡玩家。击毁时服务端依据地形高度与物体碰撞盒计算初始落点，并记录玩家击倒时穿戴的皮肤；客户端补报最终落点后先在内存中原地更新同一条记录，再由 worker 线程异步追加更新行，皮肤保持不变；机器狗死亡动画结束后客户端会补报实际骨骼姿态与机身高度，服务端校验归属、时间窗与距离后更新同一条记录，其他玩家与重启后的历史尸体按该姿态重建，不再统一侧躺。无论无人机落在地面还是物体上都会持久化，HTTP 同步不等待 `fsync`。记录持久化为 `data/corpse-field.jsonl`；同一目标在 3 秒内于 4 米范围内重复上报会去重。文件保留所有已写入记录；服务重启时流式读取全部历史进入实时缓存，并保留皮肤与姿态。客户端收到落点或姿态更新时直接更新现有尸体模型而不删除重建，尸体不会在落地瞬间从渲染中消失。
+- 盐港尸体全部通过分页 HTTP 接口同步，不再通过 WebSocket 下发历史或增量：客户端首次进入按 `history=1` 每页 40 条、约 120 ms 一页缓慢取回全部历史，页面取完后以首次响应的 `baseCursor` 做一次增量对账，确保分页期间新增或更新的尸体不遗漏；之后每 2.5 秒通过 `since=<cursor>` 获取新增及修改记录。无变化时返回 HTTP 204，游标失效时返回 `reset: true` 并重新分页。模型仍按每帧 3 个分帧创建，分页请求与连接实时快照互不阻塞。
+- 返回示例：`{"ok":true,"lang":"zh-CN","map":"port","total":2,"revision":2,"cursor":"e1:2","limit":40,"baseCursor":"e1:2","complete":true,"nextBefore":0,"corpses":[{"id":"c2","seq":2,"at":1794500000000,"map":"port","kind":"hound","pos":{"x":12.4,"y":0.1,"z":-8.1},"yaw":1.2,"playerId":"","name":"","soldier":"classic","outfit":"","victimId":"machine-4","shooterId":"p3","shooterName":"RAVEN-42","pose":{"yaw":1.2,"bodyPos":[0.01,0.36,0],"bones":{"body":[0,0.2,0,0.9798],"head":[0.05,0,0,0.9987]}},"persisted":true}]}`
+
+### 盐港集装箱广告
+
+- 玩家靠近并瞄准盐港固定集装箱长侧面，点击「印广告」或按 9（主键盘 `Digit9` 或小键盘 `Numpad9`）。选纯文字或横版图片，按每 24 小时 0.1 枚盐线币支付。图片在客户端压缩为横版 JPEG，服务端限制为 200,000 字节。弹窗打开时会解除鼠标锁定但不会触发暂停；手机端打开系统图片选择器导致页面暂时隐藏时也不会自动暂停，关闭或取消后按原状态恢复锁定。
+- 客户端通过 `containerAdQuote` 发送 `box,side,request` 取得绑定当前联机会话与侧面的短期凭证，再请求 `POST /api/game/container-ads`（multipart 的 `mode,days,text/image`，请求头 `X-Container-Ad-Ticket`）。同一凭证重试不会重复扣款。
+- `GET /api/game/container-ads?since=...` 返回有效广告元数据，版本一致时返回 204。图片通过版本化路径单独下载；广告投放或撤下不改变弹痕数据。
+- `/admin/container-ads` 可审核。新广告默认通过；标记不通过时原广告位显示「该广告违规」，直至恢复通过或投放到期。
 
 ### 问候接口
 
@@ -335,6 +358,7 @@
 ### 连接
 
 - 地址：`ws://$HOST:$PORT/ws?clientId=<id>&fingerprint=<fp>`（HTTPS 页面使用 `wss://`）
+- 延迟探测通道：`ws://$HOST:$PORT/ws?probe=1`。该连接不加入玩家列表、不接收 `snapshot` / `pose`，也不影响在线人数；客户端发送 `{"type":"ping","t":<number>}`，服务端立即回 `{"type":"pong","t":<同一数值>}`。浏览器端由独立 Web Worker 每秒采样一次并取最近 5 次中位数，因此 HUD 的网络 RTT 不会被游戏主线程的渲染长任务污染；主线程排队时间由 Worker 消息落队时延单独计算，并以 `+xxxms` 附在延迟值后。
 - 赛车实时频道：`ws://$HOST:$PORT/ws?race=1&ticket=<ticket id>&key=<load key>&name=<玩家名称>`（`name` 可选，用于同步可改名玩家名称）；身份或票券无效时返回 `403`。普通游戏连接会跳过该频道，两者不会互相占用。
 - 协议：JSON 文本帧用于游戏状态与聊天；二进制帧用于玩家语音
 - 心跳：服务端每 30 秒发送 WebSocket ping
@@ -348,17 +372,18 @@
 | --- | --- | --- |
 | `join` | `name`, `soldier`, `spawns[]` | 设置代号、操控单位（`male` / `female` / `hound` / `drone`）与可用出生点；非法单位值回退为 `male`。代号命中敏感词时自动分配安全代号，并在 `joined` 中返回 `filtered: true` |
 | `soldier` | `soldier` | 游戏过程中切换操控单位；服务端校验后广播 `soldierState`，非法值回退为 `male` |
-| `spawns` | `spawns[]` | 更新出生点列表，最多 32 个 |
+| `spawns` | `spawns[]` | 更新出生点列表，最多 64 个。盐港地图客户端会在每次阵亡及发送 `respawn` 前，按关卡导航网格重新采样整张地图的可行走地面点并上报；服务端过滤高空点、避开传送门 Boss 与附近敌人后随机选取，不再固定轮转关卡预置出生点。远征地与青云地图仍由服务端各自的地图复活规则决定 |
 | `chat` | `text` | 全服大字，最长 80 字，冷却 1200 ms；命中敏感词返回 `chatDenied` 且不广播。通过校验的消息会立即广播并尽力同步写入 `data/chat-history.jsonl`；写盘失败时仍广播，同时进入自动重试队列，并向发送者发送 `chatWarning` |
 | `voiceState` | `enabled`, `muted`, `speaking` | 同步麦克风开关、静音、说话状态 |
 | `rename` | `name` | 修改代号，最长 16 字；命中敏感词返回 `nameDenied` 并保留原代号 |
+| `anonymous` | `enabled` | 切换「匿名在线」；仅入场后可用，700 ms 冷却。开启后其他玩家的实时名单与公开在线接口只收到空代号并显示为匿名玩家，同时拒绝新的好友 / 跟随请求；服务端回 `anonymousState` |
 | `followInvite` | `targetId` | 向同地图在线玩家发送好友请求；对方接受后，请求方自动跟随对方。被跟随方位于轿车内时仍可发起，落点会按目标所在地图边界计算并位于车尾侧门附近。请求有效期 20 秒，同一连接 1200 ms 冷却，双方各最多 5 条待处理请求；已经是好友时直接开始跟随 |
 | `followInviteResponse` | `fromId`, `accept` | 响应收到的 `followInviteReceived`；`accept: true` 建立双向好友关系并让请求方自动跟随，`false` 拒绝。过期响应返回 `followDenied.reason = "expired"` |
 | `followLeave` | 无 | 主动停止当前跟随；好友关系保留，之后可在名单中再次直接跟随 |
 | `followDismiss` | `targetId` | 被跟随方停止指定好友的跟随；仅当 `targetId` 当前正跟随自己时生效 |
-| `state` | `pos`, `yaw`, `pitch`, `active`, `visible`, `moving`, `sprint` | 10 Hz 位置与动作状态；仅同步移动与冲刺，蹲伏和趴下已移除。 |
+| `state` | `pos`, `yaw`, `pitch`, `active`, `visible`, `moving`, `sprint` | 20 Hz 位置与动作状态；仅同步移动与冲刺，蹲伏和趴下已移除。 |
 | `shot` | `origin`, `dir` | 射击特效广播 |
-| `bulletMark` | `id`, `point`, `normal`, `surface` | 盐港子弹命中世界表面后上报弹痕；`id` 可选，由客户端生成并用于本地乐观渲染与服务端广播去重。必须紧跟一条已通过校验的 `shot`，服务端校验弹着点位于枪口射线附近且在武器射程内。玩家 / 敌人 / 水面命中忽略 |
+| `bulletMark` | `id`, `point`, `normal`, `surface` | 盐港子弹命中世界表面后上报弹痕；`id` 可选，由客户端生成并用于本地乐观渲染与 HTTP 同步去重。必须紧跟一条已通过校验的 `shot`，服务端校验弹着点位于枪口射线附近且在武器射程内。玩家 / 敌人 / 水面命中忽略；服务端只落库，不通过 WebSocket 回发弹痕数据 |
 | `hit` | `targetId` | 命中判定，服务端校验距离与保护状态 |
 | `died` | 无 | 主动上报死亡 |
 | `respawn` | 无 | 请求复活；死亡后至少等待 5 秒 |
@@ -388,8 +413,8 @@
 | `goldGiftResponse` | `offerId`, `accept` | 接收方接受或拒绝赠币邀请；`accept` 必须为布尔值。服务端校验邀请归属、有效期、双方当前状态与余额，只有接受时才原子转账并写入公示记录 |
 | `goldHit` | `id` | 对金标目标射击；仅使用服务端记录的最近一帧权威弹道判定命中与伤害，不信任客户端造成的伤害 |
 | `ordinaryGoldHit` | `id`, `kind`, `point`, `killed`, `weak`, `floor` | 上报普通机器狗 / 无人机的权威击毁信息；服务端结合弹道、落点和独立抽签决定是否有 5% 幸运掉落，每日本类掉落最多 8 份 |
-| `corpseLanded` | `id`, `victimId`, `playerId`, `pos`, `yaw`, `surface`, `at` | 盐港尸体完成落地后上报最终落点；`surface` 为 `ground` / `object`。服务端校验目标归属与位移后更新同一条持久化记录，并向同地图玩家广播 `corpseUpdated`；成功时回执 `corpseSettled` |
-| `corpsePose` | `id`, `victimId`, `pos?`, `pose`, `at` | 机器狗死亡动画结束后上报实际骨骼姿态与最终机身坐标；`pose` 为 `{yaw, bodyPos:[x,y,z], bones:{name:[x,y,z,w]}}`，骨骼名限定为游戏内已登记的机器单位骨骼，四元数分量会被钳制到 `[-1,1]`。服务端校验目标、120 秒时间窗与 140 米上报距离，`pos` 在落点漂移和高度差允许范围内时同步更新，随后广播 `corpseUpdated` |
+| `corpseLanded` | `id`, `victimId`, `playerId`, `pos`, `yaw`, `surface`, `at` | 盐港尸体完成落地后上报最终落点；`surface` 为 `ground` / `object`。服务端校验目标归属与位移后更新同一条持久化记录，只落库不通过 WebSocket 回发；其他玩家由 HTTP 增量同步获取 |
+| `corpsePose` | `id`, `victimId`, `pos?`, `pose`, `at` | 机器狗死亡动画结束后上报实际骨骼姿态与最终机身坐标；`pose` 为 `{yaw, bodyPos:[x,y,z], bones:{name:[x,y,z,w]}}`，骨骼名限定为游戏内已登记的机器单位骨骼，四元数分量会被钳制到 `[-1,1]`。服务端校验目标、120 秒时间窗与 140 米上报距离，`pos` 在落点漂移和高度差允许范围内时同步更新，只落库不通过 WebSocket 回发；其他玩家由 HTTP 增量同步获取 |
 | `containerList` | 无 | 请求当前地图附近的集装箱；同一连接 1200 ms 内重复请求会被忽略 |
 | `containerAction` | `request`, `action`, 可选 `password`, `id`, `point`, `color`, `text`, `item`, `amount` | 集装箱操作。`action` 为 `issue`、`create`、`open`、`close`、`move`、`sign`、`deposit`、`withdraw`、`locate`、`depositGold` 或 `withdrawGold`；`deposit` / `withdraw` 的 `amount` 为指定物品件数（正整数），`depositGold` / `withdrawGold` 的 `amount` 为微盐线币整数。省略或为 `all` 时沿用快捷数量（消耗品 1 个、其他物品尽量全部；金币全部存入或取出）；密码由服务器生成，成功 / 失败结果通过同名 `request` 关联 |
 | `shopList` | 无 | 请求商店商品价格与玩家已购状态；商品管理端调价后也会主动广播 `shopPrices` |
@@ -417,17 +442,20 @@
 
 | `type` | 字段 | 说明 |
 | --- | --- | --- |
-| `welcome` | `id`, `name`, `color`, `soldier`, `respawnMs`, `online`, `voiceRelay`, `focus` | 连接即发送；`soldier` 为当前操控单位；`voiceRelay` 描述全局语音参数；`focus.active: true` 表示已处于只读观战 |
-| `joined` | `id`, `name`, `color`, `soldier`, `renamed`, `filtered`, `focus` | 代号、操控单位生效或改名成功；`renamed` 表示主动改名，`filtered` 表示原代号被拦截并分配了安全代号；`focus` 返回当前锁定状态 |
+| `scheduleBlocked` | `blocked`, `remainingMs`, `nextPlayableAt`, `serverNow`, `timeZone` | 工作时间段内收到 `join` 时返回，不建立入场状态；客户端用这些字段显示天 / 小时 / 分 / 秒倒计时，并在下一次开放后自动重发 `join` |
+| `welcome` | `id`, `name`, `color`, `soldier`, `respawnMs`, `online`, `anonymous`, `voiceRelay`, `focus` | 连接即发送；`soldier` 为当前操控单位；`anonymous` 为当前匿名在线状态；`voiceRelay` 描述全局语音参数；`focus.active: true` 表示已处于只读观战 |
+| `joined` | `id`, `name`, `color`, `soldier`, `anonymous`, `renamed`, `filtered`, `focus` | 代号、操控单位生效或改名成功；`anonymous` 为当前匿名在线状态；`renamed` 表示主动改名，`filtered` 表示原代号被拦截并分配了安全代号；`focus` 返回当前锁定状态 |
 | `soldierAck` | `soldier` | 操控单位已生效 |
 | `soldierState` | `id`, `soldier` | 某位在线玩家的操控单位发生变化；客户端据此实时替换远端模型 |
 | `nameDenied` | `reason` | `filtered`（敏感词）或 `invalid`（空代号）；改代号失败时原代号不变 |
-| `snapshot` | `t`, `online`, `players[]`, `roster[]`, `voice[]`, `boat`, `sedan`, `you` | 10 Hz 状态帧；`players[]` 每项含 `x,y,z,yaw,pitch,hp,moving,sprint,shield,soldier,carSeat,carId`，`roster[]` 每项含 `soldier`、`focused`、`focusUntil`、`focusKind` 与 `focus{active,until,remainingMs,kind,durationMs,trigger}`，`voice[]` 只包含已开麦玩家，`boat` 为共享撤离船状态，`sedan` 为当前地图的共享轿车状态（含唯一 `id`、四个座位与当前玩家座位），跨地图玩家为 `null`；`you` 含 `active`、`focusUntil`、`focusKind`、`focusDurationMs` 与 `follow{following,followers[],friends[],requests[]}`，其中 `following` 含目标公开信息与实时 `anchor{x,y,z,yaw}`；`anchor.y` 跟随目标当前海拔，客户端还会按地图地形做贴地校正 |
+| `anonymousState` | `ok`, `enabled`, `reason` | 匿名在线切换结果；成功时 `ok: true` 并返回最新 `enabled`；失败时 `reason` 为 `notReady`（尚未入场）或 `rate`（700 ms 内重复切换） |
+| `pose` | `t`, `players[]` | 20 Hz 轻量移动帧；`players[]` 每项含 `id,x,y,z,yaw,moving,sprint,swimming`，仅用于同地图远端角色位置、朝向和动作插值。完整血量、装备、载具、名单与地图实体仍由 10 Hz `snapshot` 同步 |
+| `snapshot` | `t`, `online`, `onlineOthers`, `players[]`, `roster[]`, `voice[]`, `boat`, `sedan`, `you` | 10 Hz 完整状态帧；`online` 为有效在线连接总数，`onlineOthers` 为排除自己后的在线数（仅自己时为 `0`，HUD 显示「无人在线」）；`players[]` 每项含 `x,y,z,yaw,pitch,hp,moving,sprint,shield,soldier,carSeat,carId`，`roster[]` 每项含 `soldier`、`focused`、`focusUntil`、`focusKind`、`anonymous`、`nameHidden` 与 `focus{active,until,remainingMs,kind,durationMs,trigger}`，匿名玩家对其他接收者下发空代号且 `nameHidden: true`，自己仍可看到本行真实代号；`voice[]` 只包含已开麦玩家，`boat` 为共享撤离船状态，`sedan` 为当前地图的共享轿车状态（含唯一 `id`、四个座位与当前玩家座位），跨地图玩家为 `null`；`you` 含 `active`、`anonymous`、`focusUntil`、`focusKind`、`focusDurationMs` 与 `follow{following,followers[],friends[],requests[]}`，其中 `following` 含目标公开信息与实时 `anchor{x,y,z,yaw}`；`anchor.y` 跟随目标当前海拔，客户端还会按地图地形做贴地校正 |
 | `followInviteSent` | `target{id,name,color,soldier}`, `expiresAt` | 好友请求已送达目标；重复发送未过期请求时也会返回 |
 | `followInviteReceived` | `from{id,name,color,soldier}`, `at`, `expiresAt` | 收到好友请求，客户端展示接受 / 拒绝卡片 |
 | `followInviteResult` | `accepted`, `target` 或 `from`, `autoFollow`, `reason` | 请求方收到接受结果；`autoFollow: true` 表示已开始自动跟随。拒绝、过期或目标不可用时 `accepted: false` 并带 `reason` |
 | `followState` | `event`, `following`, `followers[]`, `friends[]`, `requests[]`, `serverTime`, 可选 `reason`, `follower`, `source` | 好友与跟随状态变化；`event` 为 `started`、`followerJoined`、`followerLeft`、`ended`、`inviteClosed` 或 `friendUpdated`。`following.anchor` 为服务端计算的跟随落点，其 `y` 使用目标当前高度，客户端再校正到所在地图地表 |
-| `followDenied` | `reason` | 好友操作拒绝；`self`、`offline`、`notReady`、`focus`、`busy`、`map`、`full`、`rate`、`expired`、`notFollowing` 或 `leaderDown`。`busy` 仅表示请求方自身在载具、跳伞或当前操作中，或被跟随方在船上；被跟随方在轿车内不视为忙碌 |
+| `followDenied` | `reason` | 好友操作拒绝；`self`、`offline`、`notReady`、`anonymous`、`focus`、`busy`、`map`、`full`、`rate`、`expired`、`notFollowing` 或 `leaderDown`。`anonymous` 表示任一方开启匿名在线；`busy` 仅表示请求方自身在载具、跳伞或当前操作中，或被跟随方在船上；被跟随方在轿车内不视为忙碌 |
 | `boatAck` | `aboard`, `seat`, `pos`, `boat` | 登船或下船确认；登船时含座位，下船时含安全落点 |
 | `boatDenied` | `reason` | 船只操作拒绝；`range`、`full`、`helm`、`moving`、`landing`、`notAboard`、`rate`、`helmOnly` 或 `unavailable` |
 | `boatState` | `boat` | 船只成员或状态变化；`boat.seats` 固定为四个槽位，空位为 `null` |
@@ -477,14 +505,6 @@
 | `deathAck` | `respawnIn`, `respawnAt` | 客户端主动上报 `died` 后的死亡确认，包含固定复活等待时长与服务端复活时间戳 |
 | `notice` | `kind`, `name`, `id`, `previous`, `reason` | 加入 / 离开 / 复活 / 改名通知 |
 | `shot` | `id`, `origin`, `dir` | 其他玩家射击特效 |
-| `bulletMarks` | `map`, `historyId`, `marks[]`, `total`, `partial` | 加入战局、重连或返回盐港时分片补发历史弹痕；`partial` 恒为 `true`，`historyId` 标识同一次补发，客户端按该值合并分片 |
-| `bulletMarksComplete` | `map`, `historyId`, `total` | 弹痕历史最后一片发送完毕后下发，`historyId` 匹配时才清理已不在快照中的旧弹痕；空历史也会下发 |
-| `bulletMark` | `mark` | 盐港新增弹痕，`mark` 字段与历史接口中的单项一致；广播给当前盐港内全部已加入战局的玩家，包括射击者 |
-| `corpseField` | `map`, `historyId`, `revision`, `total`, `corpses[]`, `partial` | 加入战局、重连或返回盐港时分片补发尸体历史；`partial` 恒为 `true`，`corpses[]` 字段与历史接口中的单项一致 |
-| `corpseFieldComplete` | `map`, `historyId`, `revision`, `total` | 尸体历史最后一片发送完毕后下发，`historyId` 匹配时才清理旧尸体并更新 revision；空历史也会下发 |
-| `corpse` | `corpse` | 盐港新增尸体，字段与历史接口中的单项一致；广播给当前盐港内全部已加入战局的玩家，包括击毁者 |
-| `corpseUpdated` | `corpse` | 尸体最终落点或表面类型更新后的完整记录；地面与物体落点都通过此消息同步给同地图玩家 |
-| `corpseSettled` | `corpse` | 仅发送给落点上报者，确认该条尸体记录已在内存更新并进入异步落盘队列；`persisted` 可能短暂为 `false` |
 | `focusState` | `active`, `until`, `remainingMs`, `recordId`, `kind`, `durationMs`, `trigger`, `scope`, `playMs`, `ended`, `expired`, `denied`, `spawn` | 专注状态变化。`active: true` 表示进入只读观战，手动开启后持续 30 分钟。 |
 | `pong` | `t` | 延迟响应 |
 

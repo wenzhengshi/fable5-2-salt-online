@@ -233,11 +233,23 @@
       rebuildBoxes(model);
     }
 
+    const passwordBookKey = 'saltline.password-book.v1';
+    const bookTitle = flow.passwordBook || tr('密码本', 'Password book');
+    const bookAria = flow.passwordBookOpen || bookTitle;
+
     const toolbar = document.createElement('div');
     toolbar.className = 'road-sign-tools container-tools';
     const control = document.createElement('button');
+    control.type = 'button';
     control.textContent = tr('集装箱', 'Container');
-    toolbar.append(control);
+    const bookControl = document.createElement('button');
+    bookControl.type = 'button';
+    bookControl.className = 'container-book-button';
+    bookControl.textContent = bookTitle;
+    bookControl.title = bookAria;
+    bookControl.setAttribute('aria-label', bookAria);
+    bookControl.setAttribute('aria-haspopup', 'dialog');
+    toolbar.append(control, bookControl);
     toolbar.hidden = true;
     document.body.append(toolbar);
     game.frontier?.registerDockTool(toolbar);
@@ -349,8 +361,6 @@
         if (relock && !force) input.requestLock();
       }
     }
-    const passwordBookKey = 'saltline.password-book.v1';
-    const bookTitle = tr('密码本', 'Password book');
     function readBook() {
       const value = JSON.parse(localStorage.getItem(passwordBookKey) || '[]');
       return Array.isArray(value) ? value.filter(row =>
@@ -738,20 +748,32 @@
         request('create', { password: issued }));
       code.select();
     }
-    function openMenu() {
-      if (dialog.open || !player.alive || game.game.state !== 'playing' ||
-          document.querySelector('dialog[open]')) return;
+    function canOpenPanel() {
+      return !dialog.open && player.alive && game.game.state === 'playing' &&
+        !document.querySelector('dialog[open]');
+    }
+    function enterPanel() {
       menuTarget = target;
       relock = !!document.pointerLockElement;
       input.setGameplay(false);
       input.exitLock();
       dialog.showModal();
+    }
+    function openMenu() {
+      if (!canOpenPanel()) return;
+      enterPanel();
       if (!map || !mp?.connected) passwordBook('', () => dismiss());
       else if (issued) { reveal = true; showPassword(); }
       else if (openedId) inventory();
       else menu();
     }
+    function openPasswordBook() {
+      if (!canOpenPanel()) return;
+      enterPanel();
+      passwordBook('', () => dismiss(false, !!openedId));
+    }
     control.addEventListener('click', openMenu);
+    bookControl.addEventListener('click', openPasswordBook);
     dialog.addEventListener('cancel', event => {
       event.preventDefault();
       if (!reveal || passwordBookOpen) dismiss(false, !!openedId);
@@ -877,13 +899,7 @@
           !game.frontier?.airborne && !game.portalArrival?.active && !game.sedan?.riding;
         const playing = !!map && mp?.connected && canOpenBook;
         toolbar.hidden = !canOpenBook;
-        if (!playing) {
-          setText(control, bookTitle);
-          if (control.getAttribute('aria-label') !== bookTitle) {
-            control.setAttribute('aria-label', bookTitle);
-            control.title = bookTitle;
-          }
-        }
+        control.hidden = !playing;
         const depositRow = openedId ? models.get(openedId)?.row : null;
         const showDeposit = playing && nearbyBox(depositRow);
         depositHud.hidden = !showDeposit;

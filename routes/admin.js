@@ -211,6 +211,39 @@ router.post('/moderation/revoke/:id', requireSession, async (req, res, next) => 
   }
 });
 
+const portContainerAds = require('../services/portContainerAds');
+router.get('/container-ads', (req, res, next) => {
+  if (!req.backupSession) return res.redirect(303, '/admin');
+  if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
+  try {
+    const date = new Intl.DateTimeFormat(res.locals.lang === 'en-US' ? 'en-GB' : 'zh-CN', {
+      timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'short'
+    });
+    return res.render('admin', { view: 'container-ads', csrf: req.backupSession.csrf,
+      ads: portContainerAds.adminList(), formatTime: value => date.format(value),
+      message: '', returnTo: '/admin/container-ads' });
+  } catch (error) { next(error); }
+});
+
+router.post('/container-ads/:id/review', requireSession, (req, res, next) => {
+  if (req.backupSession.firstLogin) return res.redirect(303, '/admin/password');
+  const { action, purchase } = req.body;
+  if (action !== 'reject' && action !== 'approve') return res.status(400).end();
+  try {
+    portContainerAds.review(req.params.id, purchase, action === 'reject');
+    return res.redirect(303, '/admin/container-ads');
+  } catch (error) {
+    if (error.message === 'missing') return res.redirect(303, '/admin/container-ads');
+    next(error);
+  }
+});
+
+router.get('/container-ads/:id/:version.jpg', (req, res) => {
+  if (!req.backupSession || req.backupSession.firstLogin) return res.status(403).end();
+  const bytes = portContainerAds.image(req.params.id, req.params.version, true);
+  return bytes ? res.type('image/jpeg').send(bytes) : res.status(404).end();
+});
+
 function shopPage(req, res, status = 200, messageKey = '') {
   const prices = priceList();
   return res.status(status).render('admin', {

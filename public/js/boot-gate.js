@@ -42,6 +42,7 @@
     'sedan.js',
     'container-password.js',
     'containers.js',
+    'port-container-ads.js',
     'gold-rules.js',
     'shop-catalog.js',
     'shop.js',
@@ -281,6 +282,11 @@
 
   async function start() {
     if (started) return;
+    if (window.SaltPlayGate && window.SaltPlayGate.visible) {
+      bootState.phase = 'schedule-blocked';
+      window.SaltPlayGate.whenOpen(() => bootState.start());
+      return;
+    }
     started = true;
     hidePanel();
     const context = await preflight();

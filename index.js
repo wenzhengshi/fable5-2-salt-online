@@ -15,6 +15,7 @@ const bulletMarks = require('./services/bulletMarks');
 const persistenceQueue = require('./services/persistenceQueue');
 const groupQr = require('./services/groupQr');
 const houndTuning = require('./services/houndTuning');
+const playSchedule = require('./services/playSchedule');
 const roadSigns = require('./services/roadSigns');
 const { attachMultiplayer, shutdownMultiplayer } = require('./realtime/multiplayer');
 const { version: RELEASE_VERSION } = require('./package.json');
@@ -24,7 +25,7 @@ const PORT = process.env.PORT || 3000;
 // 托管平台的反向代理通常不在应用所在容器的回环命名空间内。
 // 默认监听所有网卡；预览网关会显式注入 HOST=127.0.0.1，仍按平台值启动。
 const HOST = process.env.HOST || '0.0.0.0';
-const ASSET_VERSION = '20261121-impact-ammo-v' + RELEASE_VERSION;
+const ASSET_VERSION = '20261123-playgate-dismiss-v' + RELEASE_VERSION;
 
 app.set('view engine', 'ejs');
 app.engine('html', ejs.renderFile);
@@ -194,6 +195,7 @@ function renderGame(req, res, raceTransfer, raceStart = '') {
     raceStart,
     preloadQingyun: raceTransfer === 'qingyun',
     houndFlipChance: houndTuning.read().chance,
+    playSchedule: playSchedule.status(),
     assetVersion: ASSET_VERSION
   });
 }

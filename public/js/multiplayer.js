@@ -194,6 +194,9 @@
   };
   const { AIR_WALL: FLIGHT_AIR_WALL, PORT_PLAYER_START, PORT_SPAWN_YAW, isInsideAirWall } = window.SaltFlightCollision;
   const DRONE_AIRBORNE_CLEARANCE = 1.8;
+  // 盐港复活采用整张可行走区域抽样，而不是只在关卡预置的少量出生点里循环。
+  const PORT_SPAWN_CANDIDATE_LIMIT = 64;
+  const PORT_SPAWN_MARGIN = 1.4;
   const virtualUnitInput = {
     ascend: false,
     descend: false
@@ -208,6 +211,8 @@
   let myColor = '#ffb347';
   let connected = false;
   let onlineCount = null;
+  let othersOnline = null;
+  let myAnonymous = false;
   let rosterData = [];
   let friendIds = new Set();
   let followingFriend = null;
@@ -217,6 +222,13 @@
   const pendingFollowIds = new Set();
   let selfStats = { kills: 0, deaths: 0, streak: 0, bestStreak: 0, alive: true };
   let pingMs = null;
+  let pingSource = 'main';
+  let pingQueueMs = null;
+  let pingWorker = null;
+  let pingWorkerReady = false;
+  let pingWorkerFailed = false;
+  let pingProbeStartedAt = 0;
+  let pingProbeTimer = 0;
   let reconnectDelay = 1200;
   let reconnectTimer = 0;
   let pingTimer = 0;
@@ -254,6 +266,20 @@
   const snapshotTrails = new Map();
 
   const avatars = new Map();
+  const AVATAR_DRAW_DISTANCE = 140;
+  const AVATAR_MODEL_DISTANCE = 165;
+  const AVATAR_LABEL_DISTANCE = 72;
+  const AVATAR_RING_DISTANCE = 16;
+  const AVATAR_ANIMATION_QUALITY = {
+    low: { near: 0.040, mid: 0.100, far: 0.180, shadow: 14 },
+    medium: { near: 0.028, mid: 0.070, far: 0.140, shadow: 24 },
+    high: { near: 0.020, mid: 0.050, far: 0.120, shadow: 32 },
+    ultra: { near: 0.0167, mid: 0.040, far: 0.100, shadow: 40 }
+  };
+  let avatarCullMatrix = null;
+  let avatarCullFrustum = null;
+  let avatarCullSphere = null;
+  let avatarCameraPos = null;
   const messageListeners = new Set();
   const binaryListeners = new Set();
   let lastFrame = 0;
@@ -521,13 +547,84 @@
   }
 
   function updateChip() {
-    const presence = onlineCount === null ? '—' :
-      t(onlineCount > 0 ? 'presenceOnline' : 'presenceEmpty');
+    const presence = othersOnline === null ? '—' :
+      t(othersOnline > 0 ? 'presenceOnline' : 'presenceEmpty');
     setText(el.online, presence);
     setText(el.kills, String(selfStats.kills || 0));
     setText(el.deaths, String(selfStats.deaths || 0));
-    setText(el.ping, pingMs == null ? '—' : Math.round(pingMs) + 'ms');
-    el.ping.classList.toggle('bad', pingMs != null && pingMs > 160);
+    const rtt = Number.isFinite(pingMs) ? Math.max(0, Math.round(pingMs)) : null;
+    setText(el.ping, rtt == null ? '—' : rtt + 'ms');
+    el.ping.classList.toggle('bad', rtt != null && rtt > 160);
+    const queue = Number.isFinite(pingQueueMs) ? Math.max(0, Math.round(pingQueueMs)) : 0;
+    if (rtt != null && pingSource === 'worker' && queue >= 80) {
+      el.ping.dataset.queue = '+' + Math.min(9999, queue) + 'ms';
+    } else {
+      delete el.ping.dataset.queue;
+    }
+    const detail = rtt == null ? '' : pingSource === 'worker'
+      ? t('pingDetail', { rtt, queue })
+      : t('pingFallback');
+    if (el.ping.title !== detail) el.ping.title = detail;
+    if (detail) el.ping.setAttribute('aria-label', detail);
+    else el.ping.removeAttribute('aria-label');
+  }
+
+  function latencyWorkerUrl() {
+    const script = document.currentScript;
+    if (script && script.src) {
+      try {
+        const url = new URL(script.src, location.href);
+        url.pathname = url.pathname.replace(/multiplayer\.js$/, 'latency-worker.js');
+        return url.toString();
+      } catch (err) { /* fall back to the stable public path */ }
+    }
+    return '/js/latency-worker.js';
+  }
+
+  function startLatencyProbe() {
+    if (pingWorker || typeof Worker !== 'function') {
+      if (typeof Worker !== 'function') pingWorkerFailed = true;
+      return;
+    }
+    pingProbeStartedAt = performance.now();
+    try {
+      pingWorker = new Worker(latencyWorkerUrl());
+    } catch (err) {
+      pingWorkerFailed = true;
+      return;
+    }
+    pingWorker.addEventListener('message', (event) => {
+      const msg = event.data;
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'rtt' && Number.isFinite(Number(msg.rtt))) {
+        pingWorkerReady = true;
+        pingWorkerFailed = false;
+        pingMs = Math.max(0, Number(msg.rtt));
+        pingQueueMs = Number.isFinite(Number(msg.sentAt))
+          ? Math.max(0, Date.now() - Number(msg.sentAt))
+          : 0;
+        pingSource = 'worker';
+        window.clearTimeout(pingProbeTimer);
+        updateChip();
+      } else if (msg.type === 'state' && msg.state === 'offline') {
+        pingWorkerReady = false;
+        pingWorkerFailed = true;
+        pingMs = null;
+        pingQueueMs = null;
+        pingSource = 'main';
+        updateChip();
+      }
+    });
+    pingWorker.addEventListener('error', () => {
+      pingWorkerReady = false;
+      pingWorkerFailed = true;
+      try { pingWorker.terminate(); } catch (err) { /* ignore */ }
+      pingWorker = null;
+      updateChip();
+    });
+    pingProbeTimer = window.setTimeout(() => {
+      if (!pingWorkerReady) pingWorkerFailed = true;
+    }, 5000);
   }
 
   function updateTitleLine() {
@@ -676,6 +773,7 @@
     self: 'followReasonSelf',
     offline: 'followReasonOffline',
     notReady: 'followReasonNotReady',
+    anonymous: 'followReasonAnonymous',
     focus: 'followReasonFocus',
     busy: 'followReasonBusy',
     map: 'followReasonMap',
@@ -847,8 +945,10 @@
     if (status === 'home') return t('statusHomeTip');
     return t('statusMapTip', { map: mapDisplayName(item && item.map ? item.map : 'port') });
   }
-  function renderRoster() {
-    setText(el.rosterOnline, t('titleOnline', { n: onlineCount ?? 0 }));
+  function renderRoster(force) {
+    const onlineOthers = othersOnline == null ? null : Math.max(0, othersOnline);
+    setText(el.rosterOnline, onlineOthers == null ? '—' :
+      onlineOthers > 0 ? t('titleOnline', { n: onlineOthers }) : t('titleOnlineAlone'));
     const followKey = JSON.stringify({
       friends: [...friendIds].sort(),
       following: followingFriend ? followingFriend.id : null,
@@ -856,14 +956,15 @@
       requests: followRequests.map((friend) => friend.id).sort(),
       pending: [...pendingFollowIds].sort()
     });
-    if (renderedSelf === myId && renderedRoster.length === rosterData.length &&
+    if (!force && renderedSelf === myId && renderedRoster.length === rosterData.length &&
       renderedFollowKey === followKey &&
       rosterData.every((item, index) => {
         const row = renderedRoster[index];
         return row.id === item.id && row.name === item.name && row.color === item.color &&
           row.kills === item.kills && row.deaths === item.deaths && row.alive === item.alive &&
           row.screen === item.screen && row.map === item.map && row.status === item.status &&
-          !!row.focused === !!item.focused && row.focusKind === item.focusKind;
+          !!row.focused === !!item.focused && row.focusKind === item.focusKind &&
+          !!row.anonymous === !!item.anonymous && !!row.nameHidden === !!item.nameHidden;
       })) return;
     renderedSelf = myId;
     renderedRoster = rosterData;
@@ -875,10 +976,11 @@
       if (!isSelf) others += 1;
       const row = document.createElement('li');
       const focused = item.focused === true;
-      row.className = 'mp-rr' + (isSelf ? ' self' : '') + (item.alive ? '' : ' down') + (focused ? ' focused' : '');
+      row.className = 'mp-rr' + (isSelf ? ' self' : '') + (item.anonymous ? ' anonymous' : '') +
+        (item.alive ? '' : ' down') + (focused ? ' focused' : '');
       const name = document.createElement('span');
       name.className = 'mp-rr-name';
-      name.textContent = item.name;
+      name.textContent = item.anonymous && !isSelf ? t('anonymousName') : item.name;
       name.style.color = item.color || 'var(--bone)';
       const status = rosterStatus(item);
       const badge = document.createElement('span');
@@ -914,6 +1016,12 @@
         follower.textContent = t('friendFollowerBadge');
         name.appendChild(follower);
       }
+      if (item.anonymous) {
+        const anonymous = document.createElement('em');
+        anonymous.className = 'mp-rr-anon';
+        anonymous.textContent = t('anonymousBadge');
+        name.appendChild(anonymous);
+      }
       if (isSelf) {
         const tag = document.createElement('em');
         tag.textContent = t('you');
@@ -926,12 +1034,25 @@
       state.className = 'mp-rr-state' + (item.alive ? ' alive' : '');
       state.title = focused ? t('focusSpectating') : (item.alive ? '' : t('respawningShort'));
       row.append(name, kd, state);
-      if (!isSelf) {
+      if (isSelf) {
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'mp-rr-action mp-rr-anon-action' + (myAnonymous ? ' active' : '');
+        action.dataset.anonymousToggle = '1';
+        action.textContent = t(myAnonymous ? 'anonymousOff' : 'anonymousOn');
+        action.title = t(myAnonymous ? 'anonymousOffHint' : 'anonymousOnHint');
+        action.setAttribute('aria-pressed', String(myAnonymous));
+        row.appendChild(action);
+      } else {
         const action = document.createElement('button');
         action.type = 'button';
         action.className = 'mp-rr-action';
         const incoming = followRequests.some((request) => request.id === item.id);
-        if (incoming) {
+        if (item.anonymous) {
+          action.disabled = true;
+          action.textContent = t('anonymousBadge');
+          action.title = t('anonymousOtherHint');
+        } else if (incoming) {
           action.disabled = true;
           action.textContent = t('friendAwaiting');
         } else if (followingFriend && followingFriend.id === item.id) {
@@ -1376,11 +1497,29 @@
     if (!button) return;
     event.preventDefault();
     event.stopPropagation();
+    if (button.dataset.anonymousToggle === '1') {
+      if (button.getAttribute('aria-busy') === 'true') return;
+      button.setAttribute('aria-busy', 'true');
+      button.disabled = true;
+      send({ type: 'anonymous', enabled: !myAnonymous });
+      return;
+    }
     if (button.dataset.followLeave === '1') {
       send({ type: 'followLeave' });
       return;
     }
     if (button.dataset.followRequest) requestFollow(button.dataset.followRequest);
+  });
+  el.rosterList.addEventListener('click', (event) => {
+    if (!event.target || !event.target.closest) return;
+    if (event.target.closest('button, .mp-rr-status')) return;
+    const selfRow = event.target.closest('.mp-rr.self');
+    if (!selfRow) return;
+    const toggle = selfRow.querySelector('[data-anonymous-toggle="1"]');
+    if (!toggle || toggle.disabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    toggle.click();
   });
   el.followCancel.addEventListener('click', (event) => {
     event.preventDefault();
@@ -1510,49 +1649,123 @@
     }
   }
 
-  function spawnsFromLevel() {
-    const list = [];
+  function portSpawnFloorAt(x, z) {
     try {
-      const start = G && G.level && G.level.playerStart;
-      if (start && start.pos) list.push({ x: start.pos.x, y: start.pos.y, z: start.pos.z });
-      const enemySpawns = (G && G.level && G.level.enemySpawns) || [];
-      for (const spawn of enemySpawns) {
-        if (!spawn || !spawn.pos) continue;
-        list.push({ x: spawn.pos.x, y: spawn.pos.y, z: spawn.pos.z });
-        if (list.length >= 26) break;
-      }
+      const y = Number(G && G.physics && G.physics.groundHeight(x, z, 3.4));
+      if (Number.isFinite(y)) return y;
     } catch (err) { /* ignore */ }
-    const boat = window.__saltBoat;
-    if (boat && boat.externalUnlocked) {
-      const external = Array.isArray(window.__SALT_EXTERNAL_SPAWNS)
-        ? window.__SALT_EXTERNAL_SPAWNS
-        : [];
-      for (const spawn of external) {
-        if (!spawn || !Number.isFinite(Number(spawn.x)) || !Number.isFinite(Number(spawn.z))) continue;
-        list.push({ x: Number(spawn.x), y: Number(spawn.y) || 0, z: Number(spawn.z) });
-        if (list.length >= 32) break;
-      }
+    return 0;
+  }
+
+  function portSpawnIsClear(x, z, y) {
+    const boxes = G && G.physics && G.physics.boxes;
+    if (!Array.isArray(boxes)) return true;
+    const radius = 0.65;
+    const top = y + 1.9;
+    for (const box of boxes) {
+      if (!box || box.bulletOnly || !box.min || !box.max) continue;
+      if (Number(box.max.y) <= y + 0.22 || Number(box.min.y) >= top) continue;
+      if (x < Number(box.min.x) - radius || x > Number(box.max.x) + radius) continue;
+      if (z < Number(box.min.z) - radius || z > Number(box.max.z) + radius) continue;
+      return false;
+    }
+    return true;
+  }
+
+  function randomPortSpawn(avoid) {
+    const nav = G && G.physics && G.physics.nav;
+    if (!nav || typeof nav.isWalkable !== 'function') return null;
+    const minX = FLIGHT_AIR_WALL.minX + PORT_SPAWN_MARGIN;
+    const maxX = FLIGHT_AIR_WALL.maxX - PORT_SPAWN_MARGIN;
+    const minZ = FLIGHT_AIR_WALL.minZ + PORT_SPAWN_MARGIN;
+    const maxZ = FLIGHT_AIR_WALL.maxZ - PORT_SPAWN_MARGIN;
+    const avoidX = Number(avoid && avoid.x);
+    const avoidZ = Number(avoid && avoid.z);
+    const hasAvoid = Number.isFinite(avoidX) && Number.isFinite(avoidZ);
+    for (let attempt = 0; attempt < 140; attempt += 1) {
+      const x = minX + Math.random() * (maxX - minX);
+      const z = minZ + Math.random() * (maxZ - minZ);
+      if (!nav.isWalkable(x, z)) continue;
+      const y = portSpawnFloorAt(x, z);
+      if (y < -1.6 || y > 1.6) continue;
+      if (!portSpawnIsClear(x, z, y)) continue;
+      if (hasAvoid && Math.hypot(x - avoidX, z - avoidZ) < 5) continue;
+      return { x, y: y + 0.02, z, yaw: PORT_SPAWN_YAW };
+    }
+    return null;
+  }
+
+  function randomPortSpawnCandidates(count) {
+    const list = [];
+    for (let index = 0; index < count; index += 1) {
+      const point = randomPortSpawn();
+      if (!point) continue;
+      if (list.some(other => Math.hypot(point.x - other.x, point.z - other.z) < 1.2)) continue;
+      list.push(point);
     }
     return list;
   }
 
-  function randomGroundSpawn() {
-    if (G?.expedition?.active) return G.expedition.spawn();
-    if (G?.qingyun?.active) return qingyun.spawns[0];
+  function fixedGroundSpawns() {
     const list = [];
     try {
       const start = G && G.level && G.level.playerStart;
       if (start && start.pos) {
-        list.push({ x: start.pos.x, y: start.pos.y, z: start.pos.z, yaw: PORT_SPAWN_YAW });
+        list.push({ x: start.pos.x, y: start.pos.y, z: start.pos.z });
       }
       const enemySpawns = (G && G.level && G.level.enemySpawns) || [];
       for (const spawn of enemySpawns) {
         if (!spawn || !spawn.pos || spawn.type === 'air') continue;
         const y = Number(spawn.pos.y) || 0;
         if (y > 5) continue;
-        list.push({ x: Number(spawn.pos.x) || 0, y, z: Number(spawn.pos.z) || 0, yaw: PORT_SPAWN_YAW });
+        list.push({ x: Number(spawn.pos.x) || 0, y, z: Number(spawn.pos.z) || 0 });
       }
     } catch (err) { /* ignore */ }
+    return list;
+  }
+
+  function spawnsFromLevel() {
+    const list = [];
+    let portMap = true;
+    try { portMap = !(G && G.expedition && G.expedition.active) && !(G && G.qingyun && G.qingyun.active); }
+    catch (err) { portMap = true; }
+    const boat = window.__saltBoat;
+    const external = [];
+    if (boat && boat.externalUnlocked && Array.isArray(window.__SALT_EXTERNAL_SPAWNS)) {
+      for (const spawn of window.__SALT_EXTERNAL_SPAWNS) {
+        if (external.length >= 4) break;
+        if (!spawn || !Number.isFinite(Number(spawn.x)) || !Number.isFinite(Number(spawn.z))) continue;
+        external.push({ x: Number(spawn.x), y: Number(spawn.y) || 0, z: Number(spawn.z) });
+      }
+    }
+    const fixed = fixedGroundSpawns();
+    if (fixed.length) list.push(fixed[0]);
+    if (portMap) {
+      const randomCount = Math.max(0, PORT_SPAWN_CANDIDATE_LIMIT - list.length - external.length);
+      list.push(...randomPortSpawnCandidates(randomCount));
+      // 关卡导航网格尚未就绪时才退回预置地面点，正常对局中不会限制在固定几个点。
+      if (list.length < 8) {
+        for (const spawn of fixed) {
+          if (list.length >= PORT_SPAWN_CANDIDATE_LIMIT - external.length) break;
+          list.push(spawn);
+        }
+      }
+    } else {
+      for (const spawn of fixed) {
+        if (list.length >= PORT_SPAWN_CANDIDATE_LIMIT - external.length) break;
+        if (spawn !== fixed[0]) list.push(spawn);
+      }
+    }
+    list.push(...external);
+    return list.slice(0, PORT_SPAWN_CANDIDATE_LIMIT);
+  }
+
+  function randomGroundSpawn() {
+    if (G?.expedition?.active) return G.expedition.spawn();
+    if (G?.qingyun?.active) return qingyun.spawns[0];
+    const random = randomPortSpawn(G && G.player && G.player.pos);
+    if (random) return random;
+    const list = fixedGroundSpawns();
     const boat = window.__saltBoat;
     if (boat && boat.externalUnlocked && Array.isArray(window.__SALT_EXTERNAL_SPAWNS)) {
       for (const spawn of window.__SALT_EXTERNAL_SPAWNS) {
@@ -2089,7 +2302,8 @@
     const pos = pose ? new THREE.Vector3(pose.x, pose.y, pose.z) : machineWreckPosition(victim, avatar);
     if (!pos) return;
     if (!avatar && G?.player.pos.distanceTo(pos) < 250) {
-      avatar = createAvatar({ ...victim, ...pose, outfit: corpseOutfit(pose?.outfit), x: pos.x, y: pos.y, z: pos.z, hp: 0 });
+      avatar = createAvatar({ ...victim, ...pose, outfit: corpseOutfit(pose?.outfit), x: pos.x, y: pos.y, z: pos.z, hp: 0 },
+        { immediateModel: true });
       if (!avatar.hunter && !avatar.fallbackBuilt && isMachine(kind)) buildMachineFallbackAvatar(avatar, kind);
       avatars.set(id, avatar);
       scene.add(avatar.group);
@@ -2232,7 +2446,8 @@
     const kind = normalizeSoldier(mySoldier);
     const { pos, vel, yaw } = player;
     const avatar = createAvatar({ id: myId, name: myName, color: myColor, soldier: kind,
-      outfit: corpseOutfit(myOutfit), armor: G.frontier?.equipmentFlags, x: pos.x, y: pos.y, z: pos.z, yaw, hp: 0 });
+      outfit: corpseOutfit(myOutfit), armor: G.frontier?.equipmentFlags, x: pos.x, y: pos.y, z: pos.z, yaw, hp: 0 },
+    { immediateModel: true });
     if (!avatar.hunter && !avatar.fallbackBuilt && isMachine(kind)) buildMachineFallbackAvatar(avatar, kind);
     avatar.group.name = 'local-downed-unit';
     avatar.group.getObjectByName('mp-avatar-ring').visible = false;
@@ -2362,6 +2577,8 @@
     respawn.lastRequestAt = 0;
     pendingDeathMeta = meta || null;
     pendingDeathBy = null;
+    // 每次阵亡都重新采样一批盐港可行走点，避免整局只在同一组固定出生点中轮换。
+    send({ type: 'spawns', spawns: spawnsFromLevel() });
     if (!wasActive && respawn.until > Date.now() &&
         !window.__saltLunarSilent && !G?.game?.menus?.panelOpen) {
       respawnAudio.currentTime = 0;
@@ -2375,6 +2592,8 @@
     if (Date.now() < respawn.until) return;
     if (Date.now() - respawn.lastRequestAt < 550) return;
     respawn.lastRequestAt = Date.now();
+    // 与 respawn 同一连接按序发送，确保服务端本次复活使用的是这批最新随机点。
+    send({ type: 'spawns', spawns: spawnsFromLevel() });
     send({ type: 'respawn' });
     if (!respawn.requestedAt) respawn.requestedAt = Date.now();
     if (Date.now() > respawn.fallbackAt) {
@@ -2784,7 +3003,9 @@
       avatar.machine = true;
       avatar.legs = [];
       avatar.arms = [];
+      avatar.castShadow = null;
       syncAvatarArmor(avatar, made.armorAnchors);
+      if (avatar.corpse) setAvatarCastShadow(avatar, false);
       return true;
     } catch (err) {
       console.error('[mp] machine avatar mount failed', err);
@@ -2870,7 +3091,9 @@
       avatar.machine = false;
       avatar.legs = [];
       avatar.arms = [];
+      avatar.castShadow = null;
       syncAvatarArmor(avatar, hunter.armorAnchors);
+      if (avatar.corpse) setAvatarCastShadow(avatar, false);
     } catch (err) {
       console.error('[mp] soldier avatar mount failed', err);
       buildFallbackAvatar(avatar, kind);
@@ -2913,7 +3136,7 @@
     window.setTimeout(wait, 100);
   }
 
-  function createAvatar(data) {
+  function createAvatar(data, options) {
     const color = avatarColor(data.color);
     const group = new THREE.Group();
     group.name = 'mp-avatar';
@@ -2966,6 +3189,7 @@
       data,
       group,
       body,
+      ring,
       label,
       texture,
       canvas,
@@ -2991,9 +3215,18 @@
       hiddenAt: 0,
       lastHp: -1,
       lastShield: null,
-      hitAt: 0
+      hitAt: 0,
+      active: true,
+      corpse: !!(options && options.corpse),
+      showLabel: true,
+      modelRequested: false,
+      animAccum: 0,
+      castShadow: null
     };
-    requestHunterAvatar(avatar, normalizeSoldier(data.soldier));
+    if (options && options.immediateModel) {
+      avatar.modelRequested = true;
+      requestHunterAvatar(avatar, normalizeSoldier(data.soldier));
+    }
     drawAvatarLabel(avatar);
     return avatar;
   }
@@ -3033,6 +3266,7 @@
         scene.add(avatar.group);
       }
       avatar.data = item;
+      avatar.active = true;
       avatar.setOutfit?.(item.outfit);
       avatar.group.visible = true;
       avatar.hiddenAt = 0;
@@ -3063,12 +3297,35 @@
         continue;
       }
       chaseLightCleanup(avatar);
+      avatar.active = false;
       avatar.group.visible = false;
       if (!avatar.hiddenAt) avatar.hiddenAt = Date.now();
       if (Date.now() - avatar.hiddenAt > 20000) {
         disposeAvatar(avatar);
         avatars.delete(id);
       }
+    }
+  }
+
+  function applyMovementPoses(rows) {
+    if (!Array.isArray(rows)) return;
+    for (const item of rows) {
+      if (!item || item.id === myId) continue;
+      const avatar = avatars.get(item.id);
+      if (!avatar || avatar.disposed) continue;
+      const x = Number(item.x);
+      const y = Number(item.y);
+      const z = Number(item.z);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+      avatar.target.set(x, y, z);
+      avatar.targetYaw = Number(item.yaw) || 0;
+      avatar.data.x = x;
+      avatar.data.y = y;
+      avatar.data.z = z;
+      avatar.data.yaw = avatar.targetYaw;
+      avatar.data.moving = !!item.moving;
+      avatar.data.sprint = !!item.sprint;
+      avatar.data.swimming = !!item.swimming;
     }
   }
 
@@ -3104,26 +3361,103 @@
     }
   }
 
+  function ensureAvatarCullCache() {
+    if (avatarCullMatrix || !THREE) return !!avatarCullMatrix;
+    avatarCullMatrix = new THREE.Matrix4();
+    avatarCullFrustum = new THREE.Frustum();
+    avatarCullSphere = new THREE.Sphere(new THREE.Vector3(), 2.6);
+    avatarCameraPos = new THREE.Vector3();
+    return true;
+  }
+
+  function setAvatarCastShadow(avatar, enabled) {
+    if (!avatar || avatar.castShadow === enabled) return;
+    avatar.castShadow = enabled;
+    for (const root of [avatar.hunter, avatar.weapon, avatar.lunarSuit?.model]) {
+      if (!root) continue;
+      root.traverse((node) => {
+        if (node.isMesh || node.isSkinnedMesh) node.castShadow = enabled;
+      });
+    }
+  }
+
+  function prepareAvatarCulling(camera) {
+    if (!camera || !ensureAvatarCullCache()) return false;
+    camera.getWorldPosition(avatarCameraPos);
+    camera.updateMatrixWorld();
+    avatarCullMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    avatarCullFrustum.setFromProjectionMatrix(avatarCullMatrix);
+    return true;
+  }
+
+  function avatarShouldRender(avatar, useFrustum) {
+    const point = avatar.target || avatar.group.position;
+    const dx = point.x - avatarCameraPos.x;
+    const dy = point.y - avatarCameraPos.y;
+    const dz = point.z - avatarCameraPos.z;
+    const distanceSq = dx * dx + dy * dy + dz * dz;
+    if (distanceSq > AVATAR_DRAW_DISTANCE * AVATAR_DRAW_DISTANCE) return { visible: false, distanceSq };
+    if (useFrustum) {
+      avatarCullSphere.center.set(point.x, point.y + 1.15, point.z);
+      if (!avatarCullFrustum.intersectsSphere(avatarCullSphere)) return { visible: false, distanceSq };
+    }
+    return { visible: true, distanceSq };
+  }
+
   function updateAvatars(dt) {
     const now = performance.now();
-    const alpha = 1 - Math.exp(-dt * 16);
-    const turn = Math.min(1, dt * 14);
+    const alpha = 1 - Math.exp(-dt * 24);
+    const turn = Math.min(1, dt * 20);
     const pose = Math.min(1, dt * 10);
+    const camera = G && G.camera ? G.camera : null;
+    const tier = G && G.quality && G.quality.name;
+    const animation = AVATAR_ANIMATION_QUALITY[tier] || AVATAR_ANIMATION_QUALITY.medium;
+    const shadowDistanceSq = animation.shadow * animation.shadow;
+    const useFrustum = prepareAvatarCulling(camera);
     for (const avatar of avatars.values()) {
-      if (!avatar.group.visible) continue;
+      if (avatar.active === false) {
+        avatar.group.visible = false;
+        continue;
+      }
+      const visibility = useFrustum ? avatarShouldRender(avatar, useFrustum)
+        : { visible: true, distanceSq: 0 };
+      if (!visibility.visible) {
+        avatar.group.visible = false;
+        avatar.animAccum = 0;
+        continue;
+      }
+      avatar.group.visible = true;
       if (avatar.wreck && !avatar.wreck.done) {
         try {
           updateUnitFall(avatar, dt);
         } catch (err) { /* ignore */ }
         continue;
       }
-      const distanceSq = avatar.group.position.distanceToSquared(avatar.target);
-      if (distanceSq > 64) avatar.group.position.copy(avatar.target);
-      else if (distanceSq > 1e-8) avatar.group.position.lerp(avatar.target, alpha);
-      else if (distanceSq > 0) avatar.group.position.copy(avatar.target);
+      if (!avatar.modelRequested && !avatar.hunter && !avatar.fallbackBuilt && !avatar.machine &&
+          visibility.distanceSq <= AVATAR_MODEL_DISTANCE * AVATAR_MODEL_DISTANCE) {
+        avatar.modelRequested = true;
+        requestHunterAvatar(avatar, normalizeSoldier(avatar.data && avatar.data.soldier));
+      }
+      setAvatarCastShadow(avatar, visibility.distanceSq <= shadowDistanceSq);
+      if (avatar.label) avatar.label.visible = avatar.showLabel !== false &&
+        visibility.distanceSq <= AVATAR_LABEL_DISTANCE * AVATAR_LABEL_DISTANCE;
+      if (avatar.ring) avatar.ring.visible = visibility.distanceSq <=
+        AVATAR_RING_DISTANCE * AVATAR_RING_DISTANCE;
+
+      const motionDistanceSq = avatar.group.position.distanceToSquared(avatar.target);
+      if (motionDistanceSq > 64) avatar.group.position.copy(avatar.target);
+      else if (motionDistanceSq > 1e-8) avatar.group.position.lerp(avatar.target, alpha);
+      else if (motionDistanceSq > 0) avatar.group.position.copy(avatar.target);
       let delta = avatar.targetYaw - avatar.group.rotation.y;
       delta = Math.atan2(Math.sin(delta), Math.cos(delta));
       avatar.group.rotation.y += delta * turn;
+
+      const interval = visibility.distanceSq > 70 * 70 ? animation.far
+        : visibility.distanceSq > 32 * 32 ? animation.mid : animation.near;
+      avatar.animAccum = Math.min(0.25, (avatar.animAccum || 0) + dt);
+      const animateNow = avatar.animAccum >= interval;
+      const step = animateNow ? avatar.animAccum : 0;
+      if (animateNow) avatar.animAccum = 0;
 
       const moving = !!(avatar.data && avatar.data.moving);
       const swimming = avatar.data?.swimming && !avatar.machine;
@@ -3134,30 +3468,32 @@
           arm.rotation.set(-.92, 0, -side * .24);
         }
       }
-      avatar.swimTime = swimming ? (avatar.swimTime || 0) + dt : 0;
+      avatar.swimTime = swimming ? (avatar.swimTime || 0) + step : 0;
       const swimPose = swimming && window.SaltSwimming.pose(avatar.swimTime, moving);
-      applyFallbackMotion(avatar, swimPose);
-      if (avatar.rig) {
-        avatar.rig.update(dt, {
+      if (animateNow) applyFallbackMotion(avatar, swimPose);
+      if (animateNow && avatar.rig) {
+        avatar.rig.update(step, {
           moving,
           sprint: !!(avatar.data && avatar.data.sprint),
           fall: swimPose
         });
-      } else if (!swimming && moving) {
-        avatar.walk += dt * (avatar.data.sprint ? 14 : 9);
+      } else if (animateNow && !swimming && moving) {
+        avatar.walk += step * (avatar.data.sprint ? 14 : 9);
         const swing = Math.sin(avatar.walk) * 0.5;
         if (avatar.legs[0]) avatar.legs[0].rotation.x = swing;
         if (avatar.legs[1]) avatar.legs[1].rotation.x = -swing;
         if (avatar.arms[0]) avatar.arms[0].rotation.x = -swing * 0.5;
-      } else if (!swimming) {
+      } else if (animateNow && !swimming) {
         avatar.walk *= 0.9;
         if (avatar.legs[0]) avatar.legs[0].rotation.x *= 0.9;
         if (avatar.legs[1]) avatar.legs[1].rotation.x *= 0.9;
       }
       const kind = avatar.soldierKind || normalizeSoldier(avatar.data && avatar.data.soldier);
       const armed = !swimming && avatar.data?.weapon !== null && avatar.data?.carSeat !== 0;
-      updateAvatarWeapon(avatar, avatar.data?.weapon || 'pac9', armed);
-      try { updateAvatarDroneLight(avatar, kind); } catch (err) { /* ignore */ }
+      if (animateNow) updateAvatarWeapon(avatar, avatar.data?.weapon || 'pac9', armed);
+      if (animateNow) {
+        try { updateAvatarDroneLight(avatar, kind); } catch (err) { /* ignore */ }
+      }
       const targetLabelY = swimming ? 1.6 : isMachine(kind) ? (kind === 'drone' ? 1.35 : 1.05) : 2.28;
       if (avatar.body) {
         avatar.body.rotation.y += (0 - avatar.body.rotation.y) * pose;
@@ -3165,7 +3501,7 @@
         avatar.body.rotation.x += (lean - avatar.body.rotation.x) * pose;
         avatar.body.position.y += ((swimPose?.lift || 0) - avatar.body.position.y) * pose;
       }
-      dressForLunar(avatar, dt, moving, armed, swimPose);
+      dressForLunar(avatar, step, moving, armed, swimPose);
       avatar.label.position.y += (targetLabelY - avatar.label.position.y) * pose;
       if (avatar.hitAt && now - avatar.hitAt < 140) {
         avatar.group.position.x += (Math.random() - 0.5) * 0.06;
@@ -3388,7 +3724,7 @@
   function sendState(force) {
     if (raceSuspended || !G?.player || !everJoined) return;
     const now = performance.now();
-    if (!force && now - lastStateAt < 90) return;
+    if (!force && now - lastStateAt < 45) return;
     lastStateAt = now;
     const state = G.game && G.game.state;
     const player = G.player;
@@ -3808,6 +4144,16 @@
   }
 
   let raceSuspended = Boolean(document.body.dataset.raceStart);
+  function joinMessage() {
+    return {
+      type: 'join', name: myName, soldier: mySoldier, outfit: myOutfit, spawns: spawnsFromLevel(),
+      frontier: !!window.SaltFrontierRules, portalFall: !!window.SaltPortalArrival,
+      infiniteAmmo: window.SaltAmmo?.infinite === true
+    };
+  }
+  function sendJoin() {
+    return send(joinMessage());
+  }
   function connect() {
     if (raceSuspended) return;
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
@@ -3830,10 +4176,7 @@
       setConnection('online');
       everJoined = false;
       window.SaltBulletMarks?.resetHistory();
-      send({ type: 'join', name: myName, soldier: mySoldier, outfit: myOutfit, spawns: spawnsFromLevel(),
-        frontier: !!window.SaltFrontierRules, portalFall: !!window.SaltPortalArrival,
-        corpseSync: window.SaltCorpseField?.httpSync ? 'http' : undefined,
-        infiniteAmmo: window.SaltAmmo?.infinite === true });
+      sendJoin();
       window.clearInterval(pingTimer);
       pingTimer = window.setInterval(() => {
         if (ws && ws.readyState === 1) send({ type: 'ping', t: performance.now() });
@@ -3864,6 +4207,8 @@
       myId = null;
       pendingRename = null;
       onlineCount = null;
+      othersOnline = null;
+      myAnonymous = false;
       window.SaltMapSelect?.setPopulation(null);
       pingMs = null;
       rosterData = [];
@@ -3919,13 +4264,12 @@
       }
     }
     window.SaltShop?.receive(msg);
-    if (window.SaltBulletMarks?.onMessage(msg, G)) return;
-    if (window.SaltCorpseField?.onMessage(msg, G)) return;
     notifyMessage(msg);
     switch (msg.type) {
       case 'welcome': {
         respawnDelayMs = Math.max(0, Number(msg.respawnMs) || respawnDelayMs);
         myId = msg.id;
+        myAnonymous = msg.anonymous === true;
         myName = cleanName(myName) || msg.name;
         myColor = msg.color || myColor;
         if (Number.isSafeInteger(msg.coins)) {
@@ -3936,6 +4280,15 @@
         applyUnitSelection();
         break;
       }
+      case 'scheduleBlocked': {
+        window.SaltPlayGate?.applyStatus(msg);
+        // Dismissing the dialog should reveal the home screen without retrying
+        // join immediately; only resume the join once the play window opens.
+        window.SaltPlayGate?.whenPlayable(() => {
+          if (connected && !everJoined) sendJoin();
+        });
+        break;
+      }
       case 'joined': {
         const acceptedRename = msg.renamed === true || !!pendingRename;
         const filtered = msg.filtered === true;
@@ -3944,6 +4297,7 @@
         el.nameSave.removeAttribute('aria-busy');
         el.nameInput.classList.remove('is-invalid');
         myId = msg.id;
+        myAnonymous = msg.anonymous === true;
         myName = msg.name;
         myColor = msg.color || myColor;
         mySoldier = normalizeSoldier(msg.soldier || mySoldier);
@@ -3966,6 +4320,17 @@
         }
         if (filtered) toast(t('nameFiltered'));
         else if (acceptedRename) toast(t('nameSaved'));
+        break;
+      }
+      case 'anonymousState': {
+        if (msg.ok === false) {
+          myAnonymous = msg.enabled === true;
+          toast(t(msg.reason === 'rate' ? 'anonymousDenied' : 'anonymousFailed'));
+        } else {
+          myAnonymous = msg.enabled === true;
+          toast(t(myAnonymous ? 'anonymousToastOn' : 'anonymousToastOff'));
+        }
+        if (!el.roster.hidden) renderRoster(true);
         break;
       }
       case 'mapDenied':
@@ -4097,6 +4462,10 @@
         G?.expedition?.setServerTime(msg.t);
         const count = Number(msg.online);
         onlineCount = Number.isSafeInteger(count) && count >= 0 ? count : null;
+        const others = Number(msg.onlineOthers);
+        othersOnline = Number.isSafeInteger(others) && others >= 0
+          ? others
+          : (onlineCount === null ? null : Math.max(0, onlineCount - (myId ? 1 : 0)));
         window.SaltMapSelect?.setPopulation(msg.mapCounts);
         G?.portalBosses?.snapshot(msg.bossMap, msg.bosses, msg.t, msg.bossBounty);
         G?.sharedPatrols?.snapshot(msg.bossMap,msg.patrols);
@@ -4109,6 +4478,7 @@
             bestStreak: Number(msg.you.bestStreak) || 0,
             alive: msg.you.alive !== false
           };
+          if (typeof msg.you.anonymous === 'boolean') myAnonymous = msg.you.anonymous;
           if (respawn.active && selfStats.alive) {
             // server already revived us; let the local flow finish naturally
           }
@@ -4125,6 +4495,9 @@
         reconcileAvatars(Array.isArray(msg.players) ? msg.players : []);
         break;
       }
+      case 'pose':
+        applyMovementPoses(msg.players);
+        break;
       case 'hitConfirm': {
         if (!G || !G.hud) break;
         if (msg.teamBlocked) {
@@ -4286,7 +4659,15 @@
         break;
       }
       case 'pong': {
-        if (typeof msg.t === 'number') pingMs = performance.now() - msg.t;
+        if (typeof msg.t === 'number' && !pingWorkerReady) {
+          const elapsed = performance.now() - pingProbeStartedAt;
+          if (pingWorkerFailed || elapsed > 5000) {
+            pingMs = Math.max(0, performance.now() - msg.t);
+            pingQueueMs = null;
+            pingSource = 'main';
+            updateChip();
+          }
+        }
         break;
       }
       default:
@@ -4347,7 +4728,7 @@
     updateUnitBadge();
 
     window.clearInterval(stateTimer);
-    stateTimer = window.setInterval(() => sendState(false), 100);
+    stateTimer = window.setInterval(() => sendState(false), 50);
 
     // Watch for pending server deaths (player was in the intro / menu when hit).
     window.setInterval(() => {
@@ -4426,13 +4807,19 @@
     G.game.update.__mpWrapped = true;
   }, 400);
 
+  startLatencyProbe();
   connect();
   updateChip();
 
   window.__mp = {
     get online() { return onlineCount ?? 0; },
+    get othersOnline() { return othersOnline ?? 0; },
+    get anonymous() { return myAnonymous; },
     get connected() { return connected; },
     get joined() { return !raceSuspended && connected && everJoined; },
+    get ping() { return Number.isFinite(pingMs) ? Math.round(pingMs) : null; },
+    get pingQueue() { return Number.isFinite(pingQueueMs) ? Math.round(pingQueueMs) : null; },
+    get pingSource() { return pingSource; },
     suspendForRace() {
       if (raceSuspended) return;
       raceSuspended = true;
@@ -4478,12 +4865,13 @@
         z: row.pos.z,
         yaw: row.yaw,
         hp: 0
-      });
+      }, { immediateModel: true, corpse: true });
       if (!avatar.hunter && !avatar.fallbackBuilt && isMachine(soldier)) {
         buildMachineFallbackAvatar(avatar, soldier);
       }
       avatar.group.name = 'salt-corpse-player-' + row.id;
       avatar.label.visible = false;
+      avatar.showLabel = false;
       const ring = avatar.group.getObjectByName('mp-avatar-ring');
       if (ring) ring.visible = false;
       scene.add(avatar.group);
@@ -4498,7 +4886,7 @@
       const kind = normalizeSoldier(mySoldier);
       const player = G.player;
       const avatar = createAvatar({ id: myId, name: myName, color: myColor, soldier: kind, outfit: usableOutfit(myOutfit),
-        x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw });
+        x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw }, { immediateModel: true });
       avatar.group.name = 'frontier-self-avatar';
       avatar.label.visible = false;
       avatar.group.getObjectByName('mp-avatar-ring').visible = false;

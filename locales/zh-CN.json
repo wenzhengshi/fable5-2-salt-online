@@ -1,5 +1,10 @@
 {
-  "arsenal": {"weapon":"装备选择","knife":"战术刀","loading":"加载武器中…","failed":"武器加载失败"},
+  "arsenal": {
+    "weapon": "装备选择",
+    "knife": "战术刀",
+    "loading": "加载武器中…",
+    "failed": "武器加载失败"
+  },
   "car": {
     "board": "上车 · H",
     "leave": "下车 · H",
@@ -184,6 +189,14 @@
     "serverError": "服务器暂时不可用，请稍后重试"
   },
   "admin": {
+    "containerAdsTitle": "集装箱广告审核",
+    "containerAdsIntro": "新广告默认通过。审核不通过后，箱体原广告位置显示「该广告违规」。",
+    "containerAdsEmpty": "还没有集装箱广告。",
+    "containerAdsUntil": "到期时间（北京时间）",
+    "containerAdsApproved": "已通过",
+    "containerAdsRejected": "审核不通过",
+    "containerAdsApprove": "恢复通过",
+    "containerAdsReject": "标记违规",
     "shopTitle": "商城价格管理",
     "shopIntro": "所有价格以盐线币为单位，最多保留六位小数。保存后立即应用于新购买。",
     "shopPass": "月球通行证",
@@ -222,7 +235,6 @@
       "hitOffAxis": "命中明显偏离射击方向",
       "invalidShot": "无效射击向量",
       "repeatJoin": "重复发送加入请求",
-
       "packetFlood": "超量消息",
       "fireRate": "异常射速",
       "shotOrigin": "开火原点异常",
@@ -334,6 +346,20 @@
     "online": "在线",
     "presenceOnline": "有人在线",
     "presenceEmpty": "无人在线",
+    "titleOnlineAlone": "仅你在战场",
+    "anonymousOn": "匿名在线",
+    "anonymousOff": "取消匿名",
+    "anonymousBadge": "匿名",
+    "anonymousName": "匿名玩家",
+    "anonymousOnHint": "点击后，其他玩家在战场名单中只会看到「匿名玩家」",
+    "anonymousOffHint": "点击后恢复显示你的战场代号",
+    "anonymousOtherHint": "匿名在线玩家不接受好友请求",
+    "anonymousToastOn": "已切换为匿名在线",
+    "anonymousToastOff": "已恢复公开在线",
+    "anonymousDenied": "匿名状态切换太快，请稍后再试",
+    "anonymousFailed": "匿名状态切换失败，请稍后重试",
+    "pingDetail": "网络往返 {rtt} ms · 主线程排队 {queue} ms",
+    "pingFallback": "网络往返由主线程计时，可能包含渲染排队",
     "mapOnline": "本图",
     "connecting": "连接中",
     "reconnecting": "重连中",
@@ -373,7 +399,7 @@
     "focusManualBadge": "手动专注 · 正在观战",
     "focusAutoBadge": "连续游玩保护 · 正在观战",
     "focusSpectating": "专注观战中",
-    "emptyRoster": "战场暂时只有你",
+    "emptyRoster": "暂无其他玩家在线",
     "board": "排行榜",
     "boardEmpty": "还没有战绩记录",
     "boardPlayer": "玩家",
@@ -483,6 +509,7 @@
     "followReasonRate": "操作太快，请稍后重试",
     "followReasonDeclined": "好友请求已被拒绝",
     "followReasonNotFollowing": "当前没有跟随对象",
+    "followReasonAnonymous": "匿名在线时不能使用好友跟随",
     "followReasonGeneric": "好友跟随操作失败，请稍后重试"
   },
   "soldierSelect": {
@@ -748,6 +775,8 @@
     "photoWechatSave": "请长按截图预览保存图片。也可以在系统浏览器中截图并下载。"
   },
   "containerFlow": {
+    "passwordBook": "密码本",
+    "passwordBookOpen": "打开密码本",
     "deposit": "存入全部金币",
     "openHint": "门已打开 · 走进箱内存取资产",
     "insideHint": "已在箱内 · 可存入或取出",
@@ -963,5 +992,34 @@
     "defeated": "击败赏金 BOSS，获得 {amount} 币",
     "defeatedShort": "击败 BOSS +{amount} 币",
     "spawned": "赏金 BOSS 刷新：{amount} 币"
+  },
+  "graphics": {
+    "quality": "画质",
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "ultra": "极高",
+    "noteLive": "画质修改立即生效；阴影与反射可能需要片刻重建。",
+    "noteUltra": "极高启用原生分辨率、4× MSAA、最高 2048 纹理与 16× 各向异性；智能分辨率只调整内部像素并保留至少 88%，手动档位不会偷偷降档。",
+    "noteAuto": "已为此设备自动选择画质（{quality}）。如果帧率不足，请调低画质。",
+    "noteLocked": "画质由启动参数锁定：{quality}"
+  },
+  "playSchedule": {
+    "kicker": "服务器开放时段",
+    "title": "工作时间段",
+    "timezone": "北京时间 · UTC+8",
+    "message": "工作时间段期间无法游玩，请等待，剩余 {days} 天 {hours} 小时 {minutes} 分 {seconds} 秒后可以玩。",
+    "days": "天",
+    "hours": "小时",
+    "minutes": "分",
+    "seconds": "秒",
+    "rule": "周一至周五 00:00–07:00、09:00–12:00、14:00–18:00 为工作时间，其余时段开放。",
+    "holidayRule": "周末全天开放；节假日落在周一至周五时同样全天开放。",
+    "waiting": "工作时间段内服务器暂不开放游玩",
+    "paused": "工作时间已开始，对局已暂停",
+    "close": "关闭弹窗",
+    "dismissed": "已进入主页；工作时间段内暂时无法开始行动。",
+    "reopened": "当前为工作时间段，暂时无法开始行动。",
+    "dismissHint": "关闭后可以先浏览主页；工作时间段内点击「开始行动」会再次弹出开放时段提示。"
   }
 }

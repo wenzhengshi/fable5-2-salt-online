@@ -46,6 +46,10 @@ const required = [
   'services/goldSupply.js',
   'public/js/gold-supply.js',
   'public/css/gold-supply.css',
+  'services/playSchedule.js',
+  'public/js/play-schedule.js',
+  'public/css/play-schedule.css',
+  'scripts/play-schedule-self-test.js',
   'views/race.html',
   'views/settings-panel.ejs',
   'public/css/settings-panel.css',
@@ -165,6 +169,9 @@ for (const [name, dictionary] of [['zh-CN', zh], ['en-US', en]]) {
     if (!dictionary[section] || typeof dictionary[section] !== 'object') {
       fail('locales/' + name + '.json 缺少 i18n 分区: ' + section);
     }
+  }
+  if (!dictionary.playSchedule || typeof dictionary.playSchedule !== 'object') {
+    fail('locales/' + name + '.json 缺少 playSchedule 分区');
   }
 }
 

@@ -5,9 +5,15 @@
   window.__SALT_BULLET_MARKS_LOADED__ = true;
 
   const MAP_ID = 'port';
-  const MAX_MARKS = 800;
+  const INITIAL_RENDER_CAPACITY = 512;
   const BUILD_BUDGET = 8;
-  const LOCAL_CONFIRM_MS = 1800;
+  const LOCAL_CONFIRM_MS = 5000;
+  const HISTORY_PAGE_SIZE = 120;
+  const HISTORY_PAGE_GAP_MS = 120;
+  const SYNC_INTERVAL_MS = 2000;
+  const SYNC_RETRY_MS = 5000;
+  const SYNC_TIMEOUT_MS = 8000;
+  const VISIBLE_STATES = new Set(['playing', 'paused', 'dead']);
   const SKIP_SURFACES = new Set(['player', 'enemy', 'gold', 'water']);
   const entries = new Map();
   const buildQueue = [];
@@ -16,9 +22,18 @@
   const historyTracked = new Set();
   let renderFx = null;
   let batch = null;
+  let batchCapacity = 0;
   const freeSlots = [];
   let nextSlot = 0;
   let historyId = 0;
+  let historyPageId = 0;
+  let historyBaseCursor = '';
+  let historyNextBefore = 0;
+  let historyComplete = false;
+  let syncCursor = '';
+  let syncRequest = null;
+  let nextSyncAt = 0;
+  let game = null;
 
   function round(value) {
     return Math.round(value * 1000) / 1000;
@@ -94,13 +109,21 @@
     }
   }
 
-  function ensure(game) {
+  function capacityFor(size) {
+    let capacity = INITIAL_RENDER_CAPACITY;
+    while (capacity < size) capacity *= 2;
+    return capacity;
+  }
+
+  function ensure(game, minimum) {
     const fx = game?.fx;
     if (!fx?.createBulletMarkBatch) return false;
-    if (batch && renderFx === fx) return true;
+    const wanted = capacityFor(Math.max(Number(minimum) || 0, entries.size));
+    if (batch && renderFx === fx && batchCapacity >= wanted) return true;
     batch?.dispose();
     renderFx = fx;
-    batch = fx.createBulletMarkBatch(MAX_MARKS);
+    batchCapacity = wanted;
+    batch = fx.createBulletMarkBatch(wanted);
     freeSlots.length = nextSlot = buildQueue.length = 0;
     for (const entry of entries.values()) {
       entry.slot = null;
@@ -113,7 +136,7 @@
   function removeEntry(id) {
     const entry = entries.get(id);
     if (!entry) return;
-    if (entry.slot !== null) {
+    if (entry.slot !== null && batch) {
       batch.remove(entry.slot);
       freeSlots.push(entry.slot);
     }
@@ -153,18 +176,9 @@
     historyTracked.clear();
   }
 
-  function trim() {
-    while (entries.size > MAX_MARKS) {
-      const oldest = entries.keys().next().value;
-      if (!oldest) break;
-      removeEntry(oldest);
-    }
-  }
-
   function add(mark, game) {
     const normalized = normalizeMark(mark);
     if (!normalized) return false;
-    if (game) ensure(game);
     confirmLocal(normalized.id);
     const existing = entries.get(normalized.id);
     if (existing) {
@@ -175,6 +189,7 @@
       if (changed && existing.drawn) updateMesh(existing);
       return true;
     }
+    if (game) ensure(game, entries.size + 1);
     entries.set(normalized.id, {
       mark: normalized,
       slot: null,
@@ -182,7 +197,6 @@
       drawn: false
     });
     queueBuild(entries.get(normalized.id));
-    trim();
     return true;
   }
 
@@ -191,10 +205,12 @@
     for (const id of [...entries.keys()]) removeEntry(id);
     freeSlots.length = nextSlot = buildQueue.length = 0;
     batch?.clear();
+    syncRequest?.abort();
+    restartHistory();
+    nextSyncAt = 0;
   }
 
   function load(marks, game, options) {
-    if (game) ensure(game);
     if (!Array.isArray(marks)) return;
     const partial = !!(options && options.partial);
     if (partial) {
@@ -219,16 +235,90 @@
       for (const id of [...entries.keys()]) if (!incoming.has(id)) removeEntry(id);
     }
     for (const row of incoming.values()) add(row, game);
-    trim();
   }
 
-  function tick(game) {
-    if (!ensure(game)) return;
-    const map = game.expedition?.active?.id || (game.qingyun?.active ? 'qingyun' : MAP_ID);
-    const state = game.game && game.game.state;
-    const visible = map === MAP_ID && !!game.player && ['playing', 'paused', 'dead'].includes(state);
+  function visibleInPort() {
+    return !!game?.player && VISIBLE_STATES.has(game.game?.state) &&
+      !game.expedition?.active && !game.qingyun?.active && !window.SaltMapShell?.active;
+  }
+
+  function restartHistory() {
+    syncCursor = '';
+    historyComplete = false;
+    historyPageId = 0;
+    historyBaseCursor = '';
+    historyNextBefore = 0;
+  }
+
+  async function syncFromApi() {
+    if (syncRequest || performance.now() < nextSyncAt) return;
+    const request = new AbortController();
+    syncRequest = request;
+    const timeout = window.setTimeout(() => request.abort(), SYNC_TIMEOUT_MS);
+    let delay = historyComplete ? SYNC_INTERVAL_MS : HISTORY_PAGE_GAP_MS;
+    try {
+      const params = new URLSearchParams({ sync: '1', paged: '1' });
+      if (historyComplete) {
+        params.set('since', syncCursor);
+      } else {
+        params.set('history', '1');
+        params.set('limit', String(HISTORY_PAGE_SIZE));
+        if (historyBaseCursor) params.set('base', historyBaseCursor);
+        if (historyNextBefore) params.set('before', String(historyNextBefore));
+      }
+      const response = await fetch('/api/game/bullet-marks?' + params, {
+        cache: 'no-store', signal: request.signal
+      });
+      if (response.status === 204) return;
+      if (!response.ok) throw new Error('Bullet mark sync failed');
+      const data = await response.json();
+      if (request.signal.aborted || document.hidden || !visibleInPort()) return;
+      if (!data.ok || !Array.isArray(data.marks)) throw new Error('Invalid bullet mark sync response');
+      if (!historyComplete) {
+        if (!historyPageId) historyPageId = historyId + 1;
+        if (typeof data.baseCursor === 'string') historyBaseCursor = data.baseCursor;
+        load(data.marks, game, { partial: true, historyId: historyPageId });
+        const nextBefore = Math.floor(Number(data.nextBefore));
+        historyNextBefore = Number.isSafeInteger(nextBefore) && nextBefore > 0 ? nextBefore : 0;
+        if (data.complete === true || !historyNextBefore) {
+          finishHistory(historyPageId);
+          syncCursor = historyBaseCursor || (typeof data.cursor === 'string' ? data.cursor : '');
+          historyComplete = true;
+          historyPageId = 0;
+          historyBaseCursor = '';
+          historyNextBefore = 0;
+        }
+        delay = HISTORY_PAGE_GAP_MS;
+        return;
+      }
+      if (data.reset === true || data.partial !== true) {
+        restartHistory();
+        delay = HISTORY_PAGE_GAP_MS;
+        return;
+      }
+      for (const mark of data.marks) add(mark, game);
+      syncCursor = data.cursor;
+      delay = SYNC_INTERVAL_MS;
+    } catch (error) {
+      delay = SYNC_RETRY_MS;
+    } finally {
+      window.clearTimeout(timeout);
+      syncRequest = null;
+      nextSyncAt = visibleInPort() && !document.hidden ? performance.now() + delay : 0;
+    }
+  }
+
+  function tick(nextGame) {
+    if (nextGame) game = nextGame;
+    if (!ensure(game, entries.size)) return;
+    const visible = visibleInPort();
     if (visible) processBuildQueue();
     batch.show(visible && entries.size > 0);
+    if (!visible || document.hidden) {
+      syncRequest?.abort();
+      return;
+    }
+    void syncFromApi();
   }
 
   function report(game, origin, dir, impact, options) {
@@ -268,29 +358,17 @@
     return true;
   }
 
-  function onMessage(msg, game) {
-    if (!msg) return false;
-    if (msg.type === 'bulletMarks') {
-      load(msg.marks, game, { partial: msg.partial, historyId: msg.historyId });
-      return true;
-    }
-    if (msg.type === 'bulletMarksComplete') {
-      finishHistory(msg.historyId);
-      return true;
-    }
-    if (msg.type === 'bulletMark') {
-      historyTracked.delete(msg.mark?.id);
-      add(msg.mark, game);
-      return true;
-    }
-    return false;
-  }
-
   function resetHistory() {
-    historyId = 0;
     historyIds.clear();
     historyTracked.clear();
+    restartHistory();
+    nextSyncAt = 0;
   }
 
-  window.SaltBulletMarks = { add, clear, load, onMessage, report, resetHistory, tick };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) syncRequest?.abort();
+    else nextSyncAt = 0;
+  });
+
+  window.SaltBulletMarks = { add, clear, load, report, resetHistory, tick, httpSync: true };
 })();

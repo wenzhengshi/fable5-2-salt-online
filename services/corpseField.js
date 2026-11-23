@@ -19,9 +19,8 @@ const POSE_BONES = new Set([
 const POSE_BONE_LIMIT = 32;
 const POSE_AT_WINDOW = 120000;
 const POSE_REPORT_RADIUS = 140;
-const MAX_RECORDS = 600;
-const MAX_LIMIT = 240;
-const COMPACT_AFTER = 1200;
+const HISTORY_PAGE_DEFAULT = 40;
+const HISTORY_PAGE_MAX = 120;
 const DEDUPE_MS = 3000;
 const DEDUPE_RADIUS = 4;
 const LANDING_DRIFT = 80;
@@ -29,10 +28,9 @@ const LANDING_HEIGHT = 48;
 
 let corpses = [];
 let nextSeq = 1;
-let syncEpoch;
+let syncEpoch = randomUUID();
 let syncRevision = 0;
 let rowRevisions = new WeakMap();
-let writesSinceCompact = 0;
 let lastWriteAt = 0;
 let loadedAt = 0;
 let lastReadError = null;
@@ -143,50 +141,41 @@ function normalize(raw) {
   };
 }
 
-function mergeRows(rows) {
+function load() {
   const byId = new Map();
   let maxSeq = 0;
-  for (const raw of rows) {
+  const newestFirst = (left, right) => right.seq - left.seq || right.at - left.at;
+  function ingest(raw) {
+    const id = cleanId(raw?.id);
+    if (!id || raw.map !== MAP_ID || !KINDS.has(raw.kind) || !normalizePosition(raw.pos)) return;
+    const previous = byId.get(id);
+    const seq = Number.isSafeInteger(raw.seq) && raw.seq > 0 ? raw.seq : previous?.seq || maxSeq + 1;
+    maxSeq = Math.max(maxSeq, seq);
+    byId.set(id, { ...raw, id, seq });
+  }
+  try {
+    storage.ensureFile(FILE);
+    for (const row of storage.scanJsonl(FILE)) ingest(row);
+    for (const row of pendingRows.values()) ingest(row);
+    lastReadError = null;
+  } catch (err) {
+    lastReadError = err;
+    console.error('[corpse-field] history read failed', err && err.message);
+    return;
+  }
+  const sorted = [...byId.values()].sort(newestFirst);
+  corpses = [];
+  for (const raw of sorted) {
     const row = normalize(raw);
     if (!row) continue;
-    const previous = byId.get(row.id);
-    if (previous && !row.seq) row.seq = previous.seq;
-    if (!row.seq) row.seq = ++maxSeq;
-    maxSeq = Math.max(maxSeq, row.seq);
-    byId.set(row.id, row);
+    if (Math.abs(Number(raw.pos.y) - row.pos.y) > 0.001) queuePersist(row);
+    corpses.push(row);
   }
-  const merged = [...byId.values()];
-  merged.sort((left, right) => right.seq - left.seq || right.at - left.at);
-  corpses = merged.slice(0, MAX_RECORDS);
   nextSeq = Math.max(1, maxSeq + 1);
   loadedAt = Date.now();
   syncEpoch = randomUUID();
   syncRevision = 0;
   rowRevisions = new WeakMap();
-}
-
-function load() {
-  let rows = [];
-  const storedHeights = new Map();
-  try {
-    storage.ensureFile(FILE);
-    rows = storage.readJsonl(FILE);
-    lastReadError = null;
-  } catch (err) {
-    lastReadError = err;
-    console.error('[corpse-field] history read failed', err && err.message);
-  }
-  for (const raw of rows) {
-    const id = cleanId(raw && raw.id);
-    const height = Number(raw && raw.pos && raw.pos.y);
-    if (id && Number.isFinite(height)) storedHeights.set(id, height);
-  }
-  mergeRows(rows.concat([...pendingRows.values()]));
-  const needsMigration = corpses.some((row) => {
-    const height = storedHeights.get(row.id);
-    return Number.isFinite(height) && Math.abs(row.pos.y - height) > 0.001;
-  });
-  if (needsMigration) persistence.compact(FILE, corpses.slice().reverse());
 }
 
 persistence.onAppended(FILE, (ids) => {
@@ -254,11 +243,7 @@ function queuePersist(row) {
   pendingRows.set(row.id, row);
   persistence.append(FILE, [row], [row.id]);
   lastWriteAt = row.at;
-  writesSinceCompact += 1;
-  if (writesSinceCompact >= COMPACT_AFTER) {
-    persistence.compact(FILE, corpses.slice().reverse());
-    writesSinceCompact = 0;
-  }
+
 }
 
 function settle(input) {
@@ -378,7 +363,6 @@ function add(input) {
   if (duplicate) return publicRow(duplicate);
   row.seq = nextSeq++;
   corpses.unshift(row);
-  while (corpses.length > MAX_RECORDS) corpses.pop();
 
   queuePersist(row);
   const result = publicRow(row);
@@ -423,29 +407,99 @@ function addPlayer(input) {
   });
 }
 
+function currentCursor() {
+  return syncEpoch + ':' + syncRevision;
+}
+
+function parseCursor(value) {
+  if (typeof value !== 'string') return null;
+  const [epoch, version] = value.split(':', 2);
+  const revision = Number(version);
+  if (epoch !== syncEpoch || !Number.isSafeInteger(revision) || revision < 0 || revision > syncRevision) {
+    return null;
+  }
+  return revision;
+}
+
+function latestSeq() {
+  return Math.max(0, nextSeq - 1);
+}
+
+function indexBefore(seq) {
+  let low = 0;
+  let high = corpses.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (corpses[middle].seq < seq) high = middle;
+    else low = middle + 1;
+  }
+  return low;
+}
+
 function snapshot(options) {
   const opts = options || {};
-  const limit = clamp(Math.floor(Number(opts.limit) || MAX_LIMIT), 1, MAX_LIMIT);
+  const requested = Math.floor(Number(opts.limit));
+  const limit = Number.isSafeInteger(requested) && requested > 0 ? requested : corpses.length;
+  const rows = corpses.slice(0, limit);
   return {
     map: MAP_ID,
     total: corpses.length,
     revision: Math.max(0, nextSeq - 1),
-    limit,
-    corpses: corpses.slice(0, limit).map(publicRow)
+    cursor: currentCursor(),
+    limit: rows.length,
+    corpses: rows.map(publicRow)
   };
 }
 
-function sync(since) {
-  const limit = 80;
-  const cursor = syncEpoch + ':' + syncRevision;
+function historyPage(options) {
+  const opts = options || {};
+  const requested = Math.floor(Number(opts.limit));
+  const limit = clamp(Number.isSafeInteger(requested) && requested > 0 ? requested : HISTORY_PAGE_DEFAULT,
+    1, HISTORY_PAGE_MAX);
+  const beforeValue = Math.floor(Number(opts.before));
+  const before = Number.isSafeInteger(beforeValue) && beforeValue > 0 ? beforeValue : 0;
+  const start = before ? indexBefore(before) : 0;
+  const rows = corpses.slice(start, start + limit);
+  const complete = start + rows.length >= corpses.length;
+  const requestedBase = typeof opts.base === 'string' ? opts.base : '';
+  const baseCursor = parseCursor(requestedBase) === null ? currentCursor() : requestedBase;
+  return {
+    map: MAP_ID,
+    total: corpses.length,
+    revision: Math.max(0, nextSeq - 1),
+    cursor: currentCursor(),
+    baseCursor,
+    limit,
+    complete,
+    nextBefore: complete ? 0 : rows[rows.length - 1].seq,
+    corpses: rows.map(publicRow)
+  };
+}
+
+function sync(since, options) {
+  const opts = options || {};
+  const cursor = currentCursor();
+  if (!since) {
+    return { ...snapshot(), cursor, partial: false, reset: false };
+  }
   if (since === cursor) return null;
-  const [epoch, version] = typeof since === 'string' ? since.split(':', 2) : [];
-  const previous = Number(version);
-  const partial = epoch === syncEpoch && Number.isSafeInteger(previous) && previous >= 0 &&
-    previous < syncRevision;
-  const visible = corpses.slice(0, limit);
-  const changed = partial ? visible.filter(row => (rowRevisions.get(row) || 0) > previous) : visible;
-  return { map: MAP_ID, cursor, partial, corpses: changed.map(publicRow) };
+  const previous = parseCursor(since);
+  if (previous === null) {
+    const base = opts.paged === true
+      ? { map: MAP_ID, total: corpses.length, revision: Math.max(0, nextSeq - 1), limit: 0, corpses: [] }
+      : snapshot();
+    return { ...base, cursor, partial: false, reset: true };
+  }
+  const changed = corpses.filter(row => (rowRevisions.get(row) || 0) > previous);
+  return {
+    map: MAP_ID,
+    total: corpses.length,
+    revision: Math.max(0, nextSeq - 1),
+    cursor,
+    partial: true,
+    reset: false,
+    corpses: changed.map(publicRow)
+  };
 }
 
 function status() {
@@ -461,7 +515,7 @@ function status() {
     pending: pendingIds.size,
     lastWriteAt,
     loadedAt,
-    maxRecords: MAX_RECORDS,
+    retention: 'all',
     lastError: lastWriteError || errorText(lastReadError) || info.error || null
   };
 }
@@ -479,12 +533,17 @@ module.exports = {
   settle,
   setPose,
   snapshot,
+  historyPage,
   sync,
+  cursor: currentCursor,
+  size() { return corpses.length; },
+  latestSeq,
   status,
   load,
   flush,
   setPublisher(fn) { publisher = typeof fn === 'function' ? fn : null; },
   FILE,
   MAP_ID,
-  MAX_LIMIT
+  HISTORY_PAGE_DEFAULT,
+  HISTORY_PAGE_MAX
 };

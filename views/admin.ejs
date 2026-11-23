@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title><%= t(view === 'shop' ? 'admin.shopTitle' : view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %> · <%= t('nav.title') %></title>
+  <title><%= t(view === 'container-ads' ? 'admin.containerAdsTitle' : view === 'shop' ? 'admin.shopTitle' : view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %> · <%= t('nav.title') %></title>
   <link rel="stylesheet" href="/css/admin-backup.css?v=6">
 </head>
 <body>
@@ -26,7 +26,7 @@
       </div>
     </header>
     <section aria-labelledby="title">
-      <h1 id="title"><%= t(view === 'shop' ? 'admin.shopTitle' : view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'tuning' ? 'admin.houndTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
+      <h1 id="title"><%= t(view === 'container-ads' ? 'admin.containerAdsTitle' : view === 'shop' ? 'admin.shopTitle' : view === 'qr' ? 'admin.qrTitle' : view === 'moderation' ? 'admin.modTitle' : view === 'signs' ? 'admin.signsTitle' : view === 'tuning' ? 'admin.houndTitle' : view === 'password' ? 'admin.passwordTitle' : view === 'login' ? 'admin.loginTitle' : 'admin.backupTitle') %></h1>
       <% if (message) { %><p class="<%= view === 'signs' || view === 'moderation' || view === 'qr' || (view === 'shop' && message === t('admin.shopSaved')) ? 'caption' : 'error' %>" role="status"><%= message %></p><% } %>
       <% if (view === 'backup') { %>
         <p><%= t('admin.backupIntro') %></p>
@@ -40,7 +40,7 @@
           <button type="submit" class="primary"><%= t('admin.backupGenerate') %></button>
         </form>
         <p class="caption"><%= t('admin.backupNote') %></p>
-        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/shop"><%= t('admin.shopTitle') %></a><a href="/admin/tuning"><%= t('admin.houndTitle') %></a><a href="/admin/qr"><%= t('admin.qrTitle') %></a><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/moderation"><%= t('admin.modTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
+        <nav class="admin-links" aria-label="<%= t('admin.linksLabel') %>"><a href="/admin/shop"><%= t('admin.shopTitle') %></a><a href="/admin/tuning"><%= t('admin.houndTitle') %></a><a href="/admin/qr"><%= t('admin.qrTitle') %></a><a href="/admin/signs"><%= t('admin.signsTitle') %></a><a href="/admin/container-ads"><%= t('admin.containerAdsTitle') %></a><a href="/admin/moderation"><%= t('admin.modTitle') %></a><a href="/admin/password"><%= t('admin.changePassword') %></a></nav>
       <% } else if (view === 'shop') { %>
         <p><%= t('admin.shopIntro') %></p>
         <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
@@ -74,6 +74,24 @@
         <% if (tuning.source === 'env') { %><p class="error" role="status"><%= t('admin.houndEnvNote') %></p><% } %>
         <p class="caption"><%= t('admin.houndNote') %></p>
         <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
+      <% } else if (view === 'container-ads') { %>
+        <p><%= t('admin.containerAdsIntro') %></p>
+        <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>
+        <% if (!ads.length) { %><p><%= t('admin.containerAdsEmpty') %></p><% } %>
+        <% for (const ad of ads) { %>
+          <article class="review-sign">
+            <p class="caption"><%= ad.id %> · <%= ad.name %> · <%= t('admin.containerAdsUntil') %> <%= formatTime(ad.expiresAt) %></p>
+            <% if (ad.mode === 'image') { %>
+              <img src="/admin/container-ads/<%= ad.id %>/<%= ad.purchase %>.jpg" alt="" width="240" loading="lazy">
+            <% } else { %><strong><%= ad.text %></strong><% } %>
+            <p class="caption"><%= t(ad.rejected ? 'admin.containerAdsRejected' : 'admin.containerAdsApproved') %></p>
+            <form action="/admin/container-ads/<%= ad.id %>/review" method="post">
+              <input name="csrf" type="hidden" value="<%= csrf %>">
+              <input name="purchase" type="hidden" value="<%= ad.purchase %>">
+              <button class="plain" name="action" type="submit" value="<%= ad.rejected ? 'approve' : 'reject' %>"><%= t(ad.rejected ? 'admin.containerAdsApprove' : 'admin.containerAdsReject') %></button>
+            </form>
+          </article>
+        <% } %>
       <% } else if (view === 'signs') { %>
         <p><%= t('admin.signsIntro') %></p>
         <p><a href="/admin"><%= t('admin.backToBackup') %></a></p>

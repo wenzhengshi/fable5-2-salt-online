@@ -7,8 +7,8 @@
         <button class="btn small" data-act="close-panel">关闭</button>
       </header>
       <div class="panel-b" data-pane="settings">
-        <div class="row"><label id="l-q">画质</label>
-          <div class="seg" role="group" aria-labelledby="l-q"><% for (const [tier, label] of Object.entries({minimal:"极低",smooth:"流畅",low:"低",medium:"中",high:"高",ultra:"极高"})) { %><button type="button" data-q="<%= tier %>" aria-pressed="false"><%= label %></button><% } %></div></div>
+        <div class="row" id="salt-quality-row"><label id="l-q"><%= t('graphics.quality') %></label>
+          <div class="seg" role="group" aria-labelledby="l-q"><% for (const tier of ['low', 'medium', 'high', 'ultra']) { %><button type="button" data-q="<%= tier %>" aria-pressed="false"><%= t('graphics.' + tier) %></button><% } %></div></div>
         <div class="row"><label for="s-sens">鼠标灵敏度</label><div class="slider"><input id="s-sens" type="range" min="0.2" max="3" step="0.05"><output data-o="sens"></output></div></div>
         <div class="row"><label id="l-inv">反转 Y 轴</label><button class="toggle" data-act="invert" aria-labelledby="l-inv" aria-pressed="false"><i></i><span>关</span></button></div>
         <% if (!racing) { %>

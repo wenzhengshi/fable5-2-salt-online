@@ -162,6 +162,50 @@ try {
   assert.equal(restored.get('test-drone-object').pos.y, box[4]);
   assert.equal(restored.get('test-player-skin').outfit, 'frost', '重启后尸体皮肤仍应保留');
   assert.equal(restored.get('test-hound-pose').pose.yaw, 1.25, '重启后机器狗死亡姿态仍应保留');
+
+  const beforeBulk = restarted.size();
+  for (let index = 0; index < 650; index += 1) {
+    restarted.addMachine({
+      id: 'bulk-corpse-' + index,
+      at: now + index * 4,
+      kind: 'hound',
+      pos: { x: 100 + (index % 20) * 5, y: 0, z: 100 + Math.floor(index / 20) * 5 },
+      victimId: 'bulk-machine-' + index,
+      shooterId: 'tester'
+    });
+  }
+  assert.equal(restarted.size(), beforeBulk + 650, '尸体实时缓存不应再限制总量');
+  const fullSnapshot = restarted.snapshot();
+  assert.equal(fullSnapshot.corpses.length, beforeBulk + 650, '快照默认应返回全部尸体');
+  assert.equal(restarted.snapshot({ limit: 10 }).corpses.length, 10, '显式 limit 仍应生效');
+
+  const pageIds = new Set();
+  let before = restarted.latestSeq() + 1;
+  let pageCount = 0;
+  while (before && pageCount < 100) {
+    const page = restarted.historyPage({ before, limit: 40 });
+    assert.ok(page.corpses.length <= 40, '尸体历史每页不应超过请求条数');
+    for (const row of page.corpses) pageIds.add(row.id);
+    pageCount += 1;
+    if (page.complete) break;
+    assert.ok(page.nextBefore > 0 && page.nextBefore < before, '分页游标必须持续向旧记录推进');
+    before = page.nextBefore;
+  }
+  assert.equal(pageIds.size, beforeBulk + 650, '分页应覆盖全部尸体记录');
+
+  const cursor = restarted.cursor();
+  const deltaCorpse = restarted.addMachine({
+    id: 'delta-corpse',
+    at: now + 9000,
+    kind: 'drone',
+    pos: { x: 300, y: 0, z: 300 },
+    victimId: 'delta-machine',
+    shooterId: 'tester'
+  });
+  const delta = restarted.sync(cursor);
+  assert.equal(delta.partial, true, '游标同步应只返回新增或修改记录');
+  assert.ok(delta.corpses.some((row) => row.id === deltaCorpse.id), '游标同步应包含新尸体');
+  assert.equal(restarted.sync(restarted.cursor()), null, '游标未变化时应返回 204 语义');
   console.log('corpse-field self test passed');
 } finally {
   fs.rmSync(dataDir, { recursive: true, force: true });

@@ -602,6 +602,15 @@ body.sail-active .h-heading { opacity: 0 !important; visibility: hidden !importa
 .container-tools {
   bottom: calc(44px + var(--sab));
 }
+.container-tools .container-book-button {
+  border-color: #c8ad78;
+  background: #2a2214;
+  color: #ffe6b8;
+}
+.container-tools button:focus-visible {
+  outline: 2px solid #ffcf83;
+  outline-offset: 2px;
+}
 .is-touch .container-tools { bottom: calc(57px + var(--sab)); }
 .container-tools button:first-child::after { content: ' K'; }
 .is-touch .container-tools button:first-child::after { content: none; }

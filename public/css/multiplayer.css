@@ -34,7 +34,12 @@
   transition: opacity 0.2s ease;
 }
 
-body.is-playing .mp-chip { opacity: 0.72; }
+body.is-playing .mp-chip {
+  opacity: 0.78;
+  background-color: rgba(11, 13, 15, 0.9);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 [data-gfx="minimal"] .mp-chip,
 [data-gfx="low"] .mp-chip {
   background-color: rgba(11, 13, 15, 0.92);
@@ -96,9 +101,17 @@ body.is-playing .mp-chip:hover,
   text-align: right;
   font-size: 10px;
   color: rgba(232, 228, 218, 0.55);
+  white-space: nowrap;
 }
 
 .mp-ping.bad { color: var(--alarm); }
+
+.mp-ping[data-queue]::after {
+  content: " · " attr(data-queue);
+  color: #ffd166;
+  font-size: 9px;
+  letter-spacing: 0;
+}
 
 .mp-net {
   padding: 3px 7px;
@@ -844,7 +857,9 @@ body.mp-respawning .menu[data-screen="paused"] .m-screen[data-s="paused"] { disp
   background: rgba(232, 228, 218, 0.03);
 }
 
-.mp-rr.self { border-left-color: var(--signal); background: rgba(255, 179, 71, 0.08); }
+.mp-rr.self { border-left-color: var(--signal); background: rgba(255, 179, 71, 0.08); cursor: pointer; }
+.mp-rr.anonymous { border-left-color: #9fb4a8; }
+.mp-rr.self.anonymous { border-left-color: #9fb4a8; background: rgba(159, 180, 168, 0.08); }
 .mp-rr.team-blue { border-left-color: #5fd0ff; }
 .mp-rr.team-red { border-left-color: #ff5b63; }
 .mp-rr.team-blue.self { border-left-color: #5fd0ff; background: rgba(95, 208, 255, 0.08); }
@@ -962,6 +977,12 @@ body.mp-respawning .menu[data-screen="paused"] .m-screen[data-s="paused"] { disp
   background: rgba(255, 179, 71, 0.08);
 }
 
+.mp-rr-name em.mp-rr-anon {
+  color: #c9c3b6;
+  border-color: rgba(159, 180, 168, 0.5);
+  background: rgba(159, 180, 168, 0.08);
+}
+
 .mp-rr-action {
   min-width: 46px;
   min-height: 24px;
@@ -981,6 +1002,11 @@ body.mp-respawning .menu[data-screen="paused"] .m-screen[data-s="paused"] { disp
 .mp-rr-action.active { border-color: var(--signal); background: rgba(255, 179, 71, 0.12); color: var(--signal); }
 .mp-rr-action.active:hover { background: var(--signal); color: var(--ink); }
 .mp-rr-action:disabled { opacity: 0.46; cursor: default; }
+
+.mp-rr-anon-action { border-color: rgba(159, 180, 168, 0.42); background: rgba(159, 180, 168, 0.07); color: #c9c3b6; }
+.mp-rr-anon-action:hover:not(:disabled) { background: #c9c3b6; color: var(--ink); }
+.mp-rr-anon-action.active { border-color: #9fb4a8; background: rgba(159, 180, 168, 0.16); color: #d8d2c5; }
+.mp-rr-anon-action[aria-busy="true"] { opacity: 0.6; cursor: wait; }
 
 .mp-rr.team-red .mp-rr-name em.mp-rr-team {
   color: #ff9aa0;

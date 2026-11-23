@@ -83,6 +83,30 @@
     return null;
   }
 
+  function playGateOpen() {
+    const gate = document.getElementById('play-gate');
+    return Boolean((gate && !gate.hidden) || root.classList.contains('play-gate-open'));
+  }
+
+  function touchLike() {
+    return !!(
+      (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+      (navigator.maxTouchPoints || 0) > 0 ||
+      'ontouchstart' in window
+    );
+  }
+
+  function effectiveForced(nextMode) {
+    // The schedule dialog is always landscape. On a portrait touch screen this
+    // turns the page only while the dialog is visible; closing it restores the
+    // mode the player had selected before. Narrow desktop windows are left alone.
+    if (playGateOpen()) {
+      const physical = physicalSize();
+      return touchLike() && physical.height >= physical.width ? 'landscape' : null;
+    }
+    return forcedFor(nextMode);
+  }
+
   function restoreProperty(name, descriptor) {
     try {
       if (descriptor) Object.defineProperty(window, name, descriptor);
@@ -319,7 +343,7 @@
   }
 
   function refresh(notify) {
-    writeLayout(forcedFor(mode), !!notify);
+    writeLayout(effectiveForced(mode), !!notify);
   }
 
   function setMode(nextMode) {
@@ -334,7 +358,7 @@
   window.addEventListener('orientationchange', () => refresh(true));
 
   mode = readMode();
-  writeLayout(forcedFor(mode), false);
+  writeLayout(effectiveForced(mode), false);
 
   window.SaltForcedLayout = {
     setMode,

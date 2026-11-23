@@ -1,0 +1,52 @@
+.port-ad-shortcut {
+  position: absolute;
+  z-index: 37;
+  left: 50%;
+  top: 61%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  border: 1px solid #ffb347;
+  background: #101719ed;
+  color: #ffe4b0;
+  padding: 8px 14px;
+  min-height: 40px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.port-ad-shortcut::after { content: '  ' attr(data-key); opacity: .62; }
+.is-touch .port-ad-shortcut::after { content: none; }
+.port-ad-dialog {
+  box-sizing: border-box;
+  width: min(440px, calc(var(--vp-w, 100vw) - 32px));
+  max-height: calc(var(--vp-h, 100dvh) - 24px);
+  overflow: auto;
+  color: #efeee9;
+  background: #121a20;
+  border: 1px solid #806339;
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+.port-ad-dialog::backdrop { background: #05080caa; }
+.port-ad-dialog h2 { margin: 0; font-size: 21px; }
+.port-ad-dialog label { display: grid; gap: 4px; margin: 10px 0; }
+.port-ad-dialog label[hidden] { display: none; }
+.port-ad-dialog input,
+.port-ad-dialog select,
+.port-ad-dialog textarea,
+.port-ad-dialog button { font: inherit; }
+.port-ad-dialog input,
+.port-ad-dialog select,
+.port-ad-dialog textarea {
+  padding: 6px;
+  color: inherit;
+  background: #0a1115;
+  border: 1px solid #697075;
+  border-radius: 4px;
+  font-size: 16px;
+}
+.port-ad-dialog footer { display: flex; gap: 8px; justify-content: flex-end; }
+.port-ad-dialog button { min-height: 38px; padding: 5px 10px; }
+.port-ad-rate,
+.port-ad-status { color: #ffcf82; font-size: 13px; }
+.port-ad-status:empty { display: none; }

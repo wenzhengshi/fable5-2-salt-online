@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const { StringDecoder } = require('node:string_decoder');
 const path = require('path');
 
 const PROJECT_DATA_DIR = path.join(__dirname, '..', 'data');
@@ -340,24 +341,42 @@ function appendJsonl(file, record) {
   appendJsonlBatch(file, [record]);
 }
 
-function readJsonl(file) {
+function *scanJsonl(file) {
   ensureDir(DATA_DIR);
   const full = path.join(DATA_DIR, file);
-  if (!fs.existsSync(full)) return [];
-  const raw = fs.readFileSync(full, 'utf8');
-  if (!raw.trim()) return [];
-  const rows = [];
-  for (const line of raw.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const row = JSON.parse(trimmed);
-      if (row && typeof row === 'object') rows.push(row);
-    } catch (err) {
-      // 单行损坏不应影响其余历史记录，跳过该行继续读取。
-    }
+  let fd;
+  try { fd = fs.openSync(full, 'r'); } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
   }
-  return rows;
+  const buffer = Buffer.alloc(65536);
+  const decoder = new StringDecoder('utf8');
+  let rest = '';
+  function parseLine(line) {
+    try {
+      const row = JSON.parse(line);
+      return row && typeof row === 'object' ? row : null;
+    } catch { return null; }
+  }
+  try {
+    let count;
+    while ((count = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
+      const lines = (rest + decoder.write(buffer.subarray(0, count))).split('\n');
+      rest = lines.pop();
+      for (const line of lines) {
+        const row = parseLine(line);
+        if (row) yield row;
+      }
+    }
+    const last = parseLine(rest + decoder.end());
+    if (last) yield last;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function readJsonl(file) {
+  return Array.from(scanJsonl(file));
 }
 
 function statFile(file) {
@@ -412,6 +431,7 @@ module.exports = {
   appendJsonlBatch,
   appendJsonl,
   readJsonl,
+  scanJsonl,
   ensureFile,
   statFile,
   flushFile,

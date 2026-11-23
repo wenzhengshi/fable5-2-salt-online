@@ -67,7 +67,7 @@ try {
   assert.equal(migratedField.snapshot({ limit: 10 }).corpses[0].pos.y, expected,
     '历史空中尸体在重启加载时应落地');
   assert.equal(migratedField.flush(), true);
-  assert.equal(storage.readJsonl(field.FILE)[0].pos.y, expected,
+  assert.equal(storage.readJsonl(field.FILE).at(-1).pos.y, expected,
     '历史尸体落地后应写回持久化记录');
 
   storage.writeJson('frontier-inventory.json', { gold: { carried: { 'owner-1': 1000000 } } });

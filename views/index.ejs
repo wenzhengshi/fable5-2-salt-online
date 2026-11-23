@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="<%= lang %>" data-app-lang="<%= lang %>">
+<html lang="<%= lang %>" data-app-lang="<%= lang %>" class="<%= playSchedule && playSchedule.blocked ? 'play-gate-open' : '' %>">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
@@ -18,7 +18,8 @@
     <script>setTimeout(function () { var link = document.getElementById('app-fonts'); if (link) link.media = 'all'; }, 500);</script>
     <script src="/js/forced-layout.js?v=<%= assetVersion %>"></script>
     <link rel="stylesheet" href="/css/gold-supply.css?v=<%= assetVersion %>">
-<link rel="stylesheet" href="/css/settings-panel.css?v=<%= assetVersion %>" />
+    <link rel="stylesheet" href="/css/settings-panel.css?v=<%= assetVersion %>" />
+    <link rel="stylesheet" href="/css/play-schedule.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/map-shell.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/game.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/multiplayer.css?v=<%= assetVersion %>" />
@@ -31,6 +32,7 @@
     <link rel="stylesheet" href="/css/mobile.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/modal.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/frontier.css?v=<%= assetVersion %>" />
+    <link rel="stylesheet" href="/css/port-container-ads.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/css/deployment.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/race/ads.css?v=<%= assetVersion %>" />
     <link rel="stylesheet" href="/race/history.css?v=<%= assetVersion %>" />
@@ -43,7 +45,7 @@
     <link rel="preload" href="/maps/qingyun-models.json" as="fetch" crossorigin="anonymous" />
     <% } %>
   </head>
-  <body<% if (raceStart) { %> data-race-start="<%= raceStart %>"<% } %><% if (raceTransfer) { %> data-race-transfer="<%= raceTransfer %>"<% } %>>
+  <body class="<%= playSchedule && playSchedule.blocked ? 'play-gate-open' : '' %>"<% if (raceStart) { %> data-race-start="<%= raceStart %>"<% } %><% if (raceTransfer) { %> data-race-transfer="<%= raceTransfer %>"<% } %>>
     <div id="app">
       <canvas id="view"></canvas>
       <div id="ui"></div>
@@ -77,6 +79,46 @@
       <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
     </div>
 
+    <div class="play-gate" id="play-gate" hidden aria-hidden="true">
+      <section class="play-gate__card" role="alertdialog" aria-modal="true" aria-labelledby="play-gate-title" aria-describedby="play-gate-message" tabindex="-1">
+        <div class="play-gate__grid">
+          <div class="play-gate__intro">
+            <div class="play-gate__top">
+              <span class="play-gate__brand">SALTLINE</span>
+              <span class="play-gate__meta">
+                <span class="play-gate__timezone"><%= t('playSchedule.timezone') %></span>
+                <span class="play-gate__lang" aria-label="<%= t('nav.language') %>">
+                  <button type="button" data-play-lang="zh-CN" aria-pressed="<%= lang === 'zh-CN' %>" class="<%= lang === 'zh-CN' ? 'active' : '' %>"><%= t('lang.zh') %></button>
+                  <button type="button" data-play-lang="en-US" aria-pressed="<%= lang === 'en-US' %>" class="<%= lang === 'en-US' ? 'active' : '' %>"><%= t('lang.en') %></button>
+                </span>
+                <button type="button" class="play-gate__close" data-play-close aria-label="<%= t('playSchedule.close') %>" title="<%= t('playSchedule.close') %>">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" /></svg>
+                </button>
+              </span>
+            </div>
+            <div class="play-gate__signals" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            <p class="play-gate__kicker"><%= t('playSchedule.kicker') %></p>
+            <h2 class="play-gate__title" id="play-gate-title"><%= t('playSchedule.title') %></h2>
+            <p class="play-gate__message" id="play-gate-message"><%= t('playSchedule.message').replace('{days}', '0').replace('{hours}', '0').replace('{minutes}', '0').replace('{seconds}', '0') %></p>
+            <div class="play-gate__rules">
+              <p><%= t('playSchedule.rule') %></p>
+              <p><%= t('playSchedule.holidayRule') %></p>
+            </div>
+          </div>
+          <div class="play-gate__aside">
+            <div class="play-gate__clock" role="timer" aria-live="off">
+              <div class="play-gate__unit"><strong id="play-gate-days">0</strong><span><%= t('playSchedule.days') %></span></div>
+              <div class="play-gate__unit"><strong id="play-gate-hours">00</strong><span><%= t('playSchedule.hours') %></span></div>
+              <div class="play-gate__unit"><strong id="play-gate-minutes">00</strong><span><%= t('playSchedule.minutes') %></span></div>
+              <div class="play-gate__unit"><strong id="play-gate-seconds">00</strong><span><%= t('playSchedule.seconds') %></span></div>
+            </div>
+            <div class="play-gate__footer"><span id="play-gate-status"><%= t('playSchedule.waiting') %></span></div>
+            <p class="play-gate__dismiss-hint"><%= t('playSchedule.dismissHint') %></p>
+          </div>
+        </div>
+      </section>
+    </div>
+
     <%- include('race-ads') %>
 
     <noscript>
@@ -85,12 +127,14 @@
 
     <script>
       window.__SALT_I18N__ = <%- JSON.stringify({ lang: lang, messages: messages, groupQr: groupQr }).replace(/</g, '\\u003c') %>;
+      window.__SALT_SCHEDULE__ = <%- JSON.stringify(playSchedule || {}).replace(/</g, '\\u003c') %>;
       /* 机械猎犬被击杀后空翻概率：服务端下发，改后台 /admin/tuning 后在线玩家会收到 houndFlip 热更新 */
       window.__SALT_FLIP__ = <%= typeof houndFlipChance === 'number' && houndFlipChance >= 0 && houndFlipChance <= 1 ? houndFlipChance : 0.5 %>;
     </script>
     <script src="/js/webgl-guard.js?v=<%= assetVersion %>"></script>
     <script src="/js/i18n.js?v=<%= assetVersion %>"></script>
     <script src="/js/modal.js?v=<%= assetVersion %>"></script>
+    <script src="/js/play-schedule.js?v=<%= assetVersion %>"></script>
     <script src="/race/history.js?v=<%= assetVersion %>"></script>
     <script src="/race/ad-rules.js?v=<%= assetVersion %>"></script>
     <script src="/race/ads.js?v=<%= assetVersion %>"></script>
@@ -99,12 +143,12 @@
     </script>
     <%# Must execute before boot-gate starts game.bundle.js: forwards texture,
         anisotropy, dynamic-resolution and rain values from the saved settings. %>
-    <script src="/js/graphics-boot.js?v=<%= assetVersion %>-gfx6"></script>
+    <script src="/js/graphics-boot.js?v=<%= assetVersion %>-gfx8"></script>
     <script src="/js/map-shell.js?v=<%= assetVersion %>"></script>
     <script src="/js/boot-gate.js?v=<%= assetVersion %>" data-version="<%= assetVersion %>"></script>
     <%# Direct load makes the new options file survive a stale cached boot-gate.js.
         client-options.js guards against double-loading with CORE_SCRIPTS. %>
-    <script src="/js/client-options.js?v=<%= assetVersion %>-co17"></script>
+    <script src="/js/client-options.js?v=<%= assetVersion %>-co19"></script>
   <script src="/js/gold-supply.js?v=<%= assetVersion %>"></script>
 </body>
 </html>

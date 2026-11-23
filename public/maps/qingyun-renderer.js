@@ -4409,44 +4409,65 @@ void main(){
     gl_FragColor = vec4(c, 1.0);
   }`,{tScene:{value:Zn.texture},tCloud:{value:mr.texture},tRays:{value:Yc.texture},tBloom:{value:pi.texture},uRayStr:{value:0},uBloom:{value:0},uAA:{value:0},uTexel:$c.uniforms.uTexel,uInk:{value:1},uAspect:{value:1}});
 const presets = {
-  ultra:  { scale: 1,   pixels: 2073600, reflection: .44, cloud: .5,  steps: 30, rays: 30, shadowEvery: 3 },
-  high:   { scale: .9,  pixels: 1440000, reflection: .38, cloud: .42, steps: 24, rays: 24, shadowEvery: 4 },
-  medium: { scale: .8,  pixels:  960000, reflection: .33, cloud: .36, steps: 18, rays: 16, shadowEvery: 6 },
-  low:    { scale: .68, pixels:  600000, reflection: .27, cloud: .3,  steps: 13, rays: 0,  shadowEvery: 8 },
-  smooth: { scale: .74, pixels:  600000, reflection: 0,   cloud: .22, steps: 8,  rays: 0,  shadowEvery: 0 },
-  minimal:{ scale: .58, pixels:  420000, reflection: 0,   cloud: .18, steps: 6,  rays: 0,  shadowEvery: 0 }
+  ultra:  { scale: 1,   pixels: 8294400, reflection: .5,  cloud: .55, steps: 34, rays: 36, shadowEvery: 2, floor: .8  },
+  high:   { scale: 1,   pixels: 4147200, reflection: .44, cloud: .48, steps: 28, rays: 28, shadowEvery: 3, floor: .75 },
+  medium: { scale: .92, pixels: 2073600, reflection: .36, cloud: .4,  steps: 20, rays: 18, shadowEvery: 5, floor: .68 },
+  low:    { scale: .76, pixels: 1200000, reflection: .3,  cloud: .32, steps: 14, rays: 0,  shadowEvery: 8, floor: .6  },
+  smooth: { scale: .74, pixels:  900000, reflection: 0,   cloud: .24, steps: 9,  rays: 0,  shadowEvery: 0, floor: .6  },
+  minimal:{ scale: .58, pixels:  600000, reflection: 0,   cloud: .18, steps: 6,  rays: 0,  shadowEvery: 0, floor: .55 }
 };
 let viewWidth = 0, viewHeight = 0, applied = null;
 let qualityName, tier, frame = 0, frameAverage = 0, samples = 0, cooldown = 1;
+let dynamicScale = 1, autoQuality = true, scaleCooldown = 0;
 const levels = ['minimal','smooth','low','medium','high','ultra'];
 
 function resetFrameHistory() {
   qualityName = undefined;
   frame = 0;
+  dynamicScale = 1;
+  scaleCooldown = 0;
 }
 
-function choosePreset(name, frameTime) {
-  if (name !== qualityName) {
-    qualityName = name;
-    tier = Math.max(0, levels.indexOf(name));
+function choosePreset(name, frameTime, allowTierDrop) {
+  const requested = levels.includes(name) ? name : 'medium';
+  const auto = allowTierDrop !== false;
+  if (requested !== qualityName || auto !== autoQuality) {
+    qualityName = requested;
+    autoQuality = auto;
+    tier = Math.max(0, levels.indexOf(requested));
     frameAverage = samples = 0;
     cooldown = 1;
+    dynamicScale = 1;
+    scaleCooldown = 0;
   }
   if (frameTime > 0 && Number.isFinite(frameTime)) {
     frameTime = Math.min(frameTime, .1);
     frameAverage += (frameTime - frameAverage) * (samples ? .08 : 1);
     samples++;
     cooldown -= frameTime;
-    if (cooldown <= 0 && samples >= 25 && frameAverage > .027 && tier > 0) {
+    scaleCooldown -= frameTime;
+    const active = presets[levels[tier]];
+    if (samples >= 25 && scaleCooldown <= 0) {
+      if (frameAverage > .022 && dynamicScale > active.floor) {
+        dynamicScale = Math.max(active.floor, dynamicScale - .05);
+        scaleCooldown = 1.2;
+      } else if (frameAverage < .0175 && dynamicScale < 1) {
+        dynamicScale = Math.min(1, dynamicScale + .03);
+        scaleCooldown = 2;
+      }
+    }
+    if (auto && cooldown <= 0 && samples >= 25 && frameAverage > .03 && tier > 0 && dynamicScale <= active.floor + .001) {
       tier--;
       cooldown = 2;
+      dynamicScale = 1;
+      scaleCooldown = 0;
     }
   }
   return presets[levels[tier]];
 }
 
 function resizeTargets(width, height, preset) {
-  const scale = Math.min(preset.scale, Math.sqrt(preset.pixels / (width * height)));
+  const scale = Math.min(1, Math.min(preset.scale, Math.sqrt(preset.pixels / Math.max(1, width * height))) * dynamicScale);
   width = Math.max(2, Math.round(width * scale));
   height = Math.max(2, Math.round(height * scale));
   if (viewWidth === width && viewHeight === height && applied === preset) return;
@@ -4702,9 +4723,9 @@ return {
     }
     return warmPromise;
   },
-  draw(camera, dt, frameTime, quality, drawActors) {
+  draw(camera, dt, frameTime, quality, drawActors, allowTierDrop) {
     Ze.getDrawingBufferSize(outputSize);
-    const preset = choosePreset(quality, frameTime);
+    const preset = choosePreset(quality, frameTime, allowTierDrop !== false);
     resizeTargets(outputSize.x, outputSize.y, preset);
     Jt.position.copy(camera.position);
     Jt.quaternion.copy(camera.quaternion);

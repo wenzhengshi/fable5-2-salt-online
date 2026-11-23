@@ -6844,8 +6844,9 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   const bounded=(value,min,max,fallback)=>Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
   function preferences(){
     const saved=readSettings();
+    const tier=performanceOptions.normalizeTier(saved.quality);
     return {
-      quality:performanceOptions.validTier(saved.quality)?saved.quality:'auto',
+      quality:performanceOptions.validTier(tier)?tier:'auto',
       sens:bounded(saved.sens,.2,3,1),
       fov:bounded(saved.fov,60,95,74),
       volume:bounded(saved.volume,0,1,.8),
@@ -6854,10 +6855,7 @@ function createPortRay(){const W=TrackThree.Vector3,e=[], i={};const oi={groundY
   }
   let settings=preferences();
   const mobile=matchMedia('(pointer:coarse)').matches;
-  const lowerPowered=(navigator.deviceMemory>0&&navigator.deviceMemory<=3)
-    ||(navigator.hardwareConcurrency>0&&navigator.hardwareConcurrency<=4)
-    ||Math.min(screen.width,screen.height)<380;
-  const autoQuality=mobile?(lowerPowered?'minimal':'smooth'):'medium';
+  const autoQuality=performanceOptions.detectTier();
   const effectiveTier=()=>settings.quality==='auto'?autoQuality:settings.quality;
   let quality=performanceOptions.tiers[effectiveTier()];
   let renderer;

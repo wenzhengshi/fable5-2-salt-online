@@ -17,6 +17,7 @@ const { isInsideAirWall, PORT_PLAYER_START, PORT_SPAWN_YAW } = require('../publi
 const { randomUUID } = require('node:crypto');
 const moderation = require('../services/moderation').createModeration();
 const houndTuning = require('../services/houndTuning');
+const playSchedule = require('../services/playSchedule');
 moderation.ready.catch(error => console.error('[moderation] load failed:', error.message));
 const pendingAutomaticBans = new Set();
 function monitor(player, kind, now) {
@@ -40,6 +41,7 @@ const sameMap = (a, b) => a.mapId === b.mapId && a.inQingyun === b.inQingyun;
 const mapKeyOf = (player) => player.inQingyun ? 'qingyun' : player.mapId || 'port';
 
 const TICK_MS = 100;
+const POSE_MS = 50;
 const RESPAWN_MS = 5000;
 const RESPAWN_PROTECT_MS = 4000;
 const PROTECT_MS = 2000;
@@ -50,7 +52,7 @@ const arsenal = require('../public/js/arsenal-rules');
 const MAX_NAME = 16;
 const WORLD_LIMIT = 900;
 const MAX_MSG_PER_SEC = 160;
-const MAX_SPAWNS = 32;
+const MAX_SPAWNS = 64;
 const CHAT_MAX = 80;
 const CHAT_COOLDOWN_MS = 1200;
 const MAX_AUDIO_CHUNK = 8192;
@@ -83,12 +85,7 @@ const FOLLOW_INVITE_COOLDOWN_MS = 1200;
 const FOLLOW_MAX_PENDING = 5;
 const FOLLOW_MAX_FOLLOWERS = 4;
 const FOLLOW_GAP = 2.4;
-const HISTORY_MARK_CHUNK = 120;
-const HISTORY_CORPSE_CHUNK = 40;
-const HISTORY_CHUNK_GAP_MS = 50;
-const HISTORY_BUFFER_LIMIT = 16 * 1024;
-let nextHistoryId = 1;
-
+const ANONYMOUS_TOGGLE_COOLDOWN_MS = 700;
 const CALLSIGNS = ['RAVEN', 'VIPER', 'KESTREL', 'TALON', 'DRIFT', 'CINDER', 'ASH', 'MOSS', 'BREAKER', 'HALYARD', 'MARLIN', 'SABLE'];
 
 const players = new Map();
@@ -110,7 +107,9 @@ const boat = {
 };
 let nextId = 1;
 let wss = null;
+let pingWss = null;
 let timer = null;
+let poseTimer = null;
 let heartbeat = null;
 let upgradeServer = null;
 let upgradeHandler = null;
@@ -123,6 +122,14 @@ function round(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.round(n * 100) / 100;
+}
+
+function livePlayerCount() {
+  let count = 0;
+  for (const player of players.values()) {
+    if (player && player.ws && player.ws.readyState === 1) count += 1;
+  }
+  return count;
 }
 
 function safeVec(input, fallback) {
@@ -340,6 +347,15 @@ function broadcastBinary(payload, filter) {
   }
 }
 
+function closePingServer() {
+  if (!pingWss) return;
+  for (const socket of pingWss.clients) {
+    try { socket.close(); } catch (err) { /* already gone */ }
+  }
+  try { pingWss.close(); } catch (err) { /* already closed */ }
+  pingWss = null;
+}
+
 function relayPlayerAudio(player, data) {
   if (!player || player.focusUntil > Date.now()) return;
   if (!player.voice || !player.voice.enabled || player.voice.muted) return;
@@ -399,27 +415,44 @@ function pickSpawn(player, now) {
     // Filter before scoring. Projecting an offshore spawn onto the wall can put it inside a prop.
     const inside = spawns.filter(isInsideAirWall);
     candidates = inside.length ? inside : [PORT_PLAYER_START];
+  } else if (!player.inQingyun && !player.mapId) {
+    // 盐港步兵只从地面候选点复活；过滤旧客户端可能上报的高空敌人出生点。
+    const groundLevel = candidates.filter((spawn) => {
+      const y = Number(spawn.y);
+      return !Number.isFinite(y) || (y >= -2 && y <= 5);
+    });
+    if (groundLevel.length) candidates = groundLevel;
+  }
+  if (!player.mapId && !player.inQingyun && player.lastPortSpawn && candidates.length > 1) {
+    const previous = player.lastPortSpawn;
+    const fresh = candidates.filter(spawn =>
+      Math.hypot(spawn.x - previous.x, spawn.z - previous.z) > 1.5);
+    if (fresh.length) candidates = fresh;
   }
   const safer = candidates.filter(outsideBossReach);
   if (safer.length) candidates = safer;
   const enemies = [...players.values()].filter((item) => item !== player && item.active && item.alive &&
     sameMap(item, player));
-  let best = null;
-  let bestScore = -Infinity;
-  for (const spawn of candidates) {
+  const scored = candidates.map((spawn) => {
     let minDist = Infinity;
     for (const enemy of enemies) {
       const dist = Math.hypot(spawn.x - enemy.pos.x, spawn.z - enemy.pos.z);
       if (dist < minDist) minDist = dist;
     }
     if (!enemies.length) minDist = 1000;
-    const score = minDist * (0.85 + Math.random() * 0.3);
-    if (score > bestScore) {
-      bestScore = score;
-      best = spawn;
-    }
+    return { spawn, clearance: minDist };
+  });
+  // 保留足够的敌人间距，但在“同样安全”的候选里随机取点，避免总落在同一个最远角落。
+  const maxClearance = scored.reduce((best, item) => Math.max(best, item.clearance), 0);
+  const threshold = Math.max(10, maxClearance * 0.65);
+  const safePool = scored.filter(item => item.clearance >= threshold);
+  const pool = safePool.length ? safePool : scored;
+  const chosen = pool[Math.floor(Math.random() * pool.length)];
+  if (chosen) {
+    if (!player.mapId && !player.inQingyun) player.lastPortSpawn = chosen.spawn;
+    return chosen.spawn;
   }
-  return best || candidates[0];
+  return candidates[0];
 }
 
 /* -------------------------------------------------------------- leaderboard */
@@ -529,30 +562,9 @@ function publicLocation(player, focus) {
 
 function getOnlinePlayers() {
   const now = Date.now();
-  return [...players.values()].map((player) => {
-    const focus = publicFocusState(player, now);
-    const location = publicLocation(player, focus);
-    return {
-      id: player.id,
-      name: player.name,
-      color: player.color,
-      soldier: player.soldier,
-      kills: player.kills,
-      deaths: player.deaths,
-      streak: player.streak,
-      alive: player.alive,
-      active: player.active,
-      screen: location.screen,
-      status: location.status,
-      map: location.map,
-      coins: playerCoins(player),
-      focused: focus.active,
-      focusUntil: focus.until,
-      focusKind: focus.kind,
-      focus,
-      voice: publicVoice(player)
-    };
-  });
+  return rosterPayloadBase(now).map((row) => row.anonymous
+    ? { ...row, name: '', color: '#9fb4a8', coins: 0, nameHidden: true }
+    : row);
 }
 
 // The race roster only needs location and public identity from live sessions.
@@ -560,18 +572,26 @@ function getBattlePresence() {
   const now = Date.now();
   return [...players.values()].filter(player => player.ws.readyState === 1).map(player => {
     const location = publicLocation(player, publicFocusState(player, now));
-    return { owner: player.signOwner, id: player.id, name: player.name, ...location };
+    const anonymous = player.anonymous === true;
+    return {
+      owner: player.signOwner,
+      id: player.id,
+      name: anonymous ? '' : player.name,
+      anonymous,
+      ...location
+    };
   });
 }
 
 /* ------------------------------------------------------------- game actions */
 
-function rosterPayload() {
-  const now = Date.now();
+function rosterPayloadBase(now = Date.now()) {
   return [...players.values()]
+    .filter((player) => player.ws && player.ws.readyState === 1)
     .map((player) => {
       const focus = publicFocusState(player, now);
       const location = publicLocation(player, focus);
+      const anonymous = player.anonymous === true;
       return {
         id: player.id,
         name: player.name,
@@ -590,10 +610,21 @@ function rosterPayload() {
         focusUntil: focus.until,
         focusKind: focus.kind,
         focus,
+        anonymous,
+        nameHidden: false,
         voice: publicVoice(player)
       };
     })
-    .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || a.name.localeCompare(b.name));
+    .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths ||
+      (a.name || a.id).localeCompare(b.name || b.id));
+}
+
+function rosterForViewer(rows, viewer) {
+  const viewerId = viewer && viewer.id;
+  return rows.map((row) => {
+    if (!row.anonymous || row.id === viewerId) return row;
+    return { ...row, name: '', color: '#9fb4a8', coins: 0, nameHidden: true };
+  });
 }
 
 function publicFighter(player) {
@@ -738,6 +769,7 @@ function startFollowing(follower, leader, now, source) {
 function followInviteAllowed(player, target, now) {
   if (!player || !target || player === target) return 'self';
   if (!player.joined || !target.joined) return 'offline';
+  if (player.anonymous || target.anonymous) return 'anonymous';
   if (!player.active || !player.alive || !target.active || !target.alive) return 'notReady';
   if (player.focusUntil > now || target.focusUntil > now) return 'focus';
   if (frontier.dropping(player, now) || frontier.dropping(target, now)) return 'busy';
@@ -1075,6 +1107,7 @@ const shop = createShop({ players, send, gold,
     broadcast({ type: 'soldierState', id: player.id, soldier: player.soldier, outfit: player.outfit });
   }
 });
+const portContainerAds = require('../services/portContainerAds');
 const containers = require('../services/containers')({ send, players, frontier, gold, shop });
 const sedan = require('../services/sedan')(players, send, frontier.dropping, shop.enter);
 
@@ -1263,6 +1296,18 @@ function handleMessage(player, raw) {
   switch (msg.type) {
     case 'join': {
       if (player.joined) { monitor(player, 'repeatJoin', now); break; }
+      const schedule = playSchedule.statusAt(now);
+      if (schedule.blocked) {
+        send(player.ws, {
+          type: 'scheduleBlocked',
+          blocked: true,
+          remainingMs: schedule.remainingMs,
+          nextPlayableAt: schedule.nextPlayableAt,
+          serverNow: schedule.serverNow,
+          timeZone: schedule.timeZone
+        });
+        break;
+      }
       const resumed = player.reconnecting === true;
       player.reconnecting = false;
       const requested = sanitizeName(msg.name);
@@ -1276,7 +1321,6 @@ function handleMessage(player, raw) {
         playerAuthority.resetWeaponState(player);
       }
       player.joined = true;
-      player.corpseHttpSync = msg.corpseSync === 'http';
       player.infiniteAmmo = msg.infiniteAmmo === true;
       player.frontier = msg.frontier === true;
       player.portalFall = msg.portalFall === true;
@@ -1293,6 +1337,7 @@ function handleMessage(player, raw) {
         color: player.color,
         soldier: player.soldier,
         coins: playerCoins(player),
+        anonymous: player.anonymous === true,
         filtered,
         resume: resumed ? {
           map: player.mapId || (player.inQingyun ? 'qingyun' : 'port'),
@@ -1303,7 +1348,6 @@ function handleMessage(player, raw) {
         focus: focusPayload(player)
       });
       shop.publish(player);
-      sendPortHistory(player);
       /* 入场时补发一次后空翻概率：避免「页面早加载、改完之后才入场」的玩家拿着旧值 */
       send(player.ws, { type: 'houndFlip', chance: houndTuning.read().chance });
       frontier.inventory(player);
@@ -1426,6 +1470,7 @@ function handleMessage(player, raw) {
         name: player.name,
         color: player.color,
         soldier: player.soldier,
+        anonymous: player.anonymous === true,
         renamed: true
       });
       if (next !== previous) {
@@ -1434,6 +1479,20 @@ function handleMessage(player, raw) {
       if (player.voice.enabled) {
         broadcast({ type: 'voiceState', player: publicVoice(player) });
       }
+      break;
+    }
+    case 'anonymous': {
+      if (!player.joined) {
+        send(player.ws, { type: 'anonymousState', ok: false, enabled: player.anonymous === true, reason: 'notReady' });
+        break;
+      }
+      if (now - (player.lastAnonymousAt || 0) < ANONYMOUS_TOGGLE_COOLDOWN_MS) {
+        send(player.ws, { type: 'anonymousState', ok: false, enabled: player.anonymous === true, reason: 'rate' });
+        break;
+      }
+      player.lastAnonymousAt = now;
+      player.anonymous = msg.enabled === true;
+      send(player.ws, { type: 'anonymousState', ok: true, enabled: player.anonymous });
       break;
     }
     case 'followInvite': {
@@ -1632,7 +1691,6 @@ function handleMessage(player, raw) {
       player.motionBudget = null;
       beginPortalArrival(player, now);
       send(player.ws, { type: 'qingyunReturned', pos: player.pos });
-      sendPortHistory(player);
       break;
     }
     case 'qingyunLeave': {
@@ -1645,7 +1703,6 @@ function handleMessage(player, raw) {
       player.shotCredits = 0;
       player.pendingShot = null;
       player.motionBudget = null;
-      sendPortHistory(player);
       break;
     }
     case 'mapEnter': {
@@ -1689,7 +1746,6 @@ function handleMessage(player, raw) {
       player.motionBudget = null;
       if (msg.type === 'mapReturn') beginPortalArrival(player, now);
       send(player.ws, { type: 'mapReturned', pos: player.pos });
-      sendPortHistory(player);
       break;
     }
     case 'signList': {
@@ -1756,7 +1812,7 @@ function handleMessage(player, raw) {
     case 'corpseLanded': {
       if (mapKeyOf(player) !== corpseField.MAP_ID || !player.joined) break;
       try {
-        const settled = corpseField.settle({
+        corpseField.settle({
           id: msg.id,
           victimId: msg.victimId,
           playerId: msg.playerId,
@@ -1766,7 +1822,6 @@ function handleMessage(player, raw) {
           at: msg.at,
           reporter: { id: player.id, pos: player.pos }
         });
-        if (settled && !player.corpseHttpSync) send(player.ws, { type: 'corpseSettled', corpse: settled });
       } catch (error) { console.error('[corpse-field] landing record failed:', error.message); }
       break;
     }
@@ -1787,6 +1842,16 @@ function handleMessage(player, raw) {
     case 'goldHit':
       if (player.active && player.alive) gold.shoot(player, playerAuthority.takeReportedShot(player, now), msg.id, now);
       break;
+    case 'containerAdQuote': {
+      const { request, box, side } = msg;
+      try {
+        send(player.ws, { type: 'containerAdQuote', request, ...portContainerAds.quote(player, box, side, gold, now) });
+      } catch (error) {
+        console.error('[port-container-ads] quote failed:', error.message);
+        send(player.ws, { type: 'containerAdQuote', request, error: 'storage' });
+      }
+      break;
+    }
     case 'containerList':
     case 'containerAction':
       containers.handle(player, msg, now);
@@ -1930,7 +1995,6 @@ function handleMessage(player, raw) {
         shooterId: player.id
       });
       if (!mark) break;
-      broadcast({ type: 'bulletMark', mark }, (other) => other.joined && mapKeyOf(other) === bulletMarks.MAP_ID);
       break;
     }
     case 'hit': {
@@ -2121,6 +2185,7 @@ function addPlayer(ws, req, signOwner) {
     streak: 0,
     bestStreak: 0,
     spawns: [{ x: 0, y: 0, z: 4 }],
+    lastPortSpawn: null,
     respawnAt: 0,
     protectedUntil: 0,
     lastShotAt: 0,
@@ -2161,6 +2226,8 @@ function addPlayer(ws, req, signOwner) {
     pendingFollowInvites: new Map(),
     lastFollowInviteAt: 0,
     lastFollowActionAt: 0,
+    anonymous: false,
+    lastAnonymousAt: 0,
     isAlive: true
   };
   const savedRaceName = raceNames.nameOfOwner(signOwner);
@@ -2185,7 +2252,8 @@ function sendWelcome(player) {
     soldier: player.soldier,
     coins: playerCoins(player),
     respawnMs: RESPAWN_MS,
-    online: players.size,
+    online: livePlayerCount(),
+    anonymous: player.anonymous === true,
     voiceRelay: {
       transport: 'pcm-relay',
       sampleRate: 16000,
@@ -2195,80 +2263,6 @@ function sendWelcome(player) {
     },
     focus: focusPayload(player)
   });
-}
-
-function historyTargetValid(player) {
-  return !!player && !!player.joined && mapKeyOf(player) === bulletMarks.MAP_ID &&
-    !!player.ws && player.ws.readyState === 1;
-}
-
-function sendPortHistory(player) {
-  if (!historyTargetValid(player)) return;
-  const marks = bulletMarks.snapshot({ limit: bulletMarks.MAX_MARKS });
-  const corpses = player.corpseHttpSync ? null : corpseField.snapshot({ limit: corpseField.MAX_LIMIT });
-  const corpseCount = corpses?.corpses.length ?? 0;
-  const historyId = nextHistoryId++;
-  const ws = player.ws;
-  player.portHistoryId = historyId;
-  let markOffset = 0;
-  let corpseOffset = 0;
-
-  const scheduleNext = () => {
-    const timer = setTimeout(sendNext, HISTORY_CHUNK_GAP_MS);
-    timer.unref();
-  };
-
-  const sendNext = () => {
-    if (player.portHistoryId !== historyId || player.ws !== ws || !historyTargetValid(player)) return;
-    if (ws.bufferedAmount >= HISTORY_BUFFER_LIMIT) {
-      scheduleNext();
-      return;
-    }
-    if (markOffset < marks.marks.length) {
-      const chunk = marks.marks.slice(markOffset, markOffset + HISTORY_MARK_CHUNK);
-      markOffset += chunk.length;
-      send(player.ws, {
-        type: 'bulletMarks',
-        map: marks.map,
-        historyId,
-        marks: chunk,
-        total: marks.total,
-        partial: true
-      });
-    }
-    if (corpseOffset < corpseCount && ws.bufferedAmount < HISTORY_BUFFER_LIMIT) {
-      const chunk = corpses.corpses.slice(corpseOffset, corpseOffset + HISTORY_CORPSE_CHUNK);
-      corpseOffset += chunk.length;
-      send(player.ws, {
-        type: 'corpseField',
-        map: corpses.map,
-        historyId,
-        revision: corpses.revision,
-        total: corpses.total,
-        corpses: chunk,
-        partial: true
-      });
-    }
-    if (markOffset < marks.marks.length || corpseOffset < corpseCount) {
-      scheduleNext();
-      return;
-    }
-    send(player.ws, {
-      type: 'bulletMarksComplete',
-      map: marks.map,
-      historyId,
-      total: marks.total
-    });
-    if (corpses) send(ws, {
-      type: 'corpseFieldComplete',
-      map: corpses.map,
-      historyId,
-      revision: corpses.revision,
-      total: corpses.total
-    });
-  };
-
-  sendNext();
 }
 
 function removePlayer(player, reason) {
@@ -2348,6 +2342,37 @@ async function flagRoadSign(id) {
   return true;
 }
 
+function movementPose(player) {
+  return {
+    id: player.id,
+    x: round(player.pos.x),
+    y: round(player.pos.y),
+    z: round(player.pos.z),
+    yaw: round(player.yaw),
+    moving: !!player.moving,
+    sprint: !!player.sprint,
+    swimming: !!player.swimming
+  };
+}
+
+function broadcastPoses() {
+  if (!players.size) return;
+  const byMap = new Map();
+  for (const player of players.values()) {
+    if (!player.active || !player.alive || player.ws.readyState !== 1 ||
+        player.ws.bufferedAmount > 64 * 1024) continue;
+    const key = mapKeyOf(player);
+    let rows = byMap.get(key);
+    if (!rows) byMap.set(key, rows = []);
+    rows.push(movementPose(player));
+  }
+  for (const player of players.values()) {
+    if (!player.joined || player.ws.readyState !== 1 || player.ws.bufferedAmount > 32 * 1024) continue;
+    const rows = byMap.get(mapKeyOf(player));
+    if (rows && rows.length) send(player.ws, { type: 'pose', t: Date.now(), players: rows });
+  }
+}
+
 function tick() {
   const now = Date.now();
   for (const [token, player] of reconnectPlayers) {
@@ -2392,7 +2417,8 @@ function tick() {
   sharedPatrols.tick(now);
   deathReplay.recordPlayers(players.values(), now, frontier.equipmentFlags);
   deathReplay.prune(now);
-  const roster = rosterPayload();
+  const rosterRows = rosterPayloadBase(now);
+  const onlineNow = livePlayerCount();
   const visibleByMap = new Map();
   const mapCounts = Object.fromEntries(['port', 'qingyun', ...Object.keys(expeditions.maps)].map(id => [id, 0]));
   const mapKey = mapKeyOf;
@@ -2445,10 +2471,11 @@ function tick() {
     send(player.ws, {
       type: 'snapshot',
       t: now,
-      online: players.size,
+      online: onlineNow,
+      onlineOthers: Math.max(0, onlineNow - 1),
       mapCounts,
       players: visibleByMap.get(key) || [],
-      roster,
+      roster: rosterForViewer(rosterRows, player),
       voice,
       boat: boatState,
       sedan: sedan.snapshot(key, player),
@@ -2466,6 +2493,7 @@ function tick() {
         hp: Math.round(player.hp),
         alive: player.alive,
         active: player.active,
+        anonymous: player.anonymous === true,
         focusUntil: player.focusUntil || 0,
         focusKind: player.focusKind || '',
         focusDurationMs: Math.max(0, Number(player.focusDurationMs) || 0),
@@ -2541,18 +2569,38 @@ async function getModerationReport() {
 function attachMultiplayer(server) {
   if (wss) return wss;
   loadBoard();
-  corpseField.setPublisher((corpse, action) => {
-    broadcast({ type: action === 'updated' ? 'corpseUpdated' : 'corpse', corpse }, player =>
-      player.joined && !player.corpseHttpSync && mapKeyOf(player) === corpseField.MAP_ID);
-  });
   wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
+  pingWss = new WebSocketServer({ noServer: true, maxPayload: 512 });
 
   upgradeServer = server;
   upgradeHandler = (req, socket, head) => {
     const raw = String(req.url || '/');
     const queryAt = raw.indexOf('?');
     const pathname = queryAt >= 0 ? raw.slice(0, queryAt) : raw;
-    if (pathname !== '/ws' || new URLSearchParams(raw.slice(queryAt + 1)).get('race') === '1') return;
+    if (pathname !== '/ws') return;
+    const params = new URLSearchParams(queryAt >= 0 ? raw.slice(queryAt + 1) : '');
+    if (params.get('probe') === '1') {
+      if (!pingWss) {
+        socket.destroy();
+        return;
+      }
+      pingWss.handleUpgrade(req, socket, head, (ws) => {
+        ws.isAlive = true;
+        ws.on('error', () => {});
+        ws.on('pong', () => { ws.isAlive = true; });
+        ws.on('message', (data) => {
+          if (ws.readyState !== 1) return;
+          let msg;
+          try { msg = JSON.parse(data.toString()); } catch (err) { return; }
+          if (!msg || msg.type !== 'ping' || !Number.isFinite(Number(msg.t))) return;
+          try {
+            ws.send('{"type":"pong","t":' + JSON.stringify(Number(msg.t)) + '}');
+          } catch (err) { /* the probe will reconnect */ }
+        });
+      });
+      return;
+    }
+    if (params.get('race') === '1') return;
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);
     });
@@ -2612,6 +2660,9 @@ function attachMultiplayer(server) {
   timer = setInterval(tick, TICK_MS);
   if (timer.unref) timer.unref();
 
+  poseTimer = setInterval(broadcastPoses, POSE_MS);
+  if (poseTimer.unref) poseTimer.unref();
+
   heartbeat = setInterval(() => {
     for (const player of players.values()) {
       if (player.ws.readyState !== 1) continue;
@@ -2631,6 +2682,16 @@ function attachMultiplayer(server) {
         /* ignore */
       }
     }
+    if (!pingWss) return;
+    for (const socket of pingWss.clients) {
+      if (socket.readyState !== 1) continue;
+      if (!socket.isAlive) {
+        try { socket.terminate(); } catch (err) { /* ignore */ }
+        continue;
+      }
+      socket.isAlive = false;
+      try { socket.ping(); } catch (err) { /* ignore */ }
+    }
   }, 30000);
   if (heartbeat.unref) heartbeat.unref();
 
@@ -2641,8 +2702,11 @@ function attachMultiplayer(server) {
     upgradeServer = null;
     upgradeHandler = null;
     if (timer) clearInterval(timer);
+    if (poseTimer) clearInterval(poseTimer);
     if (heartbeat) clearInterval(heartbeat);
+    closePingServer();
     timer = null;
+    poseTimer = null;
     heartbeat = null;
   });
 
@@ -2679,7 +2743,7 @@ module.exports = {
     chatHistory.flush();
     bulletMarks.flush();
     corpseField.flush();
-    corpseField.setPublisher(null);
+    closePingServer();
   },
   RESPAWN_MS
 };

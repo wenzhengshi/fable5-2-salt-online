@@ -1,5 +1,10 @@
 {
-  "arsenal": {"weapon":"Loadout","knife":"Tactical knife","loading":"Loading weapons…","failed":"Weapon could not load"},
+  "arsenal": {
+    "weapon": "Loadout",
+    "knife": "Tactical knife",
+    "loading": "Loading weapons…",
+    "failed": "Weapon could not load"
+  },
   "car": {
     "board": "Board · H",
     "leave": "Exit · H",
@@ -184,6 +189,14 @@
     "serverError": "Service temporarily unavailable. Please try again."
   },
   "admin": {
+    "containerAdsTitle": "Container ads",
+    "containerAdsIntro": "New ads are approved by default. Rejected ads display a violation notice in their original position.",
+    "containerAdsEmpty": "No container ads yet.",
+    "containerAdsUntil": "Expires (Beijing time)",
+    "containerAdsApproved": "Approved",
+    "containerAdsRejected": "Rejected",
+    "containerAdsApprove": "Approve again",
+    "containerAdsReject": "Mark as violation",
     "shopTitle": "Shop prices",
     "shopIntro": "Prices are in Saltline Coin and support up to six decimal places. Changes apply immediately to new purchases.",
     "shopPass": "Lunar pass",
@@ -222,7 +235,6 @@
       "hitOffAxis": "Hit far from shot direction",
       "invalidShot": "Invalid shot vector",
       "repeatJoin": "Repeated join requests",
-
       "packetFlood": "Excess packets",
       "fireRate": "Excess fire rate",
       "shotOrigin": "Invalid shot origin",
@@ -596,6 +608,20 @@
     "online": "Online",
     "presenceOnline": "Players online",
     "presenceEmpty": "Nobody online",
+    "titleOnlineAlone": "Only you in the fight",
+    "anonymousOn": "Go anonymous",
+    "anonymousOff": "Show callsign",
+    "anonymousBadge": "Anonymous",
+    "anonymousName": "Anonymous player",
+    "anonymousOnHint": "Other players will only see “Anonymous player” in the battle roster",
+    "anonymousOffHint": "Show your callsign in the battle roster again",
+    "anonymousOtherHint": "Anonymous players cannot receive friend requests",
+    "anonymousToastOn": "You are now anonymous online",
+    "anonymousToastOff": "Your callsign is public again",
+    "anonymousDenied": "Anonymous toggle is too fast — try again shortly",
+    "anonymousFailed": "Could not update anonymous status — try again",
+    "pingDetail": "Network RTT {rtt} ms · main-thread queue {queue} ms",
+    "pingFallback": "Network RTT measured on the main thread; may include render queue",
     "mapOnline": "Map",
     "connecting": "Connecting",
     "reconnecting": "Reconnecting",
@@ -635,7 +661,7 @@
     "focusManualBadge": "Manual focus · spectating",
     "focusAutoBadge": "Continuous-play break · spectating",
     "focusSpectating": "Spectating in focus mode",
-    "emptyRoster": "No other players in the fight yet",
+    "emptyRoster": "No other players online yet",
     "board": "Leaderboard",
     "boardEmpty": "No records yet",
     "boardPlayer": "Player",
@@ -745,6 +771,7 @@
     "followReasonRate": "Too fast — try again shortly",
     "followReasonDeclined": "The friend request was declined",
     "followReasonNotFollowing": "You are not following anyone",
+    "followReasonAnonymous": "Friend follow is unavailable while anonymous",
     "followReasonGeneric": "Friend follow failed — try again shortly"
   },
   "soldierSelect": {
@@ -1010,6 +1037,8 @@
     "photoWechatSave": "Touch and hold the preview to save the image, or capture and download it in your system browser."
   },
   "containerFlow": {
+    "passwordBook": "Password book",
+    "passwordBookOpen": "Open password book",
     "deposit": "Deposit all gold",
     "openHint": "Doors open · Step inside to transfer assets",
     "insideHint": "Inside container · Deposits and withdrawals available",
@@ -1225,5 +1254,34 @@
     "defeated": "Bounty boss defeated: +{amount}",
     "defeatedShort": "Boss +{amount}",
     "spawned": "Bounty boss spawned: {amount}"
+  },
+  "graphics": {
+    "quality": "Graphics quality",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "ultra": "Ultra",
+    "noteLive": "Quality changes apply at once; shadows and reflections may take a moment to rebuild.",
+    "noteUltra": "Ultra uses native resolution, 4× MSAA, up to 2048 textures and 16× anisotropy. Smart resolution only scales internal pixels, keeps at least 88%, and never silently lowers a manual tier.",
+    "noteAuto": "Quality was picked for this device ({quality}). Lower it if the frame rate struggles.",
+    "noteLocked": "Quality is locked by the launch parameter: {quality}"
+  },
+  "playSchedule": {
+    "kicker": "SERVER PLAY WINDOW",
+    "title": "Work Hours",
+    "timezone": "Beijing time · UTC+8",
+    "message": "Play is unavailable during work hours. Please wait — playable in {days} days {hours} hours {minutes} minutes {seconds} seconds.",
+    "days": "Days",
+    "hours": "Hours",
+    "minutes": "Minutes",
+    "seconds": "Seconds",
+    "rule": "Mon–Fri 00:00–07:00, 09:00–12:00 and 14:00–18:00 are work hours. Play is open at all other times.",
+    "holidayRule": "Weekends are fully open; a weekday holiday is also fully open.",
+    "waiting": "The server is closed during work hours",
+    "paused": "Work hours have started; the match is paused",
+    "close": "Close dialog",
+    "dismissed": "Home screen opened. Deploy is unavailable during work hours.",
+    "reopened": "Work hours are active, so Deploy is unavailable right now.",
+    "dismissHint": "Close this to browse the home screen. During work hours, Deploy will show this schedule again."
   }
 }

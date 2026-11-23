@@ -5,11 +5,14 @@
   window.__SALT_CORPSE_FIELD_LOADED__ = true;
 
   const MAP_ID = 'port';
-  const MAX_VISIBLE = 80;
   const BUILD_BUDGET = 3;
+  const HISTORY_PAGE_SIZE = 40;
+  const HISTORY_PAGE_GAP_MS = 120;
   const SYNC_INTERVAL_MS = 2500;
   const SYNC_RETRY_MS = 5000;
   const SYNC_TIMEOUT_MS = 8000;
+  const RENDER_REFRESH_MS = 320;
+  const RENDER_DISTANCE = 145;
   const KINDS = new Set(['hound', 'drone', 'player']);
   const SOLDIERS = new Set(['male', 'female', 'hound', 'drone', 'classic']);
   const VISIBLE_STATES = new Set(['playing', 'paused', 'dead', 'respawning']);
@@ -32,6 +35,10 @@
   let nextSyncAt = 0;
   let legacyServer = false;
   let historyId = 0;
+  let historyComplete = false;
+  let historyPageId = 0;
+  let historyBaseCursor = '';
+  let historyNextBefore = 0;
   let lastVisibility = null;
   let scorchGeometry = null;
   let ringGeometry = null;
@@ -40,6 +47,7 @@
   let playerRingMaterial = null;
   let fallbackAssets = null;
   let eventsHooked = false;
+  let budgetAt = 0;
 
   function cleanText(value, maxLength) {
     return String(value == null ? '' : value)
@@ -94,6 +102,28 @@
     const roll = 0.16 + ((seed >>> 1) % 997) / 997 * 0.42;
     const pitch = -1.06 - ((seed >>> 11) % 997) / 997 * 0.32;
     return { roll: sign * roll, pitch };
+  }
+
+  function corpseRenderBudget() {
+    const tier = game && game.quality && game.quality.name;
+    if (tier === 'ultra') return 34;
+    if (tier === 'high') return 26;
+    if (tier === 'medium') return 18;
+    return 10;
+  }
+
+  function disableCorpseShadows(root) {
+    if (!root || !root.traverse) return;
+    root.traverse((node) => {
+      if (node.isMesh || node.isSkinnedMesh) node.castShadow = false;
+    });
+  }
+
+  function setEntryVisible(entry, visible) {
+    const show = visible && lastVisibility !== false;
+    if (entry.holder) entry.holder.visible = show;
+    if (entry.avatar && entry.avatar.group) entry.avatar.group.visible = show;
+    entry.renderVisible = show;
   }
 
   function finitePosition(value) {
@@ -346,7 +376,7 @@
     return mesh;
   }
 
-  function buildFallback(kind, tilt) {
+  function buildFallback(kind, tilt, simple) {
     const yaw = new THREE.Group();
     yaw.rotation.y = 0;
     const pivot = new THREE.Group();
@@ -354,7 +384,29 @@
     pivot.rotation.set(kind === 'drone' ? -0.48 : tilt.pitch, 0, tilt.roll);
     yaw.add(pivot);
     const assets = fallbackAssets;
-    if (kind === 'hound') {
+    if (simple) {
+      if (kind === 'player') {
+        pivot.add(makeMesh(assets.box, assets.shell, [0.56, 0.82, 0.3], [0, 1.2, 0]));
+        pivot.add(makeMesh(assets.box, assets.shell, [0.28, 0.28, 0.28], [0, 1.72, 0]));
+        pivot.add(makeMesh(assets.box, assets.dark, [0.4, 0.72, 0.24], [0, 0.46, 0]));
+      } else if (kind === 'drone') {
+        pivot.add(makeMesh(assets.box, assets.shell, [0.86, 0.16, 0.62], [0, 0, 0]));
+        pivot.add(makeMesh(assets.box, assets.trim, [0.22, 0.09, 0.22], [0, -0.02, -0.35]));
+      } else {
+        pivot.add(makeMesh(assets.box, assets.shell, [0.52, 0.28, 1.02], [0, 0, 0]));
+        pivot.add(makeMesh(assets.box, assets.trim, [0.3, 0.09, 0.7], [0, 0.17, 0.04]));
+      }
+      return yaw;
+    }
+    if (kind === 'player') {
+      pivot.add(makeMesh(assets.box, assets.shell, [0.58, 0.66, 0.31], [0, 1.12, 0]));
+      pivot.add(makeMesh(assets.box, assets.trim, [0.62, 0.18, 0.34], [0, 1.25, 0]));
+      pivot.add(makeMesh(assets.box, assets.shell, [0.27, 0.27, 0.27], [0, 1.61, 0]));
+      pivot.add(makeMesh(assets.box, assets.dark, [0.17, 0.62, 0.2], [-0.16, 0.37, 0]));
+      pivot.add(makeMesh(assets.box, assets.dark, [0.17, 0.62, 0.2], [0.16, 0.37, 0]));
+      pivot.add(makeMesh(assets.box, assets.shell, [0.13, 0.56, 0.14], [-0.36, 1.17, -0.04], [0, 0, 0.18]));
+      pivot.add(makeMesh(assets.box, assets.shell, [0.13, 0.56, 0.14], [0.36, 1.17, -0.04], [0, 0, -0.18]));
+    } else if (kind === 'hound') {
       pivot.add(makeMesh(assets.box, assets.shell, [0.5, 0.25, 0.92], [0, 0, 0]));
       pivot.add(makeMesh(assets.box, assets.trim, [0.3, 0.07, 0.62], [0, 0.15, 0.03]));
       pivot.add(makeMesh(assets.box, assets.shell, [0.28, 0.2, 0.3], [0, 0.05, -0.56]));
@@ -412,11 +464,12 @@
     entry.holder.add(yaw);
     entry.machine = made;
     entry.machineHolder = yaw;
+    disableCorpseShadows(made.model);
     return true;
   }
 
   function scheduleMachineUpgrade(entry) {
-    if (entry.disposed || entry.upgradeTimer || entry.machine) return;
+    if (entry.disposed || entry.upgradeTimer || entry.machine || !entry.detail) return;
     if ((entry.upgradeTries || 0) >= 20) return;
     entry.upgradeTries = (entry.upgradeTries || 0) + 1;
     entry.upgradeTimer = window.setTimeout(() => {
@@ -457,17 +510,26 @@
     entry.holder = holder;
     holder.visible = lastVisibility !== false;
     if (entry.row.kind === 'player') {
-      mountPlayer(entry);
+      if (entry.detail) mountPlayer(entry);
+      if (!entry.avatar) {
+        entry.fallback = buildFallback('player', fallbackTilt(entry.row.id), !entry.detail);
+        entry.fallback.rotation.y = entry.row.yaw + Math.PI;
+        holder.add(entry.fallback);
+      }
       if (entry.avatar && entry.avatar.group) {
         entry.avatar.group.position.set(pos.x, pos.y, pos.z);
         entry.avatar.group.visible = holder.visible;
+        disableCorpseShadows(entry.avatar.group);
       }
+      entry.renderVisible = holder.visible;
       return;
     }
-    entry.fallback = buildFallback(entry.row.kind, fallbackTilt(entry.row.id));
+    entry.fallback = buildFallback(entry.row.kind, fallbackTilt(entry.row.id), !entry.detail);
     entry.fallback.rotation.y = entry.row.pose ? entry.row.pose.yaw : entry.row.yaw + Math.PI;
     holder.add(entry.fallback);
-    if (!mountMachine(entry)) scheduleMachineUpgrade(entry);
+    if (entry.detail && !mountMachine(entry)) scheduleMachineUpgrade(entry);
+    disableCorpseShadows(holder);
+    entry.renderVisible = holder.visible;
   }
 
   function disposeVisual(entry) {
@@ -489,6 +551,7 @@
     entry.machineHolder = null;
     entry.fallback = null;
     entry.upgradeTries = 0;
+    entry.renderVisible = false;
   }
 
   function queueBuild(entry) {
@@ -527,7 +590,7 @@
     buildAssets();
     buildQueue.length = 0;
     lastVisibility = null;
-    for (const entry of entries.values()) queueBuild(entry);
+    budgetAt = 0;
     return true;
   }
 
@@ -577,25 +640,12 @@
       machineHolder: null,
       fallback: null,
       upgradeTimer: 0,
-      upgradeTries: 0
+      upgradeTries: 0,
+      renderVisible: false,
+      detail: false
     };
     entries.set(row.id, entry);
-    if (ensure(game)) queueBuild(entry);
-  }
-
-  function trim() {
-    while (entries.size > MAX_VISIBLE) {
-      let oldestId = '';
-      let oldest = null;
-      for (const [id, entry] of entries) {
-        if (!oldest || entry.row.seq < oldest.seq || (entry.row.seq === oldest.seq && entry.row.at < oldest.at)) {
-          oldestId = id;
-          oldest = entry.row;
-        }
-      }
-      if (!oldestId) break;
-      removeEntry(oldestId);
-    }
+    if (ensure(game)) budgetAt = 0;
   }
 
   function updateVisual(entry, row) {
@@ -614,7 +664,7 @@
         entry.fallback = buildFallback(row.kind, fallbackTilt(row.id));
         entry.holder.add(entry.fallback);
       }
-      if (!mountMachine(entry)) scheduleMachineUpgrade(entry);
+      if (entry.detail && !mountMachine(entry)) scheduleMachineUpgrade(entry);
     }
     const positionChanged = row.pos.x !== previous.pos.x || row.pos.y !== previous.pos.y ||
       row.pos.z !== previous.pos.z;
@@ -642,15 +692,22 @@
       return true;
     }
     createEntry(row);
-    trim();
     return true;
+  }
+
+  function restartHistory() {
+    syncCursor = '';
+    historyComplete = false;
+    historyPageId = 0;
+    historyBaseCursor = '';
+    historyNextBefore = 0;
   }
 
   function clear() {
     for (const id of [...entries.keys()]) removeEntry(id);
     if (group) group.visible = false;
     syncRequest?.abort();
-    syncCursor = '';
+    restartHistory();
     nextSyncAt = 0;
   }
 
@@ -679,21 +736,18 @@
       sorted.push(row);
     }
     sorted.sort((left, right) => right.seq - left.seq || right.at - left.at);
-    const visibleRows = sorted.slice(0, MAX_VISIBLE);
-    const keep = new Set(visibleRows.map((row) => row.id));
+    const keep = new Set(sorted.map((row) => row.id));
     if (!partial) {
       for (const id of [...entries.keys()]) if (!keep.has(id)) removeEntry(id);
     }
-    for (const row of visibleRows) {
+    for (const row of sorted) {
       if (partial) {
         historyIds.add(row.id);
-        historyTracked.add(row.id);
       }
       const existing = entries.get(row.id);
       if (existing) updateVisual(existing, row);
       else createEntry(row);
     }
-    trim();
   }
 
   function add(raw, nextGame) {
@@ -702,7 +756,6 @@
     if (!row || entries.has(row.id)) return false;
     if (row.seq > revision) revision = row.seq;
     createEntry(row);
-    trim();
     return true;
   }
 
@@ -716,9 +769,17 @@
     const request = new AbortController();
     syncRequest = request;
     const timeout = window.setTimeout(() => request.abort(), SYNC_TIMEOUT_MS);
-    let delay = SYNC_INTERVAL_MS;
+    let delay = historyComplete ? SYNC_INTERVAL_MS : HISTORY_PAGE_GAP_MS;
     try {
-      const params = new URLSearchParams({ sync: '1', limit: String(MAX_VISIBLE), since: syncCursor });
+      const params = new URLSearchParams({ sync: '1', paged: '1' });
+      if (historyComplete) {
+        params.set('since', syncCursor);
+      } else {
+        params.set('history', '1');
+        params.set('limit', String(HISTORY_PAGE_SIZE));
+        if (historyBaseCursor) params.set('base', historyBaseCursor);
+        if (historyNextBefore) params.set('before', String(historyNextBefore));
+      }
       const response = await fetch('/api/game/corpse-field?' + params, {
         cache: 'no-store', signal: request.signal
       });
@@ -730,14 +791,37 @@
       if (typeof data.cursor !== 'string') {
         legacyServer = true;
         load(data.corpses, game, data.revision);
+        historyComplete = true;
+        syncCursor = '';
         return;
       }
-      if (data.partial) {
-        for (const row of data.corpses) applySettled(row);
-      } else {
-        load(data.corpses, game);
+      if (!historyComplete) {
+        if (!historyPageId) historyPageId = historyId + 1;
+        if (typeof data.baseCursor === 'string') historyBaseCursor = data.baseCursor;
+        load(data.corpses, game, data.revision, { partial: true, historyId: historyPageId });
+        const nextBefore = Math.floor(Number(data.nextBefore));
+        historyNextBefore = Number.isSafeInteger(nextBefore) && nextBefore > 0 ? nextBefore : 0;
+        if (data.complete === true || !historyNextBefore) {
+          finishHistory(historyPageId, data.revision);
+          syncCursor = historyBaseCursor || (typeof data.baseCursor === 'string' ? data.baseCursor : data.cursor);
+          historyComplete = true;
+          historyPageId = 0;
+          historyBaseCursor = '';
+          historyNextBefore = 0;
+        }
+        delay = HISTORY_PAGE_GAP_MS;
+        return;
       }
+      if (data.reset === true || data.partial !== true) {
+        restartHistory();
+        delay = HISTORY_PAGE_GAP_MS;
+        return;
+      }
+      for (const row of data.corpses) applySettled(row);
+      const incomingRevision = Number(data.revision);
+      if (Number.isSafeInteger(incomingRevision) && incomingRevision > revision) revision = incomingRevision;
       syncCursor = data.cursor;
+      delay = SYNC_INTERVAL_MS;
     } catch (error) {
       delay = SYNC_RETRY_MS;
     } finally {
@@ -751,6 +835,51 @@
     game = nextGame || game;
   }
 
+  function updateRenderBudget(now) {
+    if (now < budgetAt) return;
+    budgetAt = now + RENDER_REFRESH_MS;
+    const center = game?.player?.pos || game?.camera?.position;
+    if (!center || !Number.isFinite(center.x) || !Number.isFinite(center.z)) return;
+    const limitSq = RENDER_DISTANCE * RENDER_DISTANCE;
+    const candidates = [];
+    for (const entry of entries.values()) {
+      if (entry.disposed || !entry.row || !entry.row.pos) continue;
+      const dx = entry.row.pos.x - center.x;
+      const dz = entry.row.pos.z - center.z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq <= limitSq) candidates.push({ entry, distanceSq });
+    }
+    candidates.sort((left, right) => left.distanceSq - right.distanceSq);
+    const budget = corpseRenderBudget();
+    // v1.34.54 behaviour: every corpse inside the visible budget keeps its
+    // full soldier/unit model. The distant single-box silhouette introduced
+    // in v1.34.55 read as a black body at a glance, so it is intentionally
+    // not used here anymore.
+    const detailBudget = budget;
+    const selected = new Set();
+    const detail = new Set();
+    for (let index = 0; index < candidates.length && index < budget; index += 1) {
+      selected.add(candidates[index].entry);
+      if (index < detailBudget) detail.add(candidates[index].entry);
+    }
+    for (const entry of entries.values()) {
+      if (entry.disposed) continue;
+      if (selected.has(entry)) {
+        const wantsDetail = detail.has(entry);
+        if (entry.detail !== wantsDetail) {
+          entry.detail = wantsDetail;
+          if (entry.built) disposeVisual(entry);
+        }
+        if (!entry.built) queueBuild(entry);
+        else setEntryVisible(entry, true);
+        continue;
+      }
+      entry.detail = false;
+      if (!entry.built) continue;
+      disposeVisual(entry);
+    }
+  }
+
   function tick(nextGame) {
     if (nextGame) game = nextGame;
     if (!ensure(game)) return;
@@ -758,11 +887,12 @@
     if (lastVisibility !== show) {
       lastVisibility = show;
       group.visible = show;
-      for (const entry of entries.values()) {
-        if (entry.holder) entry.holder.visible = show;
-        if (entry.avatar && entry.avatar.group) entry.avatar.group.visible = show;
+      if (show) {
+        nextSyncAt = 0;
+        budgetAt = 0;
+      } else {
+        for (const entry of entries.values()) setEntryVisible(entry, false);
       }
-      if (show) nextSyncAt = 0;
     }
     if (!show || document.hidden) {
       syncRequest?.abort();
@@ -770,29 +900,9 @@
     }
     void syncFromApi();
     processBuildQueue(BUILD_BUDGET);
+    updateRenderBudget(performance.now());
     updateTrackedEnemies();
     updatePoseTracking();
-  }
-
-  function onMessage(msg, nextGame) {
-    if (!msg) return false;
-    if (msg.type === 'corpseField') {
-      load(msg.corpses, nextGame, msg.revision, { partial: msg.partial, historyId: msg.historyId });
-      return true;
-    }
-    if (msg.type === 'corpseFieldComplete') {
-      finishHistory(msg.historyId, msg.revision);
-      return true;
-    }
-    if (msg.type === 'corpse') {
-      add(msg.corpse, nextGame);
-      return true;
-    }
-    if (msg.type === 'corpseUpdated' || msg.type === 'corpseSettled') {
-      applySettled(msg.corpse);
-      return true;
-    }
-    return false;
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -804,7 +914,6 @@
     httpSync: true,
     attach,
     tick,
-    onMessage,
     add,
     load,
     clear,
@@ -812,6 +921,11 @@
     reportPose,
     trackEnemy,
     landingSurface,
-    get size() { return entries.size; }
+    get size() { return entries.size; },
+    get rendered() {
+      let count = 0;
+      for (const entry of entries.values()) if (entry.built && entry.renderVisible) count += 1;
+      return count;
+    }
   };
 })();

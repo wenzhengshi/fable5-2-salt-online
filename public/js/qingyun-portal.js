@@ -180,6 +180,7 @@
         mapCamera.quaternion.copy(camera.quaternion);
         mapCamera.fov = camera.fov;
         mapCamera.aspect = camera.aspect;
+        const autoQuality = !!(window.__saltAutoQuality && window.__saltAutoQuality.auto);
         map.draw(mapCamera, dt, frameTime, game.quality.name, (renderCamera, target) => {
           actorCamera.position.copy(camera.position);
           actorCamera.quaternion.copy(camera.quaternion);
@@ -192,7 +193,7 @@
           for (const root of scene.children) if (root.visible) root.updateMatrixWorld(true);
           scene.matrixWorldAutoUpdate = false;
           renderer.render(scene, actorCamera);
-        });
+        }, autoQuality);
         renderer.setRenderTarget(null);
         if (!game.frontier?.renderingThirdPerson) {
           renderer.toneMapping = toneMapping;
